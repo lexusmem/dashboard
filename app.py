@@ -32,12 +32,22 @@ st.markdown("""
 
 
 # --- Upload dos arquivos na Sidebar ---
+from datetime import datetime
+
 st.sidebar.header("📂 Carregar Arquivos")
-upload_apolice  = st.sidebar.file_uploader("Arquivo apolice_endosso.txt", type=["txt", "csv"])
-upload_sinistro = st.sidebar.file_uploader("Arquivo sinistro.txt",        type=["txt", "csv"])
+st.sidebar.caption("Faça o upload dos dois arquivos TXT para carregar o dashboard.")
+
+upload_apolice  = st.sidebar.file_uploader("apolice_endosso.txt", type=["txt", "csv"])
+upload_sinistro = st.sidebar.file_uploader("sinistro.txt",        type=["txt", "csv"])
+
+# Exibe confirmação com data/hora do upload quando os arquivos forem carregados
+if upload_apolice:
+    st.sidebar.success(f"✅ {upload_apolice.name}  |  {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+if upload_sinistro:
+    st.sidebar.success(f"✅ {upload_sinistro.name}  |  {datetime.now().strftime('%d/%m/%Y %H:%M')}")
 
 if not upload_apolice or not upload_sinistro:
-    st.info("👈 Faça o upload dos dois arquivos na barra lateral para iniciar o dashboard.")
+    st.info("👈 Faça o upload dos dois arquivos TXT na barra lateral para iniciar o dashboard.")
     st.stop()
 
 # Função para processar os dados de sinistro.
@@ -161,7 +171,7 @@ def carregar_e_processar_dados(arquivo_apolice, arquivo_sinistro):
 
 
         # Carrega o arquivo sinistro.txt
-        df_sinistros_detalhado = carregar_e_processar_dados_sinistro(caminho_sinistro)
+        df_sinistros_detalhado = carregar_e_processar_dados_sinistro(arquivo_sinistro)
 
         # Soma dos sinistros por apólice (chama a função que cria os dados de sinistro):
         soma_sinistro_por_apolice = df_sinistros_detalhado.groupby('N° Apólice')['Total Sinistro'].sum().reset_index()
