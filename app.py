@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import io
 import base64
 import logging
 import plotly.graph_objects as go
@@ -30,21 +31,27 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 
-# Caminhos dos arquivos TXT com separador ";"
-PASTA_DADOS = r'F:\Fechamento_ADMSEG\RCO\Precificacao'
-arquivo_sinistro     = PASTA_DADOS + r'\sinistro.txt'
-arquivo_apolice      = PASTA_DADOS + r'\apolice_endosso.txt'
+# --- Upload dos arquivos na Sidebar ---
+st.sidebar.header("📂 Carregar Arquivos")
+upload_apolice  = st.sidebar.file_uploader("Arquivo apolice_endosso.txt", type=["txt", "csv"])
+upload_sinistro = st.sidebar.file_uploader("Arquivo sinistro.txt",        type=["txt", "csv"])
+
+if not upload_apolice or not upload_sinistro:
+    st.info("👈 Faça o upload dos dois arquivos na barra lateral para iniciar o dashboard.")
+    st.stop()
 
 # Função para processar os dados de sinistro.
 # DF com dados de Sinistros por apólice:
 @st.cache_data
-def carregar_e_processar_dados_sinistro(caminho_arquivo):
+def carregar_e_processar_dados_sinistro(arquivo):
     try:
+        # Aceita tanto objeto de upload (Streamlit) quanto caminho local (string)
+        fonte = io.BytesIO(arquivo.read()) if hasattr(arquivo, 'read') else arquivo
         aba_sinistro = pd.read_csv(
-            caminho_arquivo,
+            fonte,
             sep=';',
             encoding='latin-1',
-            decimal=',',       # valores como 29361,43 viram float corretamente
+            decimal=',',
             low_memory=False
         )
 
@@ -77,19 +84,21 @@ def carregar_e_processar_dados_sinistro(caminho_arquivo):
 
 # Dados agrupado de apólices e sinistros:
 @st.cache_data
-def carregar_e_processar_dados(caminho_apolice, caminho_sinistro):
+def carregar_e_processar_dados(arquivo_apolice, arquivo_sinistro):
     """
     Carrega e processa os dados dos arquivos TXT separados por ";".
     Esta função é cacheada para evitar recarregar e reprocessar os dados
     a cada interação do usuário, tornando a aplicação mais rápida.
     """
     try:
+        # Aceita tanto objeto de upload (Streamlit) quanto caminho local (string)
+        fonte_apolice = io.BytesIO(arquivo_apolice.read()) if hasattr(arquivo_apolice, 'read') else arquivo_apolice
         # Carrega o arquivo apolice_endosso.txt
         aba_apolice_endosso = pd.read_csv(
-            caminho_apolice,
+            fonte_apolice,
             sep=';',
             encoding='latin-1',
-            decimal=',',       # valores monetários com vírgula viram float corretamente
+            decimal=',',
             low_memory=False
         )
 
@@ -190,7 +199,7 @@ def formatar_valor_br(valor):
 
 # --- Aplicação Streamlit ---
 # Carrega e processa os dados (cacheado para performance)
-dados_calculados = carregar_e_processar_dados(arquivo_apolice, arquivo_sinistro)
+dados_calculados = carregar_e_processar_dados(upload_apolice, upload_sinistro)
 
 # Verifica se os dados foram carregados com sucesso
 if dados_calculados.empty:
@@ -232,7 +241,7 @@ dados_exibicao = dados_exibicao.sort_values('N° Apólice')
 
 
 # Dados do sinistro
-df_sinistros = carregar_e_processar_dados_sinistro(arquivo_sinistro)
+df_sinistros = carregar_e_processar_dados_sinistro(upload_sinistro)
 # Verifica se os dados foram carregados com sucesso
 if df_sinistros.empty:
     st.stop()  # Para a execução se não houver dados
