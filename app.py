@@ -34,21 +34,35 @@ st.markdown("""
 # --- Upload dos arquivos na Sidebar ---
 from datetime import datetime
 
-st.sidebar.header("📂 Carregar Arquivos")
-st.sidebar.caption("Faça o upload dos dois arquivos TXT para carregar o dashboard.")
+# Verifica se os dados já estão carregados no session_state
+dados_ja_carregados = (
+    'dados_calculados' in st.session_state and
+    'df_sinistros'     in st.session_state and
+    not st.session_state['dados_calculados'].empty and
+    not st.session_state['df_sinistros'].empty
+)
 
-upload_apolice  = st.sidebar.file_uploader("apolice_endosso.txt", type=["txt", "csv"])
-upload_sinistro = st.sidebar.file_uploader("sinistro.txt",        type=["txt", "csv"])
+if not dados_ja_carregados:
+    # Mostra os uploaders apenas enquanto os dados não estiverem carregados
+    st.sidebar.header("📂 Carregar Arquivos")
+    st.sidebar.caption("Faça o upload dos dois arquivos TXT para carregar o dashboard.")
 
-# Exibe confirmação com data/hora do upload quando os arquivos forem carregados
-if upload_apolice:
-    st.sidebar.success(f"✅ {upload_apolice.name}  |  {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-if upload_sinistro:
-    st.sidebar.success(f"✅ {upload_sinistro.name}  |  {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+    upload_apolice  = st.sidebar.file_uploader("apolice_endosso.txt", type=["txt", "csv"])
+    upload_sinistro = st.sidebar.file_uploader("sinistro.txt",        type=["txt", "csv"])
 
-if not upload_apolice or not upload_sinistro:
-    st.info("👈 Faça o upload dos dois arquivos TXT na barra lateral para iniciar o dashboard.")
-    st.stop()
+    if not upload_apolice or not upload_sinistro:
+        st.info("👈 Faça o upload dos dois arquivos TXT na barra lateral para iniciar o dashboard.")
+        st.stop()
+else:
+    # Dados já carregados — recupera do session_state e exibe botão para trocar arquivos
+    upload_apolice  = None
+    upload_sinistro = None
+    st.sidebar.success(f"✅ Dados carregados em {st.session_state['data_upload']}")
+    if st.sidebar.button("🔄 Carregar novos arquivos"):
+        del st.session_state['dados_calculados']
+        del st.session_state['df_sinistros']
+        del st.session_state['data_upload']
+        st.rerun()
 
 # Função para processar os dados de sinistro.
 # DF com dados de Sinistros por apólice:
@@ -208,12 +222,21 @@ def formatar_valor_br(valor):
     return valor_br_format
 
 # --- Aplicação Streamlit ---
-# Carrega e processa os dados (cacheado para performance)
-dados_calculados = carregar_e_processar_dados(upload_apolice, upload_sinistro)
-
-# Verifica se os dados foram carregados com sucesso
-if dados_calculados.empty:
-    st.stop()  # Para a execução se não houver dados
+# Carrega do session_state se já existir, senão processa os uploads
+if dados_ja_carregados:
+    dados_calculados = st.session_state['dados_calculados']
+    df_sinistros     = st.session_state['df_sinistros']
+else:
+    dados_calculados = carregar_e_processar_dados(upload_apolice, upload_sinistro)
+    if dados_calculados.empty:
+        st.stop()
+    df_sinistros = carregar_e_processar_dados_sinistro(upload_sinistro)
+    if df_sinistros.empty:
+        st.stop()
+    # Salva no session_state para não precisar recarregar
+    st.session_state['dados_calculados'] = dados_calculados
+    st.session_state['df_sinistros']     = df_sinistros
+    st.session_state['data_upload']      = datetime.now().strftime('%d/%m/%Y %H:%M')
 
 # Cria uma cópia para exibição e cálculos de porcentagem/formatação
 # Converte para object antes de formatar para evitar TypeError no pandas 2.x+
@@ -250,12 +273,6 @@ dados_exibicao = dados_exibicao[colunas]
 # Ordenando por numero da apólice inicialmente
 dados_exibicao = dados_exibicao.sort_values('N° Apólice')
 
-
-# Dados do sinistro
-df_sinistros = carregar_e_processar_dados_sinistro(upload_sinistro)
-# Verifica se os dados foram carregados com sucesso
-if df_sinistros.empty:
-    st.stop()  # Para a execução se não houver dados
 
 # copia do DF da base de sinistro para utilizar
 df_sinistro_utilizar = df_sinistros.copy()
