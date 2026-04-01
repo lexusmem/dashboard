@@ -227,10 +227,11 @@ else:
     df_sinistros = carregar_e_processar_dados_sinistro(upload_sinistro)
     if df_sinistros.empty:
         st.stop()
-    # Salva no session_state para não precisar recarregar
+    # Salva no session_state e força rerun para esconder os uploaders imediatamente
     st.session_state['dados_calculados'] = dados_calculados
     st.session_state['df_sinistros']     = df_sinistros
     st.session_state['data_upload']      = datetime.now().strftime('%d/%m/%Y %H:%M')
+    st.rerun()
 
 # Cria uma cópia para exibição e cálculos de porcentagem/formatação
 # Converte para object antes de formatar para evitar TypeError no pandas 2.x+
