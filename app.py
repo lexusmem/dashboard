@@ -216,20 +216,21 @@ if dados_calculados.empty:
     st.stop()  # Para a execução se não houver dados
 
 # Cria uma cópia para exibição e cálculos de porcentagem/formatação
+# Converte para object antes de formatar para evitar TypeError no pandas 2.x+
 dados_exibicao = dados_calculados.copy()
+dados_exibicao['Soma Prêmio Pago por Apolice'] = dados_exibicao['Soma Prêmio Pago por Apolice'].astype(object)
+dados_exibicao['Soma Sinistro Por Apolice']     = dados_exibicao['Soma Sinistro Por Apolice'].astype(object)
 
 # Cria o percentual de sinistro, tratando divisão por zero
-dados_exibicao.loc[:, '% Sin'] = dados_exibicao.apply(
+dados_exibicao['% Sin'] = dados_exibicao.apply(
     lambda row: '{:.2%}'.format(
         row['Soma Sinistro Por Apolice'] / row['Soma Prêmio Pago por Apolice'])
     if row['Soma Prêmio Pago por Apolice'] != 0 else '0.00%', axis=1
 )
 
 # Formata as colunas para exibição
-dados_exibicao.loc[:, 'Soma Prêmio Pago por Apolice'] = dados_exibicao['Soma Prêmio Pago por Apolice'].map(
-    formatar_valor_br)
-dados_exibicao.loc[:, 'Soma Sinistro Por Apolice'] = dados_exibicao['Soma Sinistro Por Apolice'].map(
-    formatar_valor_br)
+dados_exibicao['Soma Prêmio Pago por Apolice'] = dados_exibicao['Soma Prêmio Pago por Apolice'].map(formatar_valor_br)
+dados_exibicao['Soma Sinistro Por Apolice']     = dados_exibicao['Soma Sinistro Por Apolice'].map(formatar_valor_br)
 
 # Reordenar as colunas para que 'Soma Sinistro Por Apolice' e '% Sin' fiquem nas posições desejadas
 colunas = list(dados_exibicao.columns)
