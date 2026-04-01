@@ -54,15 +54,9 @@ if not dados_ja_carregados:
         st.info("👈 Faça o upload dos dois arquivos TXT na barra lateral para iniciar o dashboard.")
         st.stop()
 else:
-    # Dados já carregados — recupera do session_state e exibe botão para trocar arquivos
+    # Dados já carregados — sidebar limpa, sem nenhuma referência aos arquivos
     upload_apolice  = None
     upload_sinistro = None
-    st.sidebar.success(f"✅ Dados carregados em {st.session_state['data_upload']}")
-    if st.sidebar.button("🔄 Carregar novos arquivos"):
-        del st.session_state['dados_calculados']
-        del st.session_state['df_sinistros']
-        del st.session_state['data_upload']
-        st.rerun()
 
 # Função para processar os dados de sinistro.
 # DF com dados de Sinistros por apólice:
