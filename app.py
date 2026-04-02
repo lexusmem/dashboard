@@ -63,8 +63,14 @@ else:
 @st.cache_data
 def carregar_e_processar_dados_sinistro(arquivo):
     try:
-        # Aceita tanto objeto de upload (Streamlit) quanto caminho local (string)
-        fonte = io.BytesIO(arquivo.read()) if hasattr(arquivo, 'read') else arquivo
+        # Aceita BytesIO já preparado, objeto de upload ou caminho local (string)
+        if isinstance(arquivo, io.BytesIO):
+            arquivo.seek(0)   # garante que está no início
+            fonte = arquivo
+        elif hasattr(arquivo, 'read'):
+            fonte = io.BytesIO(arquivo.read())
+        else:
+            fonte = arquivo
         aba_sinistro = pd.read_csv(
             fonte,
             sep=';',
@@ -109,8 +115,14 @@ def carregar_e_processar_dados(arquivo_apolice, arquivo_sinistro):
     a cada interação do usuário, tornando a aplicação mais rápida.
     """
     try:
-        # Aceita tanto objeto de upload (Streamlit) quanto caminho local (string)
-        fonte_apolice = io.BytesIO(arquivo_apolice.read()) if hasattr(arquivo_apolice, 'read') else arquivo_apolice
+        # Aceita BytesIO já preparado, objeto de upload ou caminho local (string)
+        if isinstance(arquivo_apolice, io.BytesIO):
+            arquivo_apolice.seek(0)
+            fonte_apolice = arquivo_apolice
+        elif hasattr(arquivo_apolice, 'read'):
+            fonte_apolice = io.BytesIO(arquivo_apolice.read())
+        else:
+            fonte_apolice = arquivo_apolice
         # Carrega o arquivo apolice_endosso.txt
         aba_apolice_endosso = pd.read_csv(
             fonte_apolice,
@@ -221,10 +233,17 @@ if dados_ja_carregados:
     dados_calculados = st.session_state['dados_calculados']
     df_sinistros     = st.session_state['df_sinistros']
 else:
-    dados_calculados = carregar_e_processar_dados(upload_apolice, upload_sinistro)
+    # Lê os bytes uma única vez para evitar problema de ponteiro consumido
+    bytes_apolice  = upload_apolice.read()  if hasattr(upload_apolice,  'read') else None
+    bytes_sinistro = upload_sinistro.read() if hasattr(upload_sinistro, 'read') else None
+
+    fonte_apolice  = io.BytesIO(bytes_apolice)  if bytes_apolice  is not None else upload_apolice
+    fonte_sinistro = io.BytesIO(bytes_sinistro) if bytes_sinistro is not None else upload_sinistro
+
+    dados_calculados = carregar_e_processar_dados(fonte_apolice, io.BytesIO(bytes_sinistro) if bytes_sinistro is not None else upload_sinistro)
     if dados_calculados.empty:
         st.stop()
-    df_sinistros = carregar_e_processar_dados_sinistro(upload_sinistro)
+    df_sinistros = carregar_e_processar_dados_sinistro(fonte_sinistro)
     if df_sinistros.empty:
         st.stop()
     # Salva no session_state e força rerun para esconder os uploaders imediatamente
@@ -384,7 +403,11 @@ else:
     })
     df_sinistro_apolice_cobertura['Total Sinistro'] = (df_sinistro_apolice_cobertura['Total Sinistro'].map(formatar_valor_br))
 
-col_apl_1, col_apl_2, col_apl_3, col_apl_4 = st.columns(4)
+# Tipo de Emissão da apólice selecionada
+tipo_emissao_apolice = list(dados_filtrados_filtro_apolice['Tipo de Apólice'].unique())
+tipo_emissao_valor = str(tipo_emissao_apolice[0]).title() if tipo_emissao_apolice else "—"
+
+col_apl_1, col_apl_2, col_apl_3, col_apl_4, col_apl_5 = st.columns(5)
 
 with col_apl_1:
     st.metric(label="Total Prêmio Pago",
@@ -396,7 +419,9 @@ with col_apl_3:
     st.metric(label="% Sinistro Total",
               value=f"{percentual_sinistro_total_filtro_apolice:.2%}")
 with col_apl_4:
-    st.metric(label='Qtd Sinistro',value=qtd_sinistros_apólice)
+    st.metric(label='Qtd Sinistro', value=qtd_sinistros_apólice)
+with col_apl_5:
+    st.metric(label='Tipo de Emissão', value=tipo_emissao_valor)
 
 
 # st.subheader('Segurado: ')
@@ -1039,6 +1064,40 @@ with df_sinistro_segurado_2:
     st.text("Dados de Sinistro")
     st.dataframe(df_sinistro_segurado, hide_index=True)
 
+# --- Desempenho por Tipo de Emissão — Segurado ---
+st.text("Desempenho por Tipo de Emissão - Segurado")
+
+# Usa df_segurado_calculo (ainda numérico — a formatação ocorreu em df_segurado_exibicao)
+# Precisamos de uma cópia numérica antes das formatações de display
+df_seg_tp_emissao = dados_calculados[dados_calculados['Segurado'] == segurado[0]].copy()
+
+# Agrupamento por Tipo de Apólice
+df_tp_emissao_seg = df_seg_tp_emissao.groupby('Tipo de Apólice').agg(
+    Qtd_Apolices=('N° Apólice', 'nunique'),
+    Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
+    Total_Sinistro=('Soma Sinistro Por Apolice', 'sum')
+).reset_index()
+
+# Cruzamento com sinistros para obter Qtd_Sinistros
+df_sin_seg_tp = df_sinistros[df_sinistros['nm_cliente'] == segurado[0]].copy()
+qtd_sin_tp_seg = df_seg_tp_emissao.merge(
+    df_sin_seg_tp[['N° Apólice', 'nr_sinistro']],
+    on='N° Apólice', how='left'
+).groupby('Tipo de Apólice')['nr_sinistro'].nunique().reset_index()
+qtd_sin_tp_seg.rename(columns={'nr_sinistro': 'Qtd_Sinistros'}, inplace=True)
+
+df_tp_emissao_seg = pd.merge(df_tp_emissao_seg, qtd_sin_tp_seg, on='Tipo de Apólice', how='left').fillna(0)
+df_tp_emissao_seg['Qtd_Sinistros'] = df_tp_emissao_seg['Qtd_Sinistros'].astype(int)
+df_tp_emissao_seg['% Sinistralidade'] = df_tp_emissao_seg.apply(
+    lambda row: '{:.2%}'.format(row['Total_Sinistro'] / row['Total_Premio'])
+    if row['Total_Premio'] != 0 else '0.00%', axis=1
+)
+df_tp_emissao_seg['Total_Premio']   = df_tp_emissao_seg['Total_Premio'].map(formatar_valor_br)
+df_tp_emissao_seg['Total_Sinistro'] = df_tp_emissao_seg['Total_Sinistro'].map(formatar_valor_br)
+df_tp_emissao_seg = df_tp_emissao_seg[['Tipo de Apólice', 'Qtd_Apolices', 'Qtd_Sinistros', 'Total_Premio', 'Total_Sinistro', '% Sinistralidade']]
+
+st.dataframe(df_tp_emissao_seg, hide_index=True, use_container_width=True)
+
 #
 #
 #
@@ -1065,11 +1124,13 @@ with df_sinistro_segurado_2:
 # --- Lógica de Filtragem Hierárquica na Sidebar ---
 st.sidebar.header('Filtros Dados Gerais')
 
-# Botão para Resetar Filtros
+# Botão para Resetar Filtros — limpa todas as keys do session_state
+_filtro_keys = ['filtro_rep', 'filtro_cor', 'filtro_seg', 'filtro_ramo', 'filtro_util', 'filtro_tp_emissao', 'filtro_apolice']
+
 if st.sidebar.button('Limpar Todos os Filtros'):
-    filtro_rep = []
-    if 'filtro_rep' in st.session_state:
-        st.session_state.filtro_rep = []
+    for k in _filtro_keys:
+        if k in st.session_state:
+            st.session_state[k] = []
     st.rerun()
 
 # 1. Filtro por Representante
@@ -1082,7 +1143,7 @@ if representantes_selecionados:
 
 # 2. Filtro por Corretor
 corretores_unicos = sorted(dados_filtrados_rep['Corretor'].astype(str).unique())
-corretores_selecionados = st.sidebar.multiselect('Corretor(es)', options=corretores_unicos, default=[])
+corretores_selecionados = st.sidebar.multiselect('Corretor(es)', options=corretores_unicos, default=[], key='filtro_cor')
 
 dados_filtrados_corr = dados_filtrados_rep.copy()
 if corretores_selecionados:
@@ -1090,7 +1151,7 @@ if corretores_selecionados:
 
 # 3. Filtro por Segurado
 segurados_unicos = sorted(dados_filtrados_corr['Segurado'].astype(str).unique())
-segurados_selecionados = st.sidebar.multiselect('Segurado(s)', options=segurados_unicos, default=[])
+segurados_selecionados = st.sidebar.multiselect('Segurado(s)', options=segurados_unicos, default=[], key='filtro_seg')
 
 dados_filtrados_segurado = dados_filtrados_corr.copy()
 if segurados_selecionados:
@@ -1098,7 +1159,7 @@ if segurados_selecionados:
 
 # 4. Filtro por Ramo
 ramos_unicos = sorted(dados_filtrados_segurado['Ramo'].unique())
-ramos_selecionados = st.sidebar.multiselect('Ramo(s)', options=ramos_unicos, default=[])
+ramos_selecionados = st.sidebar.multiselect('Ramo(s)', options=ramos_unicos, default=[], key='filtro_ramo')
 
 dados_filtrados_ramo = dados_filtrados_segurado.copy()
 if ramos_selecionados:
@@ -1106,17 +1167,25 @@ if ramos_selecionados:
 
 # 5. Filtro por Utilização
 utilizacoes_unicas = sorted(dados_filtrados_ramo['Utilização'].astype(str).unique())
-utilizacoes_selecionadas = st.sidebar.multiselect('Utilização(ões)', options=utilizacoes_unicas, default=[])
+utilizacoes_selecionadas = st.sidebar.multiselect('Utilização(ões)', options=utilizacoes_unicas, default=[], key='filtro_util')
 
 dados_filtrados_util = dados_filtrados_ramo.copy()
 if utilizacoes_selecionadas:
     dados_filtrados_util = dados_filtrados_util[dados_filtrados_util['Utilização'].astype(str).isin(utilizacoes_selecionadas)]
 
-# 6. Filtro por Apólice (Agora filtrado por todos os anteriores)
-apolices_unicas = sorted(dados_filtrados_util['N° Apólice'].unique())
-apolices_selecionadas = st.sidebar.multiselect('Apólice(s)', options=apolices_unicas, default=[])
+# 6. Filtro por Tipo de Emissão
+tipos_emissao_unicos = sorted(dados_filtrados_util['Tipo de Apólice'].astype(str).unique())
+tipos_emissao_selecionados = st.sidebar.multiselect('Tipo de Emissão', options=tipos_emissao_unicos, default=[], key='filtro_tp_emissao')
 
-resultado_final_filtrado = dados_filtrados_util.copy()
+dados_filtrados_tp_emissao = dados_filtrados_util.copy()
+if tipos_emissao_selecionados:
+    dados_filtrados_tp_emissao = dados_filtrados_tp_emissao[dados_filtrados_tp_emissao['Tipo de Apólice'].astype(str).isin(tipos_emissao_selecionados)]
+
+# 7. Filtro por Apólice (Agora filtrado por todos os anteriores)
+apolices_unicas = sorted(dados_filtrados_tp_emissao['N° Apólice'].unique())
+apolices_selecionadas = st.sidebar.multiselect('Apólice(s)', options=apolices_unicas, default=[], key='filtro_apolice')
+
+resultado_final_filtrado = dados_filtrados_tp_emissao.copy()
 if apolices_selecionadas:
     resultado_final_filtrado = resultado_final_filtrado[resultado_final_filtrado['N° Apólice'].isin(apolices_selecionadas)]
 
@@ -1407,6 +1476,44 @@ with col_final_2:
         st.dataframe(df_geral_periodo, hide_index=True)
     else:
         st.info("Nenhum dado encontrado com os filtros selecionados.")
+
+# --- Dados de Prêmio e Sinistro por Tipo de Emissão (Dados Gerais) ---
+st.subheader("Prêmio e Sinistro por Tipo de Emissão")
+
+if not df_geral_periodo.empty:
+    df_tp_em = df_geral_periodo.copy()
+    df_tp_em['Soma Prêmio Pago por Apolice'] = df_tp_em['Soma Prêmio Pago por Apolice'].str.replace('.', '').str.replace(',', '.').astype(float)
+    df_tp_em['Soma Sinistro Por Apolice']    = df_tp_em['Soma Sinistro Por Apolice'].str.replace('.', '').str.replace(',', '.').astype(float)
+
+    groupby_tp_emissao = df_tp_em.groupby('Tipo de Apólice').agg(
+        Qtd_Apolices=('N° Apólice', 'nunique'),
+        Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
+        Total_Sinistro=('Soma Sinistro Por Apolice', 'sum')
+    ).reset_index()
+
+    # Cruzamento com sinistros para Qtd_Sinistros
+    df_sin_tp_contagem = df_sinistro_periodo_atualizado.merge(
+        df_tp_em[['N° Apólice', 'Tipo de Apólice']],
+        on='N° Apólice', how='left'
+    )
+    qtd_sin_tp = df_sin_tp_contagem.groupby('Tipo de Apólice')['nr_sinistro'].nunique().reset_index()
+    qtd_sin_tp.rename(columns={'nr_sinistro': 'Qtd_Sinistros'}, inplace=True)
+
+    groupby_tp_emissao = pd.merge(groupby_tp_emissao, qtd_sin_tp, on='Tipo de Apólice', how='left').fillna(0)
+    groupby_tp_emissao['Qtd_Sinistros'] = groupby_tp_emissao['Qtd_Sinistros'].astype(int)
+    groupby_tp_emissao['% Sinistralidade'] = groupby_tp_emissao.apply(
+        lambda row: '{:.2%}'.format(row['Total_Sinistro'] / row['Total_Premio'])
+        if row['Total_Premio'] != 0 else '0.00%', axis=1
+    )
+    groupby_tp_emissao['Total_Premio']   = groupby_tp_emissao['Total_Premio'].map(formatar_valor_br)
+    groupby_tp_emissao['Total_Sinistro'] = groupby_tp_emissao['Total_Sinistro'].map(formatar_valor_br)
+    groupby_tp_emissao = groupby_tp_emissao[
+        ['Tipo de Apólice', 'Qtd_Apolices', 'Qtd_Sinistros', 'Total_Premio', 'Total_Sinistro', '% Sinistralidade']
+    ].sort_values(by='Qtd_Apolices', ascending=False)
+
+    st.dataframe(groupby_tp_emissao, hide_index=True, use_container_width=True)
+else:
+    st.info("Nenhum dado disponível para agrupar por Tipo de Emissão.")
 
 # --- Dados de Prêmio e Sinistro por Utilização ---
 col_pr_sin_util_1, col_pr_sin_util_2 = st.columns(2)
