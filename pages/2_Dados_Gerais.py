@@ -59,7 +59,8 @@ dados_exibicao = dados_exibicao[colunas].sort_values('N° Apólice')
 
 # Link de volta para a página principal na sidebar
 st.sidebar.markdown("---")
-st.sidebar.page_link("app_homologacao.py", label="📋 Apólice / Segurado", icon="📋")
+if st.sidebar.button("📋  Ir para Apólice / Segurado", use_container_width=True):
+    st.switch_page("app_homologacao.py")
 st.sidebar.markdown("---")
 
 # --- Lógica de Filtragem Hierárquica na Sidebar ---
