@@ -1125,12 +1125,13 @@ st.dataframe(df_tp_emissao_seg, hide_index=True, use_container_width=True)
 st.sidebar.header('Filtros Dados Gerais')
 
 # Botão para Resetar Filtros — limpa todas as keys do session_state
-_filtro_keys = ['filtro_rep', 'filtro_cor', 'filtro_seg', 'filtro_ramo', 'filtro_util', 'filtro_tp_emissao', 'filtro_apolice']
+_filtro_keys = ['filtro_rep', 'filtro_cor', 'filtro_seg', 'filtro_ramo', 'filtro_util', 'filtro_tp_emissao', 'filtro_regiao', 'filtro_uf', 'filtro_apolice']
 
 if st.sidebar.button('Limpar Todos os Filtros'):
     for k in _filtro_keys:
         if k in st.session_state:
             st.session_state[k] = []
+    st.session_state['resetar_slider'] = True
     st.rerun()
 
 # 1. Filtro por Representante
@@ -1181,11 +1182,28 @@ dados_filtrados_tp_emissao = dados_filtrados_util.copy()
 if tipos_emissao_selecionados:
     dados_filtrados_tp_emissao = dados_filtrados_tp_emissao[dados_filtrados_tp_emissao['Tipo de Apólice'].astype(str).isin(tipos_emissao_selecionados)]
 
-# 7. Filtro por Apólice (Agora filtrado por todos os anteriores)
-apolices_unicas = sorted(dados_filtrados_tp_emissao['N° Apólice'].unique())
+# 7. Filtro por Região de Circulação
+regioes_unicas = sorted(dados_filtrados_tp_emissao['Região de Circulação'].astype(str).unique())
+regioes_selecionadas = st.sidebar.multiselect('Região de Circulação', options=regioes_unicas, default=[], key='filtro_regiao')
+
+dados_filtrados_regiao = dados_filtrados_tp_emissao.copy()
+if regioes_selecionadas:
+    dados_filtrados_regiao = dados_filtrados_regiao[dados_filtrados_regiao['Região de Circulação'].astype(str).isin(regioes_selecionadas)]
+
+# 8. Filtro por UF (extraída dos 2 primeiros caracteres da Região de Circulação)
+dados_filtrados_regiao['_UF'] = dados_filtrados_regiao['Região de Circulação'].astype(str).str[:2].str.strip()
+ufs_unicas = sorted(dados_filtrados_regiao['_UF'].unique())
+ufs_selecionadas = st.sidebar.multiselect('UF', options=ufs_unicas, default=[], key='filtro_uf')
+
+dados_filtrados_uf = dados_filtrados_regiao.copy()
+if ufs_selecionadas:
+    dados_filtrados_uf = dados_filtrados_uf[dados_filtrados_uf['_UF'].isin(ufs_selecionadas)]
+
+# 9. Filtro por Apólice (filtrado por todos os anteriores)
+apolices_unicas = sorted(dados_filtrados_uf['N° Apólice'].unique())
 apolices_selecionadas = st.sidebar.multiselect('Apólice(s)', options=apolices_unicas, default=[], key='filtro_apolice')
 
-resultado_final_filtrado = dados_filtrados_tp_emissao.copy()
+resultado_final_filtrado = dados_filtrados_uf.copy()
 if apolices_selecionadas:
     resultado_final_filtrado = resultado_final_filtrado[resultado_final_filtrado['N° Apólice'].isin(apolices_selecionadas)]
 
@@ -1229,13 +1247,19 @@ with col_esq:
     if ano_min_absoluto < ano_max_absoluto:
         # Título customizado com espaçamento para não colar no slider
         st.text("Selecione o Intervalo de Anos (Início de Vigência Apólice)")
+        # Flag: se botão limpar foi clicado, força visualmente o valor padrão
+        if st.session_state.get('resetar_slider', False):
+            st.session_state['slider_anos'] = (ano_min_absoluto, ano_max_absoluto)
+            st.session_state['resetar_slider'] = False
+
         anos_selecionados = st.slider(
             label='Seletor de Anos Vigência',
             label_visibility="collapsed",
             min_value=ano_min_absoluto,
             max_value=ano_max_absoluto,
-            value=(ano_min_absoluto, ano_max_absoluto), 
-            step=1
+            value=(ano_min_absoluto, ano_max_absoluto),
+            step=1,
+            key='slider_anos'
         )
     else:
         # Se só houver um ano, o intervalo é fixo nesse ano
@@ -1880,6 +1904,156 @@ def gerar_ranking_piores_avancado(df_base, coluna_agrupadora, limite_sinistralid
     
     return ranking_final[[coluna_agrupadora, 'Qtd_Apolices', 'Qtd_Sinistros', 'Total_Premio', 'Total_Sinistro', '% Sinistralidade', 'Score']]
 
+
+# ============= ANÁLISE POR REGIÃO DE CIRCULAÇÃO =============
+st.write("---")
+st.subheader("Prêmio e Sinistro por Região de Circulação")
+
+if not df_geral_periodo.empty:
+    # 1. Prepara os dados numéricos
+    df_regiao = df_geral_periodo.copy()
+    df_regiao['Soma Prêmio Pago por Apolice'] = df_regiao['Soma Prêmio Pago por Apolice'].str.replace('.', '').str.replace(',', '.').astype(float)
+    df_regiao['Soma Sinistro Por Apolice']    = df_regiao['Soma Sinistro Por Apolice'].str.replace('.', '').str.replace(',', '.').astype(float)
+
+    # 2. Agrupamento por Região de Circulação
+    groupby_regiao = df_regiao.groupby('Região de Circulação').agg(
+        Qtd_Apolices=('N° Apólice', 'nunique'),
+        Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
+        Total_Sinistro=('Soma Sinistro Por Apolice', 'sum')
+    ).reset_index()
+
+    # 3. Cruzamento com sinistros para Qtd_Sinistros
+    df_sin_regiao_contagem = df_sinistro_periodo_atualizado.merge(
+        df_regiao[['N° Apólice', 'Região de Circulação']],
+        on='N° Apólice', how='left'
+    )
+    qtd_sin_regiao = df_sin_regiao_contagem.groupby('Região de Circulação')['nr_sinistro'].nunique().reset_index()
+    qtd_sin_regiao.rename(columns={'nr_sinistro': 'Qtd_Sinistros'}, inplace=True)
+
+    # 4. Merge e cálculos
+    groupby_regiao = pd.merge(groupby_regiao, qtd_sin_regiao, on='Região de Circulação', how='left').fillna(0)
+    groupby_regiao['Qtd_Sinistros']      = groupby_regiao['Qtd_Sinistros'].astype(int)
+    groupby_regiao['Sinistralidade_Num'] = groupby_regiao.apply(
+        lambda row: row['Total_Sinistro'] / row['Total_Premio'] if row['Total_Premio'] != 0 else 0, axis=1
+    )
+
+    # 5. DF de exibição formatado — ordenado por maior sinistralidade
+    df_regiao_view = groupby_regiao.sort_values('Sinistralidade_Num', ascending=False).copy()
+    df_regiao_view['% Sinistralidade'] = df_regiao_view['Sinistralidade_Num'].map(lambda x: f"{x:.2%}")
+    df_regiao_view['Total_Premio']     = df_regiao_view['Total_Premio'].map(formatar_valor_br)
+    df_regiao_view['Total_Sinistro']   = df_regiao_view['Total_Sinistro'].map(formatar_valor_br)
+    df_regiao_view = df_regiao_view[
+        ['Região de Circulação', 'Qtd_Apolices', 'Qtd_Sinistros', 'Total_Premio', 'Total_Sinistro', '% Sinistralidade']
+    ]
+
+    # ── BLOCO 1: DF regiões (esq) + Gráfico Top 10 piores (dir) ──────────────
+    col_reg_df, col_reg_graf = st.columns(2)
+
+    with col_reg_df:
+        st.dataframe(df_regiao_view, hide_index=True, use_container_width=True)
+
+    with col_reg_graf:
+        # Top 10 piores regiões — barras horizontais escala Reds
+        df_top10 = groupby_regiao[groupby_regiao['Sinistralidade_Num'] > 0].copy()
+        df_top10 = df_top10.sort_values('Sinistralidade_Num', ascending=False).head(10)
+        df_top10['% Sin Label'] = df_top10['Sinistralidade_Num'].map(lambda x: f"{x:.2%}")
+        df_top10 = df_top10.sort_values('Sinistralidade_Num', ascending=True)
+
+        if not df_top10.empty:
+            fig_top10 = px.bar(
+                df_top10,
+                x='Sinistralidade_Num',
+                y='Região de Circulação',
+                orientation='h',
+                text='% Sin Label',
+                labels={'Sinistralidade_Num': 'Sinistralidade (%)'},
+                color='Sinistralidade_Num',
+                color_continuous_scale='Reds',
+            )
+            fig_top10.update_traces(
+                textposition='outside',
+                hovertemplate="Região: %{y}<br>Sinistralidade: %{text}"
+            )
+            fig_top10.update_layout(
+                title="Top 10 Piores Regiões — Sinistralidade (%)",
+                xaxis_title="Sinistralidade (%)",
+                yaxis_title="",
+                coloraxis_showscale=False,
+                margin=dict(l=0, r=80, t=40, b=0),
+                height=420,
+            )
+            st.plotly_chart(fig_top10, use_container_width=True, config={'displayModeBar': False})
+        else:
+            st.info("Sem regiões com sinistro no período selecionado.")
+
+    # ── BLOCO 2: DF por UF (esq) + Mapa de calor (dir) ───────────────────────
+    st.write("---")
+    st.subheader("Sinistralidade por UF — Mapa de Calor")
+
+    groupby_regiao['UF'] = groupby_regiao['Região de Circulação'].str[:2].str.strip()
+    df_uf = groupby_regiao.groupby('UF').agg(
+        Total_Premio=('Total_Premio', 'sum'),
+        Total_Sinistro=('Total_Sinistro', 'sum'),
+        Qtd_Apolices=('Qtd_Apolices', 'sum'),
+        Qtd_Sinistros=('Qtd_Sinistros', 'sum')
+    ).reset_index()
+    df_uf['Sinistralidade_UF'] = df_uf.apply(
+        lambda row: row['Total_Sinistro'] / row['Total_Premio'] if row['Total_Premio'] != 0 else 0, axis=1
+    )
+
+    col_uf_df, col_uf_mapa = st.columns(2)
+
+    with col_uf_df:
+        df_uf_view = df_uf.sort_values('Sinistralidade_UF', ascending=False).copy()
+        df_uf_view['% Sinistralidade'] = df_uf_view['Sinistralidade_UF'].map(lambda x: f"{x:.2%}")
+        df_uf_view['Total_Premio']     = df_uf_view['Total_Premio'].map(formatar_valor_br)
+        df_uf_view['Total_Sinistro']   = df_uf_view['Total_Sinistro'].map(formatar_valor_br)
+        df_uf_view = df_uf_view[
+            ['UF', 'Qtd_Apolices', 'Qtd_Sinistros', 'Total_Premio', 'Total_Sinistro', '% Sinistralidade']
+        ]
+        st.dataframe(df_uf_view, hide_index=True, use_container_width=True)
+
+    with col_uf_mapa:
+        df_uf_mapa = df_uf.copy()
+        df_uf_mapa['Sin_Pct']      = df_uf_mapa['Sinistralidade_UF'].map(lambda x: f"{x:.2%}")
+        df_uf_mapa['Premio_fmt']   = df_uf_mapa['Total_Premio'].apply(formatar_valor_br)
+        df_uf_mapa['Sinistro_fmt'] = df_uf_mapa['Total_Sinistro'].apply(formatar_valor_br)
+
+        fig_mapa = px.choropleth(
+            df_uf_mapa,
+            geojson="https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson",
+            locations='UF',
+            featureidkey='properties.sigla',
+            color='Sinistralidade_UF',
+            color_continuous_scale='Reds',
+            hover_name='UF',
+            hover_data={
+                'Sinistralidade_UF': False,
+                'Sin_Pct': True,
+                'Premio_fmt': True,
+                'Sinistro_fmt': True,
+                'Qtd_Apolices': True,
+            },
+            labels={
+                'Sin_Pct': 'Sinistralidade',
+                'Premio_fmt': 'Prêmio',
+                'Sinistro_fmt': 'Sinistro',
+                'Qtd_Apolices': 'Qtd Apólices',
+            },
+        )
+        fig_mapa.update_geos(fitbounds="locations", visible=False)
+        fig_mapa.update_layout(
+            margin=dict(l=0, r=0, t=10, b=0),
+            height=420,
+            coloraxis_colorbar=dict(
+                title="Sinistralidade",
+                tickformat=".0%",
+                len=0.75
+            )
+        )
+        st.plotly_chart(fig_mapa, use_container_width=True, config={'displayModeBar': False})
+else:
+    st.info("Nenhum dado disponível para agrupar por Região de Circulação.")
 
 # --- SEÇÃO DE RANKING DE CRITICIDADE 🚩---
 st.write("---")
