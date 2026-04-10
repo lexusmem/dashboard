@@ -347,6 +347,12 @@ if img_base64:
 
 
 # ── PÁGINA 1: APÓLICE / SEGURADO ────────────────────────────────────────────
+
+# Link para a página de Dados Gerais na sidebar
+st.sidebar.markdown("---")
+st.sidebar.page_link("pages/2_Dados_Gerais.py", label="📊 Dados Gerais", icon="📊")
+st.sidebar.markdown("---")
+
 # --- Filtragem dados da Apólice ---
 st.sidebar.header('Filtro Apólice')
 
