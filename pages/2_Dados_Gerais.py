@@ -56,6 +56,12 @@ colunas.insert(3, '% Sin')
 dados_exibicao = dados_exibicao[colunas].sort_values('N° Apólice')
 
 # ── PÁGINA 2: DADOS GERAIS ────────────────────────────────────────────────────
+
+# Link de volta para a página principal na sidebar
+st.sidebar.markdown("---")
+st.sidebar.page_link("app_homologacao.py", label="📋 Apólice / Segurado", icon="📋")
+st.sidebar.markdown("---")
+
 # --- Lógica de Filtragem Hierárquica na Sidebar ---
 st.sidebar.header('Filtros Dados Gerais')
 
