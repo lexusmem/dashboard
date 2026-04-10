@@ -350,7 +350,8 @@ if img_base64:
 
 # Link para a página de Dados Gerais na sidebar
 st.sidebar.markdown("---")
-st.sidebar.page_link("pages/2_Dados_Gerais.py", label="📊 Dados Gerais", icon="📊")
+if st.sidebar.button("📊  Ir para Dados Gerais", use_container_width=True):
+    st.switch_page("pages/2_Dados_Gerais.py")
 st.sidebar.markdown("---")
 
 # --- Filtragem dados da Apólice ---
