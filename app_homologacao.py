@@ -1131,7 +1131,6 @@ if st.sidebar.button('Limpar Todos os Filtros'):
     for k in _filtro_keys:
         if k in st.session_state:
             st.session_state[k] = []
-    # Deleta a key do slider para forçar retorno ao valor padrão (min/max)
     if 'slider_anos' in st.session_state:
         del st.session_state['slider_anos']
     st.rerun()
@@ -1192,7 +1191,7 @@ dados_filtrados_regiao = dados_filtrados_tp_emissao.copy()
 if regioes_selecionadas:
     dados_filtrados_regiao = dados_filtrados_regiao[dados_filtrados_regiao['Região de Circulação'].astype(str).isin(regioes_selecionadas)]
 
-# 8. Filtro por UF (extraída automaticamente dos 2 primeiros caracteres da Região)
+# 8. Filtro por UF (extraída dos 2 primeiros caracteres da Região de Circulação)
 dados_filtrados_regiao['_UF'] = dados_filtrados_regiao['Região de Circulação'].astype(str).str[:2].str.strip()
 ufs_unicas = sorted(dados_filtrados_regiao['_UF'].unique())
 ufs_selecionadas = st.sidebar.multiselect('UF', options=ufs_unicas, default=[], key='filtro_uf')
@@ -1201,7 +1200,7 @@ dados_filtrados_uf = dados_filtrados_regiao.copy()
 if ufs_selecionadas:
     dados_filtrados_uf = dados_filtrados_uf[dados_filtrados_uf['_UF'].isin(ufs_selecionadas)]
 
-# 9. Filtro por Apólice (Agora filtrado por todos os anteriores)
+# 9. Filtro por Apólice (filtrado por todos os anteriores)
 apolices_unicas = sorted(dados_filtrados_uf['N° Apólice'].unique())
 apolices_selecionadas = st.sidebar.multiselect('Apólice(s)', options=apolices_unicas, default=[], key='filtro_apolice')
 
@@ -1943,7 +1942,50 @@ if not df_geral_periodo.empty:
         ['Região de Circulação', 'Qtd_Apolices', 'Qtd_Sinistros', 'Total_Premio', 'Total_Sinistro', '% Sinistralidade']
     ]
 
-    # 6. Extrai UF (2 primeiros caracteres) e agrega por UF para o mapa
+    # ── BLOCO 1: DF regiões (esq) + Gráfico Top 10 piores (dir) ──────────────
+    col_reg_df, col_reg_graf = st.columns(2)
+
+    with col_reg_df:
+        st.dataframe(df_regiao_view, hide_index=True, use_container_width=True)
+
+    with col_reg_graf:
+        # Top 10 piores regiões — barras horizontais escala Reds
+        df_top10 = groupby_regiao[groupby_regiao['Sinistralidade_Num'] > 0].copy()
+        df_top10 = df_top10.sort_values('Sinistralidade_Num', ascending=False).head(10)
+        df_top10['% Sin Label'] = df_top10['Sinistralidade_Num'].map(lambda x: f"{x:.2%}")
+        df_top10 = df_top10.sort_values('Sinistralidade_Num', ascending=True)
+
+        if not df_top10.empty:
+            fig_top10 = px.bar(
+                df_top10,
+                x='Sinistralidade_Num',
+                y='Região de Circulação',
+                orientation='h',
+                text='% Sin Label',
+                labels={'Sinistralidade_Num': 'Sinistralidade (%)'},
+                color='Sinistralidade_Num',
+                color_continuous_scale='Reds',
+            )
+            fig_top10.update_traces(
+                textposition='outside',
+                hovertemplate="Região: %{y}<br>Sinistralidade: %{text}"
+            )
+            fig_top10.update_layout(
+                title="Top 10 Piores Regiões — Sinistralidade (%)",
+                xaxis_title="Sinistralidade (%)",
+                yaxis_title="",
+                coloraxis_showscale=False,
+                margin=dict(l=0, r=80, t=40, b=0),
+                height=420,
+            )
+            st.plotly_chart(fig_top10, use_container_width=True, config={'displayModeBar': False})
+        else:
+            st.info("Sem regiões com sinistro no período selecionado.")
+
+    # ── BLOCO 2: DF por UF (esq) + Mapa de calor (dir) ───────────────────────
+    st.write("---")
+    st.subheader("Sinistralidade por UF — Mapa de Calor")
+
     groupby_regiao['UF'] = groupby_regiao['Região de Circulação'].str[:2].str.strip()
     df_uf = groupby_regiao.groupby('UF').agg(
         Total_Premio=('Total_Premio', 'sum'),
@@ -1954,20 +1996,27 @@ if not df_geral_periodo.empty:
     df_uf['Sinistralidade_UF'] = df_uf.apply(
         lambda row: row['Total_Sinistro'] / row['Total_Premio'] if row['Total_Premio'] != 0 else 0, axis=1
     )
-    df_uf['Sin_Pct']     = df_uf['Sinistralidade_UF'].map(lambda x: f"{x:.2%}")
-    df_uf['Premio_fmt']  = df_uf['Total_Premio'].apply(formatar_valor_br)
-    df_uf['Sinistro_fmt']= df_uf['Total_Sinistro'].apply(formatar_valor_br)
 
-    # 7. Layout: df à esquerda, mapa à direita na mesma linha
-    col_reg_df, col_reg_graf = st.columns(2)
+    col_uf_df, col_uf_mapa = st.columns(2)
 
-    with col_reg_df:
-        st.dataframe(df_regiao_view, hide_index=True, use_container_width=True)
+    with col_uf_df:
+        df_uf_view = df_uf.sort_values('Sinistralidade_UF', ascending=False).copy()
+        df_uf_view['% Sinistralidade'] = df_uf_view['Sinistralidade_UF'].map(lambda x: f"{x:.2%}")
+        df_uf_view['Total_Premio']     = df_uf_view['Total_Premio'].map(formatar_valor_br)
+        df_uf_view['Total_Sinistro']   = df_uf_view['Total_Sinistro'].map(formatar_valor_br)
+        df_uf_view = df_uf_view[
+            ['UF', 'Qtd_Apolices', 'Qtd_Sinistros', 'Total_Premio', 'Total_Sinistro', '% Sinistralidade']
+        ]
+        st.dataframe(df_uf_view, hide_index=True, use_container_width=True)
 
-    with col_reg_graf:
-        # Mapa de calor do Brasil por UF — cor = sinistralidade
+    with col_uf_mapa:
+        df_uf_mapa = df_uf.copy()
+        df_uf_mapa['Sin_Pct']      = df_uf_mapa['Sinistralidade_UF'].map(lambda x: f"{x:.2%}")
+        df_uf_mapa['Premio_fmt']   = df_uf_mapa['Total_Premio'].apply(formatar_valor_br)
+        df_uf_mapa['Sinistro_fmt'] = df_uf_mapa['Total_Sinistro'].apply(formatar_valor_br)
+
         fig_mapa = px.choropleth(
-            df_uf,
+            df_uf_mapa,
             geojson="https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson",
             locations='UF',
             featureidkey='properties.sigla',
@@ -1988,12 +2037,9 @@ if not df_geral_periodo.empty:
                 'Qtd_Apolices': 'Qtd Apólices',
             },
         )
-        fig_mapa.update_geos(
-            fitbounds="locations",
-            visible=False
-        )
+        fig_mapa.update_geos(fitbounds="locations", visible=False)
         fig_mapa.update_layout(
-            margin=dict(l=0, r=0, t=30, b=0),
+            margin=dict(l=0, r=0, t=10, b=0),
             height=420,
             coloraxis_colorbar=dict(
                 title="Sinistralidade",
