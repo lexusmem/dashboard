@@ -345,13 +345,33 @@ if img_base64:
 #
 # '''
 
-# ── NAVEGAÇÃO POR ABAS ────────────────────────────────────────────────────────
+# ── NAVEGAÇÃO POR SEÇÃO ──────────────────────────────────────────────────────
+# CSS para aumentar fonte das abas
+st.markdown("""
+    <style>
+    .stTabs [data-baseweb="tab"] {
+        font-size: 18px;
+        font-weight: 600;
+        padding: 10px 24px;
+    }
+    </style>""", unsafe_allow_html=True)
+
 aba_apolice, aba_geral = st.tabs(["📋  Apólice / Segurado", "📊  Dados Gerais"])
 
+# Controle de qual seção está ativa via session_state
+# Detecta a aba ativa usando um hack de javascript via query_params não disponível,
+# por isso usamos radio na sidebar para controlar sidebar condicional
+_secao = st.sidebar.radio(
+    "Seção",
+    options=["📋 Apólice / Segurado", "📊 Dados Gerais"],
+    label_visibility="collapsed",
+    key="secao_ativa"
+)
+
 with aba_apolice:
-    # Sidebar — Filtro Apólice (visível em todas as abas, mas relevante aqui)
     # --- Filtragem dados da Apólice ---
-    st.sidebar.header('Filtro Apólice')
+    if _secao == "📋 Apólice / Segurado":
+        st.sidebar.header('Filtro Apólice')
     
     # Filtro por Apólice - Obtém as apólices únicas
     apolices_filtro_apolice = sorted(dados_exibicao['N° Apólice'].unique())
@@ -1129,7 +1149,8 @@ with aba_apolice:
 
 with aba_geral:
     # --- Lógica de Filtragem Hierárquica na Sidebar ---
-    st.sidebar.header('Filtros Dados Gerais')
+    if _secao == "📊 Dados Gerais":
+        st.sidebar.header('Filtros Dados Gerais')
     
     # Botão para Resetar Filtros — limpa todas as keys do session_state
     _filtro_keys = ['filtro_rep', 'filtro_cor', 'filtro_seg', 'filtro_ramo', 'filtro_util', 'filtro_tp_emissao', 'filtro_regiao', 'filtro_uf', 'filtro_apolice']
