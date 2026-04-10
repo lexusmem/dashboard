@@ -1904,11 +1904,6 @@ def gerar_ranking_piores_avancado(df_base, coluna_agrupadora, limite_sinistralid
     
     return ranking_final[[coluna_agrupadora, 'Qtd_Apolices', 'Qtd_Sinistros', 'Total_Premio', 'Total_Sinistro', '% Sinistralidade', 'Score']]
 
-
-# ============= ANÁLISE POR REGIÃO DE CIRCULAÇÃO =============
-st.write("---")
-st.subheader("Prêmio e Sinistro por Região de Circulação")
-
 if not df_geral_periodo.empty:
     # 1. Prepara os dados numéricos
     df_regiao = df_geral_periodo.copy()
@@ -1950,9 +1945,11 @@ if not df_geral_periodo.empty:
     col_reg_df, col_reg_graf = st.columns(2)
 
     with col_reg_df:
+        st.subheader("Prêmio e Sinistro por Região de Circulação")
         st.dataframe(df_regiao_view, hide_index=True, use_container_width=True)
 
     with col_reg_graf:
+        st.subheader("Top 10 Piores Regiões — Sinistralidade (%)")
         # Top 10 piores regiões — barras horizontais escala Reds
         df_top10 = groupby_regiao[groupby_regiao['Sinistralidade_Num'] > 0].copy()
         df_top10 = df_top10.sort_values('Sinistralidade_Num', ascending=False).head(10)
@@ -1975,7 +1972,7 @@ if not df_geral_periodo.empty:
                 hovertemplate="Região: %{y}<br>Sinistralidade: %{text}"
             )
             fig_top10.update_layout(
-                title="Top 10 Piores Regiões — Sinistralidade (%)",
+                # title="Top 10 Piores Regiões — Sinistralidade (%)",
                 xaxis_title="Sinistralidade (%)",
                 yaxis_title="",
                 coloraxis_showscale=False,
@@ -1987,9 +1984,6 @@ if not df_geral_periodo.empty:
             st.info("Sem regiões com sinistro no período selecionado.")
 
     # ── BLOCO 2: DF por UF (esq) + Mapa de calor (dir) ───────────────────────
-    st.write("---")
-    st.subheader("Sinistralidade por UF — Mapa de Calor")
-
     groupby_regiao['UF'] = groupby_regiao['Região de Circulação'].str[:2].str.strip()
     df_uf = groupby_regiao.groupby('UF').agg(
         Total_Premio=('Total_Premio', 'sum'),
@@ -2004,6 +1998,7 @@ if not df_geral_periodo.empty:
     col_uf_df, col_uf_mapa = st.columns(2)
 
     with col_uf_df:
+        st.subheader("Sinistralidade por UF — Mapa de Calor")
         df_uf_view = df_uf.sort_values('Sinistralidade_UF', ascending=False).copy()
         df_uf_view['% Sinistralidade'] = df_uf_view['Sinistralidade_UF'].map(lambda x: f"{x:.2%}")
         df_uf_view['Total_Premio']     = df_uf_view['Total_Premio'].map(formatar_valor_br)
@@ -2014,6 +2009,7 @@ if not df_geral_periodo.empty:
         st.dataframe(df_uf_view, hide_index=True, use_container_width=True)
 
     with col_uf_mapa:
+        st.subheader("Mapa de Calor")
         df_uf_mapa = df_uf.copy()
         df_uf_mapa['Sin_Pct']      = df_uf_mapa['Sinistralidade_UF'].map(lambda x: f"{x:.2%}")
         df_uf_mapa['Premio_fmt']   = df_uf_mapa['Total_Premio'].apply(formatar_valor_br)
@@ -2137,7 +2133,6 @@ def gerar_ranking_producao(df_base, coluna_agrupadora):
     
     return ranking
 
-st.write("---")
 st.subheader("🏆 Top 10 Produção (Emissões e Prêmios)")
 st.text("Este ranking destaca os parceiros com maior volume financeiro e quantidade de apólices emitidas.")
 # st.info("Este ranking destaca os parceiros com maior volume financeiro e quantidade de apólices emitidas.")
