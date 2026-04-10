@@ -1998,7 +1998,7 @@ if not df_geral_periodo.empty:
     col_uf_df, col_uf_mapa = st.columns(2)
 
     with col_uf_df:
-        st.subheader("Sinistralidade por UF — Mapa de Calor")
+        st.subheader("Sinistralidade por UF")
         df_uf_view = df_uf.sort_values('Sinistralidade_UF', ascending=False).copy()
         df_uf_view['% Sinistralidade'] = df_uf_view['Sinistralidade_UF'].map(lambda x: f"{x:.2%}")
         df_uf_view['Total_Premio']     = df_uf_view['Total_Premio'].map(formatar_valor_br)
