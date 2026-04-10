@@ -1523,124 +1523,6 @@ if not df_geral_periodo.empty:
 else:
     st.info("Nenhum dado disponível para agrupar por Tipo de Emissão.")
 
-# --- Dados de Prêmio e Sinistro por Região de Circulação ---
-st.write("---")
-st.subheader("Prêmio e Sinistro por Região de Circulação")
-
-if not df_geral_periodo.empty:
-    # 1. Prepara os dados numéricos
-    df_regiao = df_geral_periodo.copy()
-    df_regiao['Soma Prêmio Pago por Apolice'] = df_regiao['Soma Prêmio Pago por Apolice'].str.replace('.', '').str.replace(',', '.').astype(float)
-    df_regiao['Soma Sinistro Por Apolice']    = df_regiao['Soma Sinistro Por Apolice'].str.replace('.', '').str.replace(',', '.').astype(float)
-
-    # 2. Agrupamento por Região de Circulação
-    groupby_regiao = df_regiao.groupby('Região de Circulação').agg(
-        Qtd_Apolices=('N° Apólice', 'nunique'),
-        Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
-        Total_Sinistro=('Soma Sinistro Por Apolice', 'sum')
-    ).reset_index()
-
-    # 3. Cruzamento com sinistros para Qtd_Sinistros
-    df_sin_regiao_contagem = df_sinistro_periodo_atualizado.merge(
-        df_regiao[['N° Apólice', 'Região de Circulação']],
-        on='N° Apólice', how='left'
-    )
-    qtd_sin_regiao = df_sin_regiao_contagem.groupby('Região de Circulação')['nr_sinistro'].nunique().reset_index()
-    qtd_sin_regiao.rename(columns={'nr_sinistro': 'Qtd_Sinistros'}, inplace=True)
-
-    # 4. Merge e cálculos
-    groupby_regiao = pd.merge(groupby_regiao, qtd_sin_regiao, on='Região de Circulação', how='left').fillna(0)
-    groupby_regiao['Qtd_Sinistros'] = groupby_regiao['Qtd_Sinistros'].astype(int)
-
-    # Mantém coluna numérica de sinistralidade para o gráfico
-    groupby_regiao['Sinistralidade_Num'] = groupby_regiao.apply(
-        lambda row: row['Total_Sinistro'] / row['Total_Premio'] if row['Total_Premio'] != 0 else 0, axis=1
-    )
-
-    # 5. Copia para exibição e formata
-    df_regiao_view = groupby_regiao.copy()
-    df_regiao_view['% Sinistralidade'] = df_regiao_view['Sinistralidade_Num'].map(lambda x: f"{x:.2%}")
-    df_regiao_view['Total_Premio']   = df_regiao_view['Total_Premio'].map(formatar_valor_br)
-    df_regiao_view['Total_Sinistro'] = df_regiao_view['Total_Sinistro'].map(formatar_valor_br)
-    df_regiao_view = df_regiao_view[
-        ['Região de Circulação', 'Qtd_Apolices', 'Qtd_Sinistros', 'Total_Premio', 'Total_Sinistro', '% Sinistralidade']
-    ].sort_values(by='Qtd_Apolices', ascending=False)
-
-    # 6. Exibe tabela
-    st.dataframe(df_regiao_view, hide_index=True, use_container_width=True)
-
-    # 7. Gráficos lado a lado
-    col_reg_graf_1, col_reg_graf_2 = st.columns(2)
-
-    with col_reg_graf_1:
-        st.text("Prêmio x Sinistro por Região de Circulação")
-        # Ordena pelo maior prêmio para facilitar leitura
-        df_graf_reg = groupby_regiao.sort_values('Total_Premio', ascending=True)
-
-        fig_regiao_bar = go.Figure()
-        fig_regiao_bar.add_trace(go.Bar(
-            y=df_graf_reg['Região de Circulação'],
-            x=df_graf_reg['Total_Premio'],
-            name='Total Prêmio',
-            orientation='h',
-            marker_color='#36A2EB',
-            text=df_graf_reg['Total_Premio'].apply(formatar_valor_br),
-            textposition='auto'
-        ))
-        fig_regiao_bar.add_trace(go.Bar(
-            y=df_graf_reg['Região de Circulação'],
-            x=df_graf_reg['Total_Sinistro'],
-            name='Total Sinistro',
-            orientation='h',
-            marker_color='red',
-            text=df_graf_reg['Total_Sinistro'].apply(formatar_valor_br),
-            textposition='auto'
-        ))
-        fig_regiao_bar.update_layout(
-            barmode='group',
-            xaxis_title="Valores (R$)",
-            yaxis_title="",
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-            margin=dict(l=0, r=0, t=30, b=0),
-            height=max(300, len(df_graf_reg) * 55)
-        )
-        st.plotly_chart(fig_regiao_bar, use_container_width=True, config={'displayModeBar': False})
-
-    with col_reg_graf_2:
-        st.text("Sinistralidade (%) por Região de Circulação")
-        # Filtra regiões com sinistralidade > 0 e ordena crescente (maior fica no topo)
-        df_graf_sin_reg = groupby_regiao[groupby_regiao['Sinistralidade_Num'] > 0].copy()
-        df_graf_sin_reg['% Sinistralidade Label'] = df_graf_sin_reg['Sinistralidade_Num'].map(lambda x: f"{x:.2%}")
-        df_graf_sin_reg = df_graf_sin_reg.sort_values('Sinistralidade_Num', ascending=True)
-
-        if not df_graf_sin_reg.empty:
-            fig_regiao_sin = px.bar(
-                df_graf_sin_reg,
-                x='Sinistralidade_Num',
-                y='Região de Circulação',
-                orientation='h',
-                text='% Sinistralidade Label',
-                labels={'Sinistralidade_Num': 'Sinistralidade (%)'},
-                color='Sinistralidade_Num',
-                color_continuous_scale='Reds',
-            )
-            fig_regiao_sin.update_traces(
-                textposition='outside',
-                hovertemplate="Região: %{y}<br>Sinistralidade: %{text}"
-            )
-            fig_regiao_sin.update_layout(
-                xaxis_title="Sinistralidade (%)",
-                yaxis_title="",
-                coloraxis_showscale=False,
-                margin=dict(l=0, r=60, t=30, b=0),
-                height=max(300, len(df_graf_sin_reg) * 55)
-            )
-            st.plotly_chart(fig_regiao_sin, use_container_width=True, config={'displayModeBar': False})
-        else:
-            st.info("Sem sinistros registrados para as regiões no período selecionado.")
-else:
-    st.info("Nenhum dado disponível para agrupar por Região de Circulação.")
-
 # --- Dados de Prêmio e Sinistro por Utilização ---
 col_pr_sin_util_1, col_pr_sin_util_2 = st.columns(2)
 
@@ -2006,6 +1888,119 @@ def gerar_ranking_piores_avancado(df_base, coluna_agrupadora, limite_sinistralid
     
     return ranking_final[[coluna_agrupadora, 'Qtd_Apolices', 'Qtd_Sinistros', 'Total_Premio', 'Total_Sinistro', '% Sinistralidade', 'Score']]
 
+
+# ============= ANÁLISE POR REGIÃO DE CIRCULAÇÃO =============
+st.write("---")
+st.subheader("Prêmio e Sinistro por Região de Circulação")
+
+if not df_geral_periodo.empty:
+    # 1. Prepara os dados numéricos
+    df_regiao = df_geral_periodo.copy()
+    df_regiao['Soma Prêmio Pago por Apolice'] = df_regiao['Soma Prêmio Pago por Apolice'].str.replace('.', '').str.replace(',', '.').astype(float)
+    df_regiao['Soma Sinistro Por Apolice']    = df_regiao['Soma Sinistro Por Apolice'].str.replace('.', '').str.replace(',', '.').astype(float)
+
+    # 2. Agrupamento por Região de Circulação
+    groupby_regiao = df_regiao.groupby('Região de Circulação').agg(
+        Qtd_Apolices=('N° Apólice', 'nunique'),
+        Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
+        Total_Sinistro=('Soma Sinistro Por Apolice', 'sum')
+    ).reset_index()
+
+    # 3. Cruzamento com sinistros para Qtd_Sinistros
+    df_sin_regiao_contagem = df_sinistro_periodo_atualizado.merge(
+        df_regiao[['N° Apólice', 'Região de Circulação']],
+        on='N° Apólice', how='left'
+    )
+    qtd_sin_regiao = df_sin_regiao_contagem.groupby('Região de Circulação')['nr_sinistro'].nunique().reset_index()
+    qtd_sin_regiao.rename(columns={'nr_sinistro': 'Qtd_Sinistros'}, inplace=True)
+
+    # 4. Merge e cálculos — mantém colunas numéricas separadas para ordenação correta no df
+    groupby_regiao = pd.merge(groupby_regiao, qtd_sin_regiao, on='Região de Circulação', how='left').fillna(0)
+    groupby_regiao['Qtd_Sinistros']     = groupby_regiao['Qtd_Sinistros'].astype(int)
+    groupby_regiao['Sinistralidade_Num'] = groupby_regiao.apply(
+        lambda row: row['Total_Sinistro'] / row['Total_Premio'] if row['Total_Premio'] != 0 else 0, axis=1
+    )
+    # Ordena por maior sinistralidade
+    groupby_regiao = groupby_regiao.sort_values('Sinistralidade_Num', ascending=False)
+
+    # 5. Monta df de exibição com column_config para ordenação numérica funcionar no Streamlit
+    #    As colunas monetárias e % ficam como float — o column_config cuida da formatação visual
+    df_regiao_view = groupby_regiao[
+        ['Região de Circulação', 'Qtd_Apolices', 'Qtd_Sinistros', 'Total_Premio', 'Total_Sinistro', 'Sinistralidade_Num']
+    ].copy()
+
+    # 6. Layout: df à esquerda, gráfico à direita na mesma linha
+    col_reg_df, col_reg_graf = st.columns(2)
+
+    with col_reg_df:
+        st.dataframe(
+            df_regiao_view,
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                "Região de Circulação": st.column_config.TextColumn("Região de Circulação"),
+                "Qtd_Apolices":         st.column_config.NumberColumn("Qtd Apólices",   format="%d"),
+                "Qtd_Sinistros":        st.column_config.NumberColumn("Qtd Sinistros",  format="%d"),
+                "Total_Premio":         st.column_config.NumberColumn("Total Prêmio",   format="R$ %.2f"),
+                "Total_Sinistro":       st.column_config.NumberColumn("Total Sinistro", format="R$ %.2f"),
+                "Sinistralidade_Num":   st.column_config.NumberColumn("% Sinistralidade", format="%.2f%%"),
+            }
+        )
+
+    with col_reg_graf:
+        # Gráfico de bolhas: eixo X = Total Prêmio, eixo Y = Sinistralidade,
+        # tamanho da bolha = Qtd Apólices, cor = Sinistralidade (escala Reds)
+        # Ideal para carteira geográfica: mostra volume, risco e relevância em 1 gráfico
+        df_graf_bolha = groupby_regiao.copy()
+        df_graf_bolha['Sinistralidade_Pct'] = df_graf_bolha['Sinistralidade_Num'].map(lambda x: f"{x:.2%}")
+        df_graf_bolha['Premio_fmt']         = df_graf_bolha['Total_Premio'].apply(formatar_valor_br)
+
+        fig_bolha = px.scatter(
+            df_graf_bolha,
+            x='Total_Premio',
+            y='Sinistralidade_Num',
+            size='Qtd_Apolices',
+            color='Sinistralidade_Num',
+            color_continuous_scale='Reds',
+            hover_name='Região de Circulação',
+            hover_data={
+                'Total_Premio': False,
+                'Sinistralidade_Num': False,
+                'Qtd_Apolices': True,
+                'Premio_fmt': True,
+                'Sinistralidade_Pct': True,
+            },
+            labels={
+                'Total_Premio': 'Total Prêmio (R$)',
+                'Sinistralidade_Num': 'Sinistralidade (%)',
+                'Qtd_Apolices': 'Qtd Apólices',
+                'Premio_fmt': 'Prêmio',
+                'Sinistralidade_Pct': 'Sinistralidade',
+            },
+            text='Região de Circulação',
+            size_max=60,
+        )
+        fig_bolha.update_traces(
+            textposition='top center',
+            textfont=dict(size=10),
+            hovertemplate=(
+                "<b>%{hovertext}</b><br>"
+                "Prêmio: R$ %{customdata[1]}<br>"
+                "Sinistralidade: %{customdata[2]}<br>"
+                "Qtd Apólices: %{customdata[0]}<extra></extra>"
+            )
+        )
+        fig_bolha.update_layout(
+            xaxis_title="Total Prêmio (R$)",
+            yaxis_title="Sinistralidade (%)",
+            yaxis_tickformat=".0%",
+            coloraxis_showscale=False,
+            margin=dict(l=0, r=0, t=30, b=0),
+            height=420,
+        )
+        st.plotly_chart(fig_bolha, use_container_width=True, config={'displayModeBar': False})
+else:
+    st.info("Nenhum dado disponível para agrupar por Região de Circulação.")
 
 # --- SEÇÃO DE RANKING DE CRITICIDADE 🚩---
 st.write("---")
