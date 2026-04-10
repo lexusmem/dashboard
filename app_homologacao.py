@@ -1921,15 +1921,7 @@ if not df_geral_periodo.empty:
         lambda row: row['Total_Sinistro'] / row['Total_Premio'] if row['Total_Premio'] != 0 else 0, axis=1
     )
 
-    # 5. DF de exibição formatado como antes — ordenado por maior sinistralidade
-    df_regiao_view = groupby_regiao.copy()
-    df_regiao_view['% Sinistralidade'] = df_regiao_view['Sinistralidade_Num'].map(lambda x: f"{x:.2%}")
-    df_regiao_view['Total_Premio']     = df_regiao_view['Total_Premio'].map(formatar_valor_br)
-    df_regiao_view['Total_Sinistro']   = df_regiao_view['Total_Sinistro'].map(formatar_valor_br)
-    df_regiao_view = df_regiao_view[
-        ['Região de Circulação', 'Qtd_Apolices', 'Qtd_Sinistros', 'Total_Premio', 'Total_Sinistro', '% Sinistralidade']
-    ].sort_values(by='Sinistralidade_Num' if 'Sinistralidade_Num' in groupby_regiao.columns else 'Qtd_Apolices', ascending=False)
-    # Nota: usamos groupby_regiao (numérico) para ordenar, mas exibimos df_regiao_view (formatado)
+    # 5. DF de exibição formatado — ordenado por maior sinistralidade
     df_regiao_view = groupby_regiao.sort_values('Sinistralidade_Num', ascending=False).copy()
     df_regiao_view['% Sinistralidade'] = df_regiao_view['Sinistralidade_Num'].map(lambda x: f"{x:.2%}")
     df_regiao_view['Total_Premio']     = df_regiao_view['Total_Premio'].map(formatar_valor_br)
