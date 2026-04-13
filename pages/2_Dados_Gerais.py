@@ -1151,5 +1151,3 @@ st.caption("Desenvolvido por Alex Sousa.")
 # 2. Navegue até o diretório onde você salvou o arquivo.
 # 5. Execute o comando: `python -m streamlit nome_do_arquivo.py`
 # Se o Streamlit não estiver instalado, execute: `pip install streamlit pandas openpyxl`
-st.write("---")
-st.caption("Desenvolvido por Alex Sousa.")
