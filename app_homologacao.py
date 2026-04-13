@@ -49,18 +49,20 @@ dados_ja_carregados = (
 if not dados_ja_carregados:
     # Mostra os uploaders apenas enquanto os dados não estiverem carregados
     st.sidebar.header("📂 Carregar Arquivos")
-    st.sidebar.caption("Faça o upload dos dois arquivos TXT para carregar o dashboard.")
+    st.sidebar.caption("Faça o upload dos três arquivos TXT para carregar o dashboard.")
 
-    upload_apolice  = st.sidebar.file_uploader("apolice_endosso.txt", type=["txt", "csv"])
-    upload_sinistro = st.sidebar.file_uploader("sinistro.txt",        type=["txt", "csv"])
+    upload_apolice   = st.sidebar.file_uploader("apolice_endosso.txt",   type=["txt", "csv"])
+    upload_sinistro  = st.sidebar.file_uploader("sinistro.txt",          type=["txt", "csv"])
+    upload_cobertura = st.sidebar.file_uploader("cobertura_agrupada.txt",type=["txt", "csv"])
 
-    if not upload_apolice or not upload_sinistro:
-        st.info("👈 Faça o upload dos dois arquivos TXT na barra lateral para iniciar o dashboard.")
+    if not upload_apolice or not upload_sinistro or not upload_cobertura:
+        st.info("👈 Faça o upload dos três arquivos TXT na barra lateral para iniciar o dashboard.")
         st.stop()
 else:
     # Dados já carregados — sidebar limpa, sem nenhuma referência aos arquivos
-    upload_apolice  = None
-    upload_sinistro = None
+    upload_apolice   = None
+    upload_sinistro  = None
+    upload_cobertura = None
 
 # Função para processar os dados de sinistro.
 # DF com dados de Sinistros por apólice:
@@ -216,6 +218,28 @@ def carregar_e_processar_dados(arquivo_apolice, arquivo_sinistro):
         return pd.DataFrame()
 
 
+# Função para carregar cobertura_agrupada
+@st.cache_data
+def carregar_cobertura(arquivo):
+    try:
+        if isinstance(arquivo, io.BytesIO):
+            arquivo.seek(0)
+            fonte = arquivo
+        elif hasattr(arquivo, 'read'):
+            fonte = io.BytesIO(arquivo.read())
+        else:
+            fonte = arquivo
+        df = pd.read_csv(fonte, sep=';', encoding='latin-1', decimal=',', low_memory=False)
+        df.rename(columns={'cd_apolice': 'N° Apólice', 'nm_comercial': 'Cobertura Apólice', 'vl_franquia': 'Franquia Apólice'}, inplace=True)
+        df['Franquia Apólice'] = pd.to_numeric(df['Franquia Apólice'], errors='coerce').fillna(0)
+        # Mantém apenas o endosso mais recente por apólice+cobertura
+        df = df.sort_values('nr_endosso', ascending=False)
+        df = df.drop_duplicates(subset=['N° Apólice', 'Cobertura Apólice'], keep='first')
+        return df[['N° Apólice', 'Cobertura Apólice', 'Franquia Apólice']]
+    except Exception as e:
+        st.error(f"Erro ao carregar coberturas: {e}")
+        return pd.DataFrame()
+
 # Função de Formatação de Valores para o padrão Brasileiro
 def formatar_valor_br(valor):
     """
@@ -236,6 +260,7 @@ def formatar_valor_br(valor):
 if dados_ja_carregados:
     dados_calculados = st.session_state['dados_calculados']
     df_sinistros     = st.session_state['df_sinistros']
+    df_cobertura     = st.session_state.get('df_cobertura', pd.DataFrame())
 else:
     # Lê os bytes uma única vez para evitar problema de ponteiro consumido
     bytes_apolice  = upload_apolice.read()  if hasattr(upload_apolice,  'read') else None
@@ -250,9 +275,14 @@ else:
     df_sinistros = carregar_e_processar_dados_sinistro(fonte_sinistro)
     if df_sinistros.empty:
         st.stop()
+    # Carrega coberturas
+    bytes_cobertura = upload_cobertura.read() if hasattr(upload_cobertura, 'read') else None
+    fonte_cobertura = io.BytesIO(bytes_cobertura) if bytes_cobertura is not None else upload_cobertura
+    df_cobertura = carregar_cobertura(fonte_cobertura)
     # Salva no session_state e força rerun para esconder os uploaders imediatamente
     st.session_state['dados_calculados'] = dados_calculados
     st.session_state['df_sinistros']     = df_sinistros
+    st.session_state['df_cobertura']     = df_cobertura
     st.session_state['data_upload']      = datetime.now().strftime('%d/%m/%Y %H:%M')
     st.rerun()
 
@@ -507,6 +537,28 @@ with col_cob_sin_2:
         st.dataframe(df_sinistro_apolice_cobertura, hide_index=True)
     else:
         st.info("Apólice não possui sinistro.")
+
+# --- Coberturas e Franquia da Apólice ---
+st.text("Coberturas e Franquia Apólice")
+if not df_cobertura.empty:
+    # Filtra coberturas da apólice selecionada
+    df_cob_apolice = df_cobertura[df_cobertura['N° Apólice'] == apolices_selecionadas_filtro_apolice].copy()
+    if not df_cob_apolice.empty:
+        # Cruza com sinistros da apólice para mostrar total sinistro por cobertura
+        df_sin_cob = df_sinistro_utilizar[
+            df_sinistro_utilizar['N° Apólice'] == apolices_selecionadas_filtro_apolice
+        ].groupby('Cobertura')['Total Sinistro'].sum().reset_index()
+        df_sin_cob.rename(columns={'Cobertura': 'Cobertura Apólice', 'Total Sinistro': 'Total Sinistro'}, inplace=True)
+
+        df_cob_view = pd.merge(df_cob_apolice, df_sin_cob, on='Cobertura Apólice', how='left').fillna(0)
+        df_cob_view['Franquia Apólice'] = df_cob_view['Franquia Apólice'].map(formatar_valor_br)
+        df_cob_view['Total Sinistro']   = df_cob_view['Total Sinistro'].map(formatar_valor_br)
+        df_cob_view = df_cob_view[['Cobertura Apólice', 'Franquia Apólice', 'Total Sinistro']]
+        st.dataframe(df_cob_view, hide_index=True, use_container_width=True)
+    else:
+        st.info("Nenhuma cobertura encontrada para esta apólice.")
+else:
+    st.info("Arquivo de coberturas não carregado.")
 
 #
 #
@@ -1075,6 +1127,36 @@ with df_apolices_segurado_1:
 with df_sinistro_segurado_2:
     st.text("Dados de Sinistro")
     st.dataframe(df_sinistro_segurado, hide_index=True)
+
+# --- Coberturas e Franquia do Segurado ---
+st.text("Coberturas e Franquia Apólice - Segurado")
+if not df_cobertura.empty:
+    # Pega todas as apólices do segurado e agrega coberturas
+    apolices_segurado = df_segurado_calculo['N° Apólice'].unique()
+    df_cob_seg = df_cobertura[df_cobertura['N° Apólice'].isin(apolices_segurado)].copy()
+    if not df_cob_seg.empty:
+        # Agrega por cobertura somando franquia (pega maior valor — endosso mais recente já foi deduplicado)
+        df_cob_seg_agg = df_cob_seg.groupby('Cobertura Apólice').agg(
+            Franquia_Apólice=('Franquia Apólice', 'max'),
+            Qtd_Apolices=('N° Apólice', 'nunique')
+        ).reset_index()
+
+        # Cruza com sinistros do segurado por cobertura
+        df_sin_seg_cob = df_sinistro_segurado.copy() if hasattr(df_sinistro_segurado, 'copy') else pd.DataFrame()
+        # df_sinistro_segurado já está formatado neste ponto — usa base limpa
+        df_sin_seg_cob2 = df_sinistros[df_sinistros['nm_cliente'] == segurado[0]].groupby('Cobertura')['Total Sinistro'].sum().reset_index()
+        df_sin_seg_cob2.rename(columns={'Cobertura': 'Cobertura Apólice'}, inplace=True)
+
+        df_cob_seg_view = pd.merge(df_cob_seg_agg, df_sin_seg_cob2, on='Cobertura Apólice', how='left').fillna(0)
+        df_cob_seg_view['Franquia_Apólice'] = df_cob_seg_view['Franquia_Apólice'].map(formatar_valor_br)
+        df_cob_seg_view['Total Sinistro']   = df_cob_seg_view['Total Sinistro'].map(formatar_valor_br)
+        df_cob_seg_view.rename(columns={'Franquia_Apólice': 'Franquia Apólice'}, inplace=True)
+        df_cob_seg_view = df_cob_seg_view[['Cobertura Apólice', 'Franquia Apólice', 'Qtd_Apolices', 'Total Sinistro']]
+        st.dataframe(df_cob_seg_view, hide_index=True, use_container_width=True)
+    else:
+        st.info("Nenhuma cobertura encontrada para este segurado.")
+else:
+    st.info("Arquivo de coberturas não carregado.")
 
 # --- Desempenho por Tipo de Emissão — Segurado ---
 st.text("Desempenho por Tipo de Emissão - Segurado")
