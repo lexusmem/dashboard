@@ -348,12 +348,6 @@ if img_base64:
 
 # ── PÁGINA 1: APÓLICE / SEGURADO ────────────────────────────────────────────
 
-# Link para a página de Dados Gerais na sidebar
-st.sidebar.markdown("---")
-if st.sidebar.button("📊  Ir para Dados Gerais", use_container_width=True):
-    st.switch_page("pages/2_Dados_Gerais.py")
-st.sidebar.markdown("---")
-
 # --- Filtragem dados da Apólice ---
 st.sidebar.header('Filtro Apólice')
 
@@ -368,6 +362,10 @@ apolices_selecionadas_filtro_apolice = st.sidebar.selectbox(
     options=apolices_filtro_apolice,
     index=default_index_apolice  # Selecionar o primeiro registro por padrão
 )
+
+# Link para a página de Dados Gerais na sidebar
+st.sidebar.header('Dados Gerais')
+st.sidebar.page_link("pages/2_Dados_Gerais.py", label="📊  Dados Gerais")
 
 st.subheader(f'Dados Apólice - {apolices_selecionadas_filtro_apolice}')
 dados_filtrados_filtro_apolice = dados_exibicao.copy()
