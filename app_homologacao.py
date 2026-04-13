@@ -540,25 +540,28 @@ with col_cob_sin_2:
 
 # --- Coberturas e Franquia da Apólice ---
 st.text("Coberturas e Franquia Apólice")
-if not df_cobertura.empty:
-    # Filtra coberturas da apólice selecionada
-    df_cob_apolice = df_cobertura[df_cobertura['N° Apólice'] == apolices_selecionadas_filtro_apolice].copy()
-    if not df_cob_apolice.empty:
-        # Cruza com sinistros da apólice para mostrar total sinistro por cobertura
-        df_sin_cob = df_sinistro_utilizar[
-            df_sinistro_utilizar['N° Apólice'] == apolices_selecionadas_filtro_apolice
-        ].groupby('Cobertura')['Total Sinistro'].sum().reset_index()
-        df_sin_cob.rename(columns={'Cobertura': 'Cobertura Apólice', 'Total Sinistro': 'Total Sinistro'}, inplace=True)
+# Base: usa df_sinistros (numérico original) — df_sinistro_utilizar já foi formatado como string
+df_sin_cob_ap = df_sinistros[
+    df_sinistros['N° Apólice'] == apolices_selecionadas_filtro_apolice
+].groupby('Cobertura')['Total Sinistro'].sum().reset_index()
+df_sin_cob_ap.rename(columns={'Cobertura': 'Cobertura Apólice'}, inplace=True)
 
-        df_cob_view = pd.merge(df_cob_apolice, df_sin_cob, on='Cobertura Apólice', how='left').fillna(0)
-        df_cob_view['Franquia Apólice'] = df_cob_view['Franquia Apólice'].map(formatar_valor_br)
-        df_cob_view['Total Sinistro']   = df_cob_view['Total Sinistro'].map(formatar_valor_br)
-        df_cob_view = df_cob_view[['Cobertura Apólice', 'Franquia Apólice', 'Total Sinistro']]
-        st.dataframe(df_cob_view, hide_index=True, use_container_width=True)
-    else:
-        st.info("Nenhuma cobertura encontrada para esta apólice.")
+# Coberturas/franquias do arquivo (pode estar vazio para esta apólice)
+if not df_cobertura.empty:
+    df_cob_ap = df_cobertura[df_cobertura['N° Apólice'] == apolices_selecionadas_filtro_apolice][['Cobertura Apólice','Franquia Apólice']].copy()
 else:
-    st.info("Arquivo de coberturas não carregado.")
+    df_cob_ap = pd.DataFrame(columns=['Cobertura Apólice','Franquia Apólice'])
+
+# Merge: sinistro como base (left) — garante que todo sinistro aparece mesmo sem cobertura no arquivo
+df_cob_view_ap = pd.merge(df_sin_cob_ap, df_cob_ap, on='Cobertura Apólice', how='left')
+df_cob_view_ap['Franquia Apólice'] = df_cob_view_ap['Franquia Apólice'].fillna(0).map(formatar_valor_br)
+df_cob_view_ap['Total Sinistro']   = df_cob_view_ap['Total Sinistro'].fillna(0).map(formatar_valor_br)
+df_cob_view_ap = df_cob_view_ap[['Cobertura Apólice', 'Franquia Apólice', 'Total Sinistro']]
+
+if not df_cob_view_ap.empty:
+    st.dataframe(df_cob_view_ap, hide_index=True, use_container_width=True)
+else:
+    st.info("Apólice não possui sinistro registrado.")
 
 #
 #
@@ -1130,33 +1133,27 @@ with df_sinistro_segurado_2:
 
 # --- Coberturas e Franquia do Segurado ---
 st.text("Coberturas e Franquia Apólice - Segurado")
+# Base: sinistros do segurado agrupados por cobertura (sempre presentes, valor correto)
+apolices_segurado = df_segurado_calculo['N° Apólice'].unique()
+df_sin_cob_seg = df_sinistros[df_sinistros['N° Apólice'].isin(apolices_segurado)].groupby('Cobertura')['Total Sinistro'].sum().reset_index()
+df_sin_cob_seg.rename(columns={'Cobertura': 'Cobertura Apólice'}, inplace=True)
+
+# Coberturas/franquias do arquivo para as apólices do segurado (pega franquia máxima por cobertura)
 if not df_cobertura.empty:
-    # Pega todas as apólices do segurado e agrega coberturas
-    apolices_segurado = df_segurado_calculo['N° Apólice'].unique()
-    df_cob_seg = df_cobertura[df_cobertura['N° Apólice'].isin(apolices_segurado)].copy()
-    if not df_cob_seg.empty:
-        # Agrega por cobertura somando franquia (pega maior valor — endosso mais recente já foi deduplicado)
-        df_cob_seg_agg = df_cob_seg.groupby('Cobertura Apólice').agg(
-            Franquia_Apólice=('Franquia Apólice', 'max'),
-            Qtd_Apolices=('N° Apólice', 'nunique')
-        ).reset_index()
-
-        # Cruza com sinistros do segurado por cobertura
-        df_sin_seg_cob = df_sinistro_segurado.copy() if hasattr(df_sinistro_segurado, 'copy') else pd.DataFrame()
-        # df_sinistro_segurado já está formatado neste ponto — usa base limpa
-        df_sin_seg_cob2 = df_sinistros[df_sinistros['nm_cliente'] == segurado[0]].groupby('Cobertura')['Total Sinistro'].sum().reset_index()
-        df_sin_seg_cob2.rename(columns={'Cobertura': 'Cobertura Apólice'}, inplace=True)
-
-        df_cob_seg_view = pd.merge(df_cob_seg_agg, df_sin_seg_cob2, on='Cobertura Apólice', how='left').fillna(0)
-        df_cob_seg_view['Franquia_Apólice'] = df_cob_seg_view['Franquia_Apólice'].map(formatar_valor_br)
-        df_cob_seg_view['Total Sinistro']   = df_cob_seg_view['Total Sinistro'].map(formatar_valor_br)
-        df_cob_seg_view.rename(columns={'Franquia_Apólice': 'Franquia Apólice'}, inplace=True)
-        df_cob_seg_view = df_cob_seg_view[['Cobertura Apólice', 'Franquia Apólice', 'Qtd_Apolices', 'Total Sinistro']]
-        st.dataframe(df_cob_seg_view, hide_index=True, use_container_width=True)
-    else:
-        st.info("Nenhuma cobertura encontrada para este segurado.")
+    df_cob_seg = df_cobertura[df_cobertura['N° Apólice'].isin(apolices_segurado)].groupby('Cobertura Apólice')['Franquia Apólice'].max().reset_index()
 else:
-    st.info("Arquivo de coberturas não carregado.")
+    df_cob_seg = pd.DataFrame(columns=['Cobertura Apólice','Franquia Apólice'])
+
+# Merge: sinistro como base (left) — todo sinistro aparece mesmo sem cobertura no arquivo
+df_cob_seg_view = pd.merge(df_sin_cob_seg, df_cob_seg, on='Cobertura Apólice', how='left')
+df_cob_seg_view['Franquia Apólice'] = df_cob_seg_view['Franquia Apólice'].fillna(0).map(formatar_valor_br)
+df_cob_seg_view['Total Sinistro']   = df_cob_seg_view['Total Sinistro'].fillna(0).map(formatar_valor_br)
+df_cob_seg_view = df_cob_seg_view[['Cobertura Apólice', 'Franquia Apólice', 'Total Sinistro']]
+
+if not df_cob_seg_view.empty:
+    st.dataframe(df_cob_seg_view, hide_index=True, use_container_width=True)
+else:
+    st.info("Segurado não possui sinistro registrado.")
 
 # --- Desempenho por Tipo de Emissão — Segurado ---
 st.text("Desempenho por Tipo de Emissão - Segurado")
