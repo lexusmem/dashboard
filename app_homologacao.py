@@ -27,6 +27,10 @@ st.markdown("""
         background: #888;
         border-radius: 5px;
     }
+    /* Oculta a navegação automática de páginas gerada pelo Streamlit no topo da sidebar */
+    [data-testid="stSidebarNav"] {
+        display: none !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
