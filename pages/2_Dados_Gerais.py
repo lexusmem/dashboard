@@ -143,10 +143,6 @@ resultado_final_filtrado = dados_filtrados_uf.copy()
 if apolices_selecionadas:
     resultado_final_filtrado = resultado_final_filtrado[resultado_final_filtrado['N° Apólice'].isin(apolices_selecionadas)]
 
-# Link de volta para a página principal na sidebar
-st.sidebar.page_link("app_homologacao.py", label="📋  Apólice / Segurado")
-
-
 # --- AJUSTE AQUI: Filtragem do Sinistro Geral ---
 # Pegamos a lista de apólices que sobraram após TODOS os filtros acima
 lista_apolices_filtradas = resultado_final_filtrado['N° Apólice'].unique()
@@ -173,7 +169,8 @@ if not df_sinistro_geral_com_rep_cor.empty:
 
 st.write("---")
 st.sidebar.header('Apólice')
-st.subheader("Dados Gerais")
+# Link de volta para a página principal na sidebar
+st.sidebar.page_link("app_homologacao.py", label="📋  Apólice / Segurado")
 
 # ============= PARTE REFERENTE AO SLIDER PARA SELECIONAR ANO =============
 col_esq, col_meio, col_dir = st.columns([4,1,1])
