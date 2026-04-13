@@ -57,12 +57,6 @@ dados_exibicao = dados_exibicao[colunas].sort_values('N° Apólice')
 
 # ── PÁGINA 2: DADOS GERAIS ────────────────────────────────────────────────────
 
-# Link de volta para a página principal na sidebar
-st.sidebar.markdown("---")
-if st.sidebar.button("📋  Ir para Apólice / Segurado", use_container_width=True):
-    st.switch_page("app_homologacao.py")
-st.sidebar.markdown("---")
-
 # --- Lógica de Filtragem Hierárquica na Sidebar ---
 st.sidebar.header('Filtros Dados Gerais')
 
@@ -149,6 +143,9 @@ resultado_final_filtrado = dados_filtrados_uf.copy()
 if apolices_selecionadas:
     resultado_final_filtrado = resultado_final_filtrado[resultado_final_filtrado['N° Apólice'].isin(apolices_selecionadas)]
 
+# Link de volta para a página principal na sidebar
+st.sidebar.page_link("app_homologacao.py", label="📋  Apólice / Segurado")
+
 
 # --- AJUSTE AQUI: Filtragem do Sinistro Geral ---
 # Pegamos a lista de apólices que sobraram após TODOS os filtros acima
@@ -175,6 +172,7 @@ if not df_sinistro_geral_com_rep_cor.empty:
 # 'https://nicedouble-streamlitantdcomponentsdemo-app-middmy.streamlit.app/'
 
 st.write("---")
+st.sidebar.header('Apólice')
 st.subheader("Dados Gerais")
 
 # ============= PARTE REFERENTE AO SLIDER PARA SELECIONAR ANO =============
