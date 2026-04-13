@@ -167,10 +167,12 @@ if not df_sinistro_geral_com_rep_cor.empty:
 # sac.divider(label='Dados Gerais', icon=sac.BsIcon(name='gear', size=20), align='start', color='gray')
 # 'https://nicedouble-streamlitantdcomponentsdemo-app-middmy.streamlit.app/'
 
-st.write("---")
-st.sidebar.header('Apólice')
 # Link de volta para a página principal na sidebar
+st.sidebar.markdown("---")
+st.sidebar.header('Dados por Apólice')
 st.sidebar.page_link("app_homologacao.py", label="📋  Apólice / Segurado")
+
+st.subheader("Dados Gerais")
 
 # ============= PARTE REFERENTE AO SLIDER PARA SELECIONAR ANO =============
 col_esq, col_meio, col_dir = st.columns([4,1,1])
