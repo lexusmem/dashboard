@@ -1012,7 +1012,7 @@ if len(ramos_ativos) >= 2:
                     margin=dict(t=20, b=20, l=0, r=0),
                     annotations=[dict(text=f'{ramo}', x=0.5, y=0.5, font_size=15, showarrow=False)] # texto de dentro do grafico piza o numero do ramo
                 )
-                st.plotly_chart(fig_ramo, use_container_width=True, config={'displayModeBar': False}, key='chart_fig_ramo_7')
+                st.plotly_chart(fig_ramo, use_container_width=True, config={'displayModeBar': False}, key=f'chart_fig_ramo_seg_{ramo}')
 
 #
 #
@@ -1829,7 +1829,7 @@ if len(ramos_com_dados) >= 2:
                 margin=dict(t=20, b=20, l=0, r=0),
                 annotations=[dict(text=f'{r}', x=0.5, y=0.5, font_size=15, showarrow=False)]
             )
-            st.plotly_chart(fig_r, use_container_width=True, config={'displayModeBar': False}, key='chart_fig_r_13')
+            st.plotly_chart(fig_r, use_container_width=True, config={'displayModeBar': False}, key=f'chart_fig_r_geral_{r}')
 # ============================================================================
 
 def gerar_ranking_piores_avancado(df_base, coluna_agrupadora, limite_sinistralidade=0.50, min_apolices=2):
