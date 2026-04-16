@@ -613,7 +613,7 @@ with col_graf_seg_1:
         hovermode="x unified"
     )
 
-    st.plotly_chart(fig_evolucao_seg, use_container_width=True, config={'displayModeBar': False})
+    st.plotly_chart(fig_evolucao_seg, use_container_width=True, config={'displayModeBar': False}, key='chart_fig_evolucao_seg_1')
 
 with col_graf_seg_2:
     st.subheader("Prêmio x Sinistro - Segurado")
@@ -660,7 +660,7 @@ with col_graf_seg_2:
         height=400 
     )
 
-    st.plotly_chart(fig_barras_h_seg, use_container_width=True, config={'displayModeBar': False})
+    st.plotly_chart(fig_barras_h_seg, use_container_width=True, config={'displayModeBar': False}, key='chart_fig_barras_h_seg_2')
 
 
 col_graf_seg_3, col_graf_seg_4 = st.columns(2)
@@ -721,7 +721,7 @@ with col_graf_seg_4:
         xaxis_title="Ano",
         yaxis_title="Sinistralidade (%)"
     )
-    st.plotly_chart(fig_line_sin_seg, use_container_width=True, config={'displayModeBar': False})
+    st.plotly_chart(fig_line_sin_seg, use_container_width=True, config={'displayModeBar': False}, key='chart_fig_line_sin_seg_3')
 
 
 # --- Prêmio e Sinistro por Utilização ---
@@ -791,7 +791,7 @@ with col_util_2:
             height=max(300, len(df_grafico_util_seg) * 40)
         )
 
-        st.plotly_chart(fig_util_seg, use_container_width=True, config={'displayModeBar': False})
+        st.plotly_chart(fig_util_seg, use_container_width=True, config={'displayModeBar': False}, key='chart_fig_util_seg_4')
     else:
         st.info("Sem dados de Sinistro.")
 
@@ -948,13 +948,13 @@ seg_chart_1, seg_chart_2 = st.columns(2)
 with seg_chart_1:
     st.text("Gráfico Sinistro Por Ramo")
     if fig:
-        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key='chart_fig_5')
     else:
         st.info('Segurado sem Sinistro')
 with seg_chart_2:
     st.text("Gráfico Sinistro Por Cobertura")
     if fig_pizza: # Verifica se o gráfico foi criado antes de exibi-lo
-        st.plotly_chart(fig_pizza, use_container_width=True, config={'displayModeBar': False})
+        st.plotly_chart(fig_pizza, use_container_width=True, config={'displayModeBar': False}, key='chart_fig_pizza_6')
     else:
         st.info("Segurado sem Sinistro")
 
@@ -1012,7 +1012,7 @@ if len(ramos_ativos) >= 2:
                     margin=dict(t=20, b=20, l=0, r=0),
                     annotations=[dict(text=f'{ramo}', x=0.5, y=0.5, font_size=15, showarrow=False)] # texto de dentro do grafico piza o numero do ramo
                 )
-                st.plotly_chart(fig_ramo, use_container_width=True, config={'displayModeBar': False})
+                st.plotly_chart(fig_ramo, use_container_width=True, config={'displayModeBar': False}, key='chart_fig_ramo_7')
 
 #
 #
@@ -1394,12 +1394,12 @@ col_linha_barra_1, col_linha_barra_2 = st.columns(2)
 with col_linha_barra_1:
     # plot grafico linhas premio x sinistro
     st.subheader("Evolução Anual")
-    st.plotly_chart(fig_evolucao, use_container_width=True, config={'displayModeBar': False})
+    st.plotly_chart(fig_evolucao, use_container_width=True, config={'displayModeBar': False}, key='chart_fig_evolucao_8')
 with col_linha_barra_2:
     # plot grafico barras premio x sinistro
     # st.markdown("<br>", unsafe_allow_html=True)
     st.subheader("Prêmio x Sinistro Anual")
-    st.plotly_chart(fig_barras_h, use_container_width=True, config={'displayModeBar': False})
+    st.plotly_chart(fig_barras_h, use_container_width=True, config={'displayModeBar': False}, key='chart_fig_barras_h_9')
     st.markdown("<br><br>", unsafe_allow_html=True)
 
 
@@ -1471,7 +1471,7 @@ with col_ano_1:
                 hide_index=True, use_container_width=True)
 with col_ano_2:
     st.subheader("Evolução da Sinistralidade (%)")
-    st.plotly_chart(fig_sin_ano, use_container_width=True, config={'displayModeBar': False})
+    st.plotly_chart(fig_sin_ano, use_container_width=True, config={'displayModeBar': False}, key='chart_fig_sin_ano_10')
 
 # --- Exibição dos Resultados ---
 col_final_1, col_final_2 = st.columns(2)
@@ -1658,7 +1658,8 @@ with col_pr_sin_util_2:
             fig_util_sin,
             use_container_width=True,
             config={
-                'displayModeBar': False})
+                'displayModeBar': False},
+            key='chart_fig_util_sin_16')
     else:
         st.info("Sem dados de Sinistro.")
 
@@ -1792,10 +1793,10 @@ with c2:
 c1, c2 = st.columns(2)
 with c1:
     st.subheader("Prêmio e Sinistro por Ramo")
-    st.plotly_chart(fig_ramo_geral, use_container_width=True, config={'displayModeBar': False})
+    st.plotly_chart(fig_ramo_geral, use_container_width=True, config={'displayModeBar': False}, key='chart_fig_ramo_geral_11')
 with c2:
     st.subheader("Sinistros por Cobertura")
-    st.plotly_chart(fig_pizza_geral, use_container_width=True, config={'displayModeBar': False})
+    st.plotly_chart(fig_pizza_geral, use_container_width=True, config={'displayModeBar': False}, key='chart_fig_pizza_geral_12')
 
 # 5. Detalhamento por Ramos Específicos (23, 28, 82)
 ramos_alvo = [23, 28, 82]
@@ -1828,7 +1829,7 @@ if len(ramos_com_dados) >= 2:
                 margin=dict(t=20, b=20, l=0, r=0),
                 annotations=[dict(text=f'{r}', x=0.5, y=0.5, font_size=15, showarrow=False)]
             )
-            st.plotly_chart(fig_r, use_container_width=True, config={'displayModeBar': False})
+            st.plotly_chart(fig_r, use_container_width=True, config={'displayModeBar': False}, key='chart_fig_r_13')
 # ============================================================================
 
 def gerar_ranking_piores_avancado(df_base, coluna_agrupadora, limite_sinistralidade=0.50, min_apolices=2):
@@ -1979,7 +1980,7 @@ if not df_geral_periodo.empty:
                 margin=dict(l=0, r=80, t=40, b=0),
                 height=420,
             )
-            st.plotly_chart(fig_top10, use_container_width=True, config={'displayModeBar': False})
+            st.plotly_chart(fig_top10, use_container_width=True, config={'displayModeBar': False}, key='chart_fig_top10_14')
         else:
             st.info("Sem regiões com sinistro no período selecionado.")
 
@@ -2047,7 +2048,7 @@ if not df_geral_periodo.empty:
                 len=0.75
             )
         )
-        st.plotly_chart(fig_mapa, use_container_width=True, config={'displayModeBar': False})
+        st.plotly_chart(fig_mapa, use_container_width=True, config={'displayModeBar': False}, key='chart_fig_mapa_15')
 else:
     st.info("Nenhum dado disponível para agrupar por Região de Circulação.")
 
