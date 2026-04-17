@@ -512,8 +512,6 @@ with col_util_4:
 st.text("Dados da Apólice")
 st.dataframe(dados_filtrados_filtro_apolice, hide_index=True)
 
-
-
 # Formatar como numero as colunas do df de dados da apólice
 df_sinistro_apolice['vl_sinistro_pago'] = (df_sinistro_apolice['vl_sinistro_pago'].map(formatar_valor_br))
 df_sinistro_apolice['vl_sinistro_pendente'] = (df_sinistro_apolice['vl_sinistro_pendente'].map(formatar_valor_br))
@@ -529,13 +527,19 @@ df_sinistro_apolice['vl_salvado_pendente'] = (df_sinistro_apolice['vl_salvado_pe
 df_sinistro_apolice['vl_salvado_total'] = (df_sinistro_apolice['vl_salvado_total'].map(formatar_valor_br))
 df_sinistro_apolice['Total Sinistro'] = (df_sinistro_apolice['Total Sinistro'].map(formatar_valor_br))
 
-col_dados_de_sinistros_apolice = st.columns(1)
-with col_dados_de_sinistros_apolice:
-    st.text("Dados de Sinistro")
-    if not df_sinistro_apolice.empty:
-        st.dataframe(df_sinistro_apolice, hide_index=True)
-    else:
-        st.info("Apólice não possui sinistro.")
+# col_dados_de_sinistros_apolice = st.columns(1)
+# with col_dados_de_sinistros_apolice:
+#     st.text("Dados de Sinistro")
+#     if not df_sinistro_apolice.empty:
+#         st.dataframe(df_sinistro_apolice, hide_index=True)
+#     else:
+#         st.info("Apólice não possui sinistro.")
+
+st.text("Dados de Sinistro")
+if not df_sinistro_apolice.empty:
+    st.dataframe(df_sinistro_apolice, hide_index=True)
+else:
+    st.info("Apólice não possui sinistro.")
 
 
 col_cob_sin_1, col_cob_sin_2 = st.columns(2)
