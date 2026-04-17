@@ -527,15 +527,7 @@ df_sinistro_apolice['vl_salvado_pendente'] = (df_sinistro_apolice['vl_salvado_pe
 df_sinistro_apolice['vl_salvado_total'] = (df_sinistro_apolice['vl_salvado_total'].map(formatar_valor_br))
 df_sinistro_apolice['Total Sinistro'] = (df_sinistro_apolice['Total Sinistro'].map(formatar_valor_br))
 
-# col_dados_de_sinistros_apolice = st.columns(1)
-# with col_dados_de_sinistros_apolice:
-#     st.text("Dados de Sinistro")
-#     if not df_sinistro_apolice.empty:
-#         st.dataframe(df_sinistro_apolice, hide_index=True)
-#     else:
-#         st.info("Apólice não possui sinistro.")
-
-st.text("Dados de Sinistro")
+st.text("Dados de Sinistro da Apólice")
 if not df_sinistro_apolice.empty:
     st.dataframe(df_sinistro_apolice, hide_index=True)
 else:
@@ -1149,33 +1141,33 @@ with df_sinistro_segurado_2:
     st.dataframe(df_sinistro_segurado, hide_index=True)
 
 # --- Coberturas e Franquia do Segurado ---
-st.text("Coberturas e Franquia Apólice - Segurado")
-apolices_segurado = df_segurado_calculo['N° Apólice'].unique()
+# st.text("Coberturas e Franquia Apólice - Segurado")
+# apolices_segurado = df_segurado_calculo['N° Apólice'].unique()
 
-# Franquias vigentes das apólices do segurado (endosso mais recente, já deduplicado)
-# Pega franquia máxima por cobertura entre todas as apólices do segurado
-df_cob_seg = df_cobertura[df_cobertura['N° Apólice'].isin(apolices_segurado)][
-    ['Cobertura Apólice', 'Franquia Apólice']
-].copy() if not df_cobertura.empty else pd.DataFrame(columns=['Cobertura Apólice', 'Franquia Apólice'])
-df_cob_seg = df_cob_seg.groupby('Cobertura Apólice')['Franquia Apólice'].max().reset_index()
+# # Franquias vigentes das apólices do segurado (endosso mais recente, já deduplicado)
+# # Pega franquia máxima por cobertura entre todas as apólices do segurado
+# df_cob_seg = df_cobertura[df_cobertura['N° Apólice'].isin(apolices_segurado)][
+#     ['Cobertura Apólice', 'Franquia Apólice']
+# ].copy() if not df_cobertura.empty else pd.DataFrame(columns=['Cobertura Apólice', 'Franquia Apólice'])
+# df_cob_seg = df_cob_seg.groupby('Cobertura Apólice')['Franquia Apólice'].max().reset_index()
 
-# Sinistros do segurado agrupados por cobertura
-df_sin_seg = df_sinistros[df_sinistros['N° Apólice'].isin(apolices_segurado)]    .groupby('Cobertura')['Total Sinistro'].sum().reset_index()
-df_sin_seg.rename(columns={'Cobertura': 'Cobertura Apólice'}, inplace=True)
+# # Sinistros do segurado agrupados por cobertura
+# df_sin_seg = df_sinistros[df_sinistros['N° Apólice'].isin(apolices_segurado)]    .groupby('Cobertura')['Total Sinistro'].sum().reset_index()
+# df_sin_seg.rename(columns={'Cobertura': 'Cobertura Apólice'}, inplace=True)
 
-if df_sin_seg.empty:
-    # Sem sinistro: mostra coberturas do arquivo com sinistro zerado
-    df_cob_seg_view = df_cob_seg.copy()
-    df_cob_seg_view['Total Sinistro'] = 0.0
-else:
-    # Sinistro como base (left) — todo sinistro aparece; franquia vem do arquivo quando disponível
-    df_cob_seg_view = pd.merge(df_sin_seg, df_cob_seg, on='Cobertura Apólice', how='left')
-    df_cob_seg_view['Franquia Apólice'] = df_cob_seg_view['Franquia Apólice'].fillna(0)
+# if df_sin_seg.empty:
+#     # Sem sinistro: mostra coberturas do arquivo com sinistro zerado
+#     df_cob_seg_view = df_cob_seg.copy()
+#     df_cob_seg_view['Total Sinistro'] = 0.0
+# else:
+#     # Sinistro como base (left) — todo sinistro aparece; franquia vem do arquivo quando disponível
+#     df_cob_seg_view = pd.merge(df_sin_seg, df_cob_seg, on='Cobertura Apólice', how='left')
+#     df_cob_seg_view['Franquia Apólice'] = df_cob_seg_view['Franquia Apólice'].fillna(0)
 
-df_cob_seg_view['Franquia Apólice'] = df_cob_seg_view['Franquia Apólice'].map(formatar_valor_br)
-df_cob_seg_view['Total Sinistro']   = df_cob_seg_view['Total Sinistro'].map(formatar_valor_br)
-df_cob_seg_view = df_cob_seg_view[['Cobertura Apólice', 'Franquia Apólice', 'Total Sinistro']]
-st.dataframe(df_cob_seg_view, hide_index=True, use_container_width=True)
+# df_cob_seg_view['Franquia Apólice'] = df_cob_seg_view['Franquia Apólice'].map(formatar_valor_br)
+# df_cob_seg_view['Total Sinistro']   = df_cob_seg_view['Total Sinistro'].map(formatar_valor_br)
+# df_cob_seg_view = df_cob_seg_view[['Cobertura Apólice', 'Franquia Apólice', 'Total Sinistro']]
+# st.dataframe(df_cob_seg_view, hide_index=True, use_container_width=True)
 
 # --- Desempenho por Tipo de Emissão — Segurado ---
 st.text("Desempenho por Tipo de Emissão - Segurado")
