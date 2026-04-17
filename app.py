@@ -406,7 +406,7 @@ apolices_selecionadas_filtro_apolice = st.sidebar.selectbox(
 # Link para a página de Dados Gerais na sidebar
 st.sidebar.markdown("---")
 st.sidebar.header('Dados Gerais')
-st.sidebar.page_link("pages/2_Dados_Gerais.py", label="📊  Dados Gerais")
+st.sidebar.page_link("2_Dados_Gerais", label="📊  Dados Gerais")
 
 st.subheader(f'Dados Apólice - {apolices_selecionadas_filtro_apolice}')
 dados_filtrados_filtro_apolice = dados_exibicao.copy()
