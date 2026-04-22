@@ -512,6 +512,16 @@ with col_util_4:
 st.text("Dados da Apólice")
 st.dataframe(dados_filtrados_filtro_apolice, hide_index=True)
 
+# Adiciona coluna Franquia por Cobertura (antes da formatação — dados ainda numéricos)
+if not df_cobertura.empty and not df_sinistro_apolice.empty:
+    df_franquia_ap = df_cobertura[df_cobertura['N° Apólice'] == apolices_selecionadas_filtro_apolice][
+        ['Cobertura Apólice', 'Franquia Apólice']
+    ].rename(columns={'Cobertura Apólice': 'Cobertura'})
+    df_sinistro_apolice = pd.merge(df_sinistro_apolice, df_franquia_ap, on='Cobertura', how='left')
+    df_sinistro_apolice['Franquia Apólice'] = df_sinistro_apolice['Franquia Apólice'].fillna(0)
+else:
+    df_sinistro_apolice['Franquia Apólice'] = 0.0
+
 # Formatar como numero as colunas do df de dados da apólice
 df_sinistro_apolice['vl_sinistro_pago'] = (df_sinistro_apolice['vl_sinistro_pago'].map(formatar_valor_br))
 df_sinistro_apolice['vl_sinistro_pendente'] = (df_sinistro_apolice['vl_sinistro_pendente'].map(formatar_valor_br))
@@ -526,6 +536,7 @@ df_sinistro_apolice['vl_salvado_pago'] = (df_sinistro_apolice['vl_salvado_pago']
 df_sinistro_apolice['vl_salvado_pendente'] = (df_sinistro_apolice['vl_salvado_pendente'].map(formatar_valor_br))
 df_sinistro_apolice['vl_salvado_total'] = (df_sinistro_apolice['vl_salvado_total'].map(formatar_valor_br))
 df_sinistro_apolice['Total Sinistro'] = (df_sinistro_apolice['Total Sinistro'].map(formatar_valor_br))
+df_sinistro_apolice['Franquia Apólice'] = df_sinistro_apolice['Franquia Apólice'].map(formatar_valor_br)
 
 st.text("Dados de Sinistro da Apólice")
 if not df_sinistro_apolice.empty:
@@ -607,14 +618,23 @@ sinistralidade_segurado = (total_sinistro_segurado / total_pr_segurado) if total
 # 3. Criar uma CÓPIA para exibição e aplicar a formatação visual
 df_segurado_exibicao = df_segurado_calculo.copy()
 
+# Adiciona Franquia por Apólice — franquia máxima das coberturas de cada apólice do segurado
+if not df_cobertura.empty:
+    df_franquia_seg = df_cobertura[df_cobertura['N° Apólice'].isin(df_segurado_calculo['N° Apólice'].unique())]        .groupby('N° Apólice')['Franquia Apólice'].max().reset_index()
+    df_segurado_exibicao = pd.merge(df_segurado_exibicao, df_franquia_seg, on='N° Apólice', how='left')
+    df_segurado_exibicao['Franquia Apólice'] = df_segurado_exibicao['Franquia Apólice'].fillna(0)
+else:
+    df_segurado_exibicao['Franquia Apólice'] = 0.0
+
 df_segurado_exibicao['Soma Prêmio Pago por Apolice'] = df_segurado_exibicao['Soma Prêmio Pago por Apolice'].map(formatar_valor_br)
 df_segurado_exibicao['Soma Sinistro Por Apolice'] = df_segurado_exibicao['Soma Sinistro Por Apolice'].map(formatar_valor_br)
 df_segurado_exibicao['% Sin'] = df_segurado_exibicao['% Sin'].map(lambda x: '{:.2%}'.format(x))
+df_segurado_exibicao['Franquia Apólice'] = df_segurado_exibicao['Franquia Apólice'].map(formatar_valor_br)
 
 # 4. Reordenar as colunas para seguir a sequência exata de 'dados_exibicao' (df_geral_periodo)
 colunas_referencia = [
     'N° Apólice', 'Soma Prêmio Pago por Apolice', 'Soma Sinistro Por Apolice', '% Sin',
-    'Segurado', 'Inicio Vigência Apólice', 'Fim Vigência Apólice', 'Utilização',
+    'Franquia Apólice', 'Segurado', 'Inicio Vigência Apólice', 'Fim Vigência Apólice', 'Utilização',
     'Corretor', 'Representante', 'Ramo', 'Tipo de Apólice', 'Tipo de Cobrança',
     'Região de Circulação', 'Estado', 'Cidade', 'Produto', 'Ano Vigência'
 ]
