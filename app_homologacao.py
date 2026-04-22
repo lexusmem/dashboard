@@ -512,6 +512,16 @@ with col_util_4:
 st.text("Dados da Apólice")
 st.dataframe(dados_filtrados_filtro_apolice, hide_index=True)
 
+# Adiciona Franquia por Cobertura (antes da formatação — dados ainda numéricos)
+if not df_cobertura.empty and not df_sinistro_apolice.empty:
+    df_franquia_ap = df_cobertura[
+        df_cobertura['N° Apólice'] == apolices_selecionadas_filtro_apolice
+    ][['Cobertura Apólice', 'Franquia Apólice']].rename(columns={'Cobertura Apólice': 'Cobertura'})
+    df_sinistro_apolice = pd.merge(df_sinistro_apolice, df_franquia_ap, on='Cobertura', how='left')
+    df_sinistro_apolice['Franquia Apólice'] = df_sinistro_apolice['Franquia Apólice'].fillna(0)
+else:
+    df_sinistro_apolice['Franquia Apólice'] = 0.0
+
 # Formatar como numero as colunas do df de dados da apólice
 df_sinistro_apolice['vl_sinistro_pago'] = (df_sinistro_apolice['vl_sinistro_pago'].map(formatar_valor_br))
 df_sinistro_apolice['vl_sinistro_pendente'] = (df_sinistro_apolice['vl_sinistro_pendente'].map(formatar_valor_br))
@@ -526,6 +536,7 @@ df_sinistro_apolice['vl_salvado_pago'] = (df_sinistro_apolice['vl_salvado_pago']
 df_sinistro_apolice['vl_salvado_pendente'] = (df_sinistro_apolice['vl_salvado_pendente'].map(formatar_valor_br))
 df_sinistro_apolice['vl_salvado_total'] = (df_sinistro_apolice['vl_salvado_total'].map(formatar_valor_br))
 df_sinistro_apolice['Total Sinistro'] = (df_sinistro_apolice['Total Sinistro'].map(formatar_valor_br))
+df_sinistro_apolice['Franquia Apólice'] = df_sinistro_apolice['Franquia Apólice'].map(formatar_valor_br)
 
 st.text("Dados de Sinistro da Apólice")
 if not df_sinistro_apolice.empty:
