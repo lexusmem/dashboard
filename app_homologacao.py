@@ -8,7 +8,7 @@ import plotly.express as px
 import streamlit_antd_components as sac
 
 # Configura a página para layout amplo
-st.set_page_config(layout='wide')
+st.set_page_config(layout='wide', page_title='Painel Allseg', page_icon='📊')
 
 st.markdown("""
     <style>
@@ -553,23 +553,22 @@ with col_cob_sin_2:
     ].copy() if not df_cobertura.empty else pd.DataFrame(columns=['Cobertura Apólice', 'Franquia Apólice'])
 
     # Sinistros da apólice agrupados por cobertura
-    df_sin_ap = df_sinistros[df_sinistros['N° Apólice'] == apolices_selecionadas_filtro_apolice]    .groupby('Cobertura')['Total Sinistro'].sum().reset_index()
+    df_sin_ap = df_sinistros[df_sinistros['N° Apólice'] == apolices_selecionadas_filtro_apolice]        .groupby('Cobertura')['Total Sinistro'].sum().reset_index()
     df_sin_ap.rename(columns={'Cobertura': 'Cobertura Apólice'}, inplace=True)
 
-    if df_sin_ap.empty:
-        # Sem sinistro: mostra coberturas do arquivo com sinistro zerado
-        df_cob_view_ap = df_cob_ap.copy()
-        df_cob_view_ap['Total Sinistro'] = 0.0
+    # Cobertura como base (left) — todas as coberturas aparecem sempre
+    # Sinistro entra como right — coberturas sem sinistro ficam com 0,00
+    if df_cob_ap.empty:
+        df_cob_view_ap = df_sin_ap.copy()
+        df_cob_view_ap['Franquia Apólice'] = 0.0
     else:
-        # Sinistro como base (left) — todo sinistro aparece; franquia vem do arquivo quando disponível
-        df_cob_view_ap = pd.merge(df_sin_ap, df_cob_ap, on='Cobertura Apólice', how='left')
-        df_cob_view_ap.rename(columns={'Total Sinistro': 'Total Sinistro'}, inplace=True)
+        df_cob_view_ap = pd.merge(df_cob_ap, df_sin_ap, on='Cobertura Apólice', how='left')
+        df_cob_view_ap['Total Sinistro'] = df_cob_view_ap['Total Sinistro'].fillna(0)
         df_cob_view_ap['Franquia Apólice'] = df_cob_view_ap['Franquia Apólice'].fillna(0)
 
     df_cob_view_ap['Franquia Apólice'] = df_cob_view_ap['Franquia Apólice'].map(formatar_valor_br)
     df_cob_view_ap['Total Sinistro']   = df_cob_view_ap['Total Sinistro'].map(formatar_valor_br)
-    # df_cob_view_ap = df_cob_view_ap[['Cobertura Apólice', 'Franquia Apólice', 'Total Sinistro']]
-    df_cob_view_ap = df_cob_view_ap[['Cobertura Apólice', 'Franquia Apólice']]
+    df_cob_view_ap = df_cob_view_ap[['Cobertura Apólice', 'Franquia Apólice', 'Total Sinistro']]
     st.dataframe(df_cob_view_ap, hide_index=True, use_container_width=True)
 
 #
