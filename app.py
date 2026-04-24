@@ -8,7 +8,7 @@ import plotly.express as px
 import streamlit_antd_components as sac
 
 # Configura a página para layout amplo
-st.set_page_config(layout='wide')
+st.set_page_config(layout='wide', page_title='Painel Allseg', page_icon='📊')
 
 st.markdown("""
     <style>
@@ -512,6 +512,16 @@ with col_util_4:
 st.text("Dados da Apólice")
 st.dataframe(dados_filtrados_filtro_apolice, hide_index=True)
 
+# Adiciona Franquia por Cobertura (antes da formatação — dados ainda numéricos)
+if not df_cobertura.empty and not df_sinistro_apolice.empty:
+    df_franquia_ap = df_cobertura[
+        df_cobertura['N° Apólice'] == apolices_selecionadas_filtro_apolice
+    ][['Cobertura Apólice', 'Franquia Apólice']].rename(columns={'Cobertura Apólice': 'Cobertura'})
+    df_sinistro_apolice = pd.merge(df_sinistro_apolice, df_franquia_ap, on='Cobertura', how='left')
+    df_sinistro_apolice['Franquia Apólice'] = df_sinistro_apolice['Franquia Apólice'].fillna(0)
+else:
+    df_sinistro_apolice['Franquia Apólice'] = 0.0
+
 # Formatar como numero as colunas do df de dados da apólice
 df_sinistro_apolice['vl_sinistro_pago'] = (df_sinistro_apolice['vl_sinistro_pago'].map(formatar_valor_br))
 df_sinistro_apolice['vl_sinistro_pendente'] = (df_sinistro_apolice['vl_sinistro_pendente'].map(formatar_valor_br))
@@ -526,6 +536,7 @@ df_sinistro_apolice['vl_salvado_pago'] = (df_sinistro_apolice['vl_salvado_pago']
 df_sinistro_apolice['vl_salvado_pendente'] = (df_sinistro_apolice['vl_salvado_pendente'].map(formatar_valor_br))
 df_sinistro_apolice['vl_salvado_total'] = (df_sinistro_apolice['vl_salvado_total'].map(formatar_valor_br))
 df_sinistro_apolice['Total Sinistro'] = (df_sinistro_apolice['Total Sinistro'].map(formatar_valor_br))
+df_sinistro_apolice['Franquia Apólice'] = df_sinistro_apolice['Franquia Apólice'].map(formatar_valor_br)
 
 st.text("Dados de Sinistro da Apólice")
 if not df_sinistro_apolice.empty:
@@ -553,23 +564,22 @@ with col_cob_sin_2:
     ].copy() if not df_cobertura.empty else pd.DataFrame(columns=['Cobertura Apólice', 'Franquia Apólice'])
 
     # Sinistros da apólice agrupados por cobertura
-    df_sin_ap = df_sinistros[df_sinistros['N° Apólice'] == apolices_selecionadas_filtro_apolice]    .groupby('Cobertura')['Total Sinistro'].sum().reset_index()
+    df_sin_ap = df_sinistros[df_sinistros['N° Apólice'] == apolices_selecionadas_filtro_apolice]        .groupby('Cobertura')['Total Sinistro'].sum().reset_index()
     df_sin_ap.rename(columns={'Cobertura': 'Cobertura Apólice'}, inplace=True)
 
-    if df_sin_ap.empty:
-        # Sem sinistro: mostra coberturas do arquivo com sinistro zerado
-        df_cob_view_ap = df_cob_ap.copy()
-        df_cob_view_ap['Total Sinistro'] = 0.0
+    # Cobertura como base (left) — todas as coberturas aparecem sempre
+    # Sinistro entra como right — coberturas sem sinistro ficam com 0,00
+    if df_cob_ap.empty:
+        df_cob_view_ap = df_sin_ap.copy()
+        df_cob_view_ap['Franquia Apólice'] = 0.0
     else:
-        # Sinistro como base (left) — todo sinistro aparece; franquia vem do arquivo quando disponível
-        df_cob_view_ap = pd.merge(df_sin_ap, df_cob_ap, on='Cobertura Apólice', how='left')
-        df_cob_view_ap.rename(columns={'Total Sinistro': 'Total Sinistro'}, inplace=True)
+        df_cob_view_ap = pd.merge(df_cob_ap, df_sin_ap, on='Cobertura Apólice', how='left')
+        df_cob_view_ap['Total Sinistro'] = df_cob_view_ap['Total Sinistro'].fillna(0)
         df_cob_view_ap['Franquia Apólice'] = df_cob_view_ap['Franquia Apólice'].fillna(0)
 
     df_cob_view_ap['Franquia Apólice'] = df_cob_view_ap['Franquia Apólice'].map(formatar_valor_br)
     df_cob_view_ap['Total Sinistro']   = df_cob_view_ap['Total Sinistro'].map(formatar_valor_br)
-    # df_cob_view_ap = df_cob_view_ap[['Cobertura Apólice', 'Franquia Apólice', 'Total Sinistro']]
-    df_cob_view_ap = df_cob_view_ap[['Cobertura Apólice', 'Franquia Apólice']]
+    df_cob_view_ap = df_cob_view_ap[['Cobertura Apólice', 'Franquia Apólice', 'Total Sinistro']]
     st.dataframe(df_cob_view_ap, hide_index=True, use_container_width=True)
 
 #
@@ -1113,6 +1123,16 @@ if len(ramos_ativos) >= 2:
 df_segurado_calculo['Soma Prêmio Pago por Apolice'] = (df_segurado_calculo['Soma Prêmio Pago por Apolice'].map(formatar_valor_br))
 df_segurado_calculo['Soma Sinistro Por Apolice'] = (df_segurado_calculo['Soma Sinistro Por Apolice'].map(formatar_valor_br))
 
+# Adiciona Franquia por Cobertura no df_sinistro_segurado (antes da formatação — dados numéricos)
+if not df_cobertura.empty and not df_sinistro_segurado.empty:
+    df_franquia_cob_seg = df_cobertura[
+        df_cobertura['N° Apólice'].isin(df_sinistro_segurado['N° Apólice'].unique())
+    ][['Cobertura Apólice', 'Franquia Apólice']].rename(columns={'Cobertura Apólice': 'Cobertura'})
+    df_sinistro_segurado = pd.merge(df_sinistro_segurado, df_franquia_cob_seg, on='Cobertura', how='left')
+    df_sinistro_segurado['Franquia Apólice'] = df_sinistro_segurado['Franquia Apólice'].fillna(0)
+else:
+    df_sinistro_segurado['Franquia Apólice'] = 0.0
+
 # Formatar como numero as colunas do df de dados da apólice
 df_sinistro_segurado['vl_sinistro_pago'] = (df_sinistro_segurado['vl_sinistro_pago'].map(formatar_valor_br))
 df_sinistro_segurado['vl_sinistro_pendente'] = (df_sinistro_segurado['vl_sinistro_pendente'].map(formatar_valor_br))
@@ -1127,6 +1147,7 @@ df_sinistro_segurado['vl_salvado_pago'] = (df_sinistro_segurado['vl_salvado_pago
 df_sinistro_segurado['vl_salvado_pendente'] = (df_sinistro_segurado['vl_salvado_pendente'].map(formatar_valor_br))
 df_sinistro_segurado['vl_salvado_total'] = (df_sinistro_segurado['vl_salvado_total'].map(formatar_valor_br))
 df_sinistro_segurado['Total Sinistro'] = (df_sinistro_segurado['Total Sinistro'].map(formatar_valor_br))
+df_sinistro_segurado['Franquia Apólice'] = df_sinistro_segurado['Franquia Apólice'].map(formatar_valor_br)
 
 
 df_apolices_segurado_1, df_sinistro_segurado_2 = st.columns(2)
