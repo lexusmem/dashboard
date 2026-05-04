@@ -10,6 +10,13 @@ from datetime import datetime
 
 st.set_page_config(layout='wide')
 
+# Função para scroll ao topo via JS
+def scroll_to_top():
+    st.components.v1.html(
+        "<script>window.parent.document.querySelector('.main').scrollTo({top: 0, behavior: 'smooth'});</script>",
+        height=0
+    )
+
 st.markdown("""
     <style>
     .main .block-container {
@@ -72,6 +79,7 @@ if st.sidebar.button('Limpar Todos os Filtros'):
         if k in st.session_state:
             st.session_state[k] = []
     st.session_state['resetar_slider'] = True
+    st.session_state['scroll_top'] = True
     st.rerun()
 
 # 1. Filtro por Representante
@@ -177,6 +185,11 @@ st.sidebar.header('Dados por Apólice')
 st.sidebar.page_link("app_homologacao.py", label="📋  Apólice / Segurado")
 
 st.subheader("Dados Gerais")
+
+# Scroll ao topo quando filtros são limpos
+if st.session_state.get('scroll_top', False):
+    scroll_to_top()
+    st.session_state['scroll_top'] = False
 
 # ============= PARTE REFERENTE AO SLIDER PARA SELECIONAR ANO =============
 col_esq, col_meio, col_dir = st.columns([4,1,1])
@@ -739,6 +752,50 @@ with c1:
 with c2:
     st.subheader("Sinistros por Cobertura")
     st.plotly_chart(fig_pizza_geral, use_container_width=True, config={'displayModeBar': False})
+
+# ── Gráfico de linhas: Sinistralidade % por Ano por Ramo (linha inteira) ──────
+st.subheader("Evolução da Sinistralidade (%) por Ramo")
+
+df_ramo_ano = df_para_soma.groupby(['Ano Vigência', 'Ramo']).agg(
+    Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
+    Total_Sinistro=('Soma Sinistro Por Apolice', 'sum')
+).reset_index()
+
+df_ramo_ano['Sinistralidade'] = df_ramo_ano.apply(
+    lambda row: row['Total_Sinistro'] / row['Total_Premio'] if row['Total_Premio'] != 0 else 0,
+    axis=1
+)
+df_ramo_ano['Ramo'] = df_ramo_ano['Ramo'].astype(str)
+
+if not df_ramo_ano.empty:
+    fig_sin_ramo_ano = go.Figure()
+    for ramo in sorted(df_ramo_ano['Ramo'].unique()):
+        df_r = df_ramo_ano[df_ramo_ano['Ramo'] == ramo].sort_values('Ano Vigência')
+        fig_sin_ramo_ano.add_trace(go.Scatter(
+            x=df_r['Ano Vigência'],
+            y=df_r['Sinistralidade'],
+            mode='lines+markers+text',
+            name=f'Ramo {ramo}',
+            text=df_r['Sinistralidade'].map(lambda x: f"{x:.1%}"),
+            textposition='top center',
+            textfont=dict(size=11),
+            marker=dict(size=8),
+            line=dict(width=2),
+        ))
+    fig_sin_ramo_ano.update_layout(
+        xaxis=dict(title='Ano', tickmode='linear', dtick=1),
+        yaxis=dict(title='Sinistralidade (%)', tickformat='.0%'),
+        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+        margin=dict(t=40, b=20, l=0, r=0),
+        height=400,
+        hovermode='x unified'
+    )
+    fig_sin_ramo_ano.update_traces(
+        hovertemplate='%{y:.2%}'
+    )
+    st.plotly_chart(fig_sin_ramo_ano, use_container_width=True, config={'displayModeBar': False})
+else:
+    st.info("Sem dados suficientes para gerar o gráfico de sinistralidade por ramo.")
 
 # 5. Detalhamento por Ramos Específicos (23, 28, 82)
 ramos_alvo = [23, 28, 82]
