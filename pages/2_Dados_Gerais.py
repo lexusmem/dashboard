@@ -188,7 +188,10 @@ st.markdown(
     '  line-height:44px; text-decoration:none;'
     '  box-shadow:0 2px 8px rgba(0,0,0,0.18); display:block;'
     '}'
-    '.btn-topo:hover { background-color:#9CA3AF; color:white; text-decoration:none; }'
+    '.btn-topo:hover {'
+    '  background-color:#6B7280; color:white; text-decoration:none;'
+    '  box-shadow:0 4px 12px rgba(0,0,0,0.28);'
+    '}'
     '</style>'
     '<a href="#topo-pagina" class="btn-topo" title="Voltar ao topo">&#8679;</a>',
     unsafe_allow_html=True
