@@ -10,6 +10,28 @@ import streamlit_antd_components as sac
 # Configura a página para layout amplo
 st.set_page_config(layout='wide', page_title='Homolog Painel Allseg', page_icon='📊')
 
+# Âncora invisível no topo + botão flutuante fixo no canto inferior direito
+st.markdown(
+    '<div id="topo-pagina"></div>'
+    '<style>'
+    'a.btn-topo, a.btn-topo:link, a.btn-topo:visited {'
+    '  position:fixed; bottom:4.5rem; right:1.5rem; z-index:9999;'
+    '  background-color:#D1D5DB; color:white !important; border:none;'
+    '  border-radius:50%; width:46px; height:46px;'
+    '  font-size:24px; cursor:pointer; text-align:center;'
+    '  line-height:44px; text-decoration:none !important;'
+    '  box-shadow:0 2px 8px rgba(0,0,0,0.18); display:block;'
+    '}'
+    'a.btn-topo:hover {'
+    '  background-color:#6B7280; color:white !important;'
+    '  text-decoration:none !important;'
+    '  box-shadow:0 4px 12px rgba(0,0,0,0.28);'
+    '}'
+    '</style>'
+    '<a href="#topo-pagina" class="btn-topo" title="Voltar ao topo">&#8679;</a>',
+    unsafe_allow_html=True
+)
+
 st.markdown("""
     <style>
     /* Forçar o contentor principal a permitir scroll sempre */
@@ -881,6 +903,49 @@ with col_util_2:
     else:
         st.info("Sem dados de Sinistro.")
 
+# ── Evolução da Sinistralidade (%) por Utilização — Segurado ─────────────────
+st.subheader("Evolução da Sinistralidade (%) por Utilização - Segurado")
+
+df_util_ano_seg = df_segurado_calculo.groupby(['Ano Vigência', 'Utilização']).agg(
+    Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
+    Total_Sinistro=('Soma Sinistro Por Apolice', 'sum')
+).reset_index()
+df_util_ano_seg['Sinistralidade'] = df_util_ano_seg.apply(
+    lambda row: row['Total_Sinistro'] / row['Total_Premio'] if row['Total_Premio'] != 0 else 0, axis=1
+)
+utils_com_sin_seg = df_util_ano_seg[df_util_ano_seg['Sinistralidade'] > 0]['Utilização'].unique()
+df_util_ano_seg = df_util_ano_seg[
+    (df_util_ano_seg['Utilização'].astype(str) != '0') &
+    (df_util_ano_seg['Utilização'].isin(utils_com_sin_seg))
+]
+if not df_util_ano_seg.empty:
+    fig_sin_util_seg = go.Figure()
+    for util in sorted(df_util_ano_seg['Utilização'].unique()):
+        df_u = df_util_ano_seg[df_util_ano_seg['Utilização'] == util].sort_values('Ano Vigência')
+        fig_sin_util_seg.add_trace(go.Scatter(
+            x=df_u['Ano Vigência'],
+            y=df_u['Sinistralidade'],
+            mode='lines+markers+text',
+            name=str(util),
+            text=df_u['Sinistralidade'].map(lambda x: f"{x:.1%}"),
+            textposition='top center',
+            textfont=dict(size=10),
+            marker=dict(size=7),
+            line=dict(width=2),
+        ))
+    fig_sin_util_seg.update_layout(
+        xaxis=dict(title='Ano', tickmode='linear', dtick=1),
+        yaxis=dict(title='Sinistralidade (%)', tickformat='.0%'),
+        legend=dict(orientation='v', yanchor='top', y=1, xanchor='left', x=1.01, font=dict(size=10)),
+        margin=dict(t=40, b=20, l=0, r=180),
+        height=430,
+        hovermode='x unified'
+    )
+    fig_sin_util_seg.update_traces(hovertemplate='%{y:.2%}')
+    st.plotly_chart(fig_sin_util_seg, use_container_width=True, config={'displayModeBar': False})
+else:
+    st.info("Sem dados suficientes para o gráfico de sinistralidade por utilização.")
+
 
 # 1. Agrupamento de prêmios, sinistros e contagem de apólices únicas
 groupby_segurado_ramo = df_segurado_calculo.groupby('Ramo').agg(
@@ -1043,6 +1108,48 @@ with seg_chart_2:
         st.plotly_chart(fig_pizza, use_container_width=True, config={'displayModeBar': False})
     else:
         st.info("Segurado sem Sinistro")
+
+# ── Evolução da Sinistralidade (%) por Ramo — Segurado ───────────────────────
+st.subheader("Evolução da Sinistralidade (%) por Ramo - Segurado")
+
+df_ramo_ano_seg = df_segurado_calculo.groupby(['Ano Vigência', 'Ramo']).agg(
+    Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
+    Total_Sinistro=('Soma Sinistro Por Apolice', 'sum')
+).reset_index()
+df_ramo_ano_seg['Sinistralidade'] = df_ramo_ano_seg.apply(
+    lambda row: row['Total_Sinistro'] / row['Total_Premio'] if row['Total_Premio'] != 0 else 0, axis=1
+)
+df_ramo_ano_seg['Ramo'] = df_ramo_ano_seg['Ramo'].astype(str)
+ramos_com_sin_seg = df_ramo_ano_seg[df_ramo_ano_seg['Sinistralidade'] > 0]['Ramo'].unique()
+df_ramo_ano_seg = df_ramo_ano_seg[df_ramo_ano_seg['Ramo'].isin(ramos_com_sin_seg)]
+
+if not df_ramo_ano_seg.empty:
+    fig_sin_ramo_seg = go.Figure()
+    for ramo in sorted(df_ramo_ano_seg['Ramo'].unique()):
+        df_r = df_ramo_ano_seg[df_ramo_ano_seg['Ramo'] == ramo].sort_values('Ano Vigência')
+        fig_sin_ramo_seg.add_trace(go.Scatter(
+            x=df_r['Ano Vigência'],
+            y=df_r['Sinistralidade'],
+            mode='lines+markers+text',
+            name=f'Ramo {ramo}',
+            text=df_r['Sinistralidade'].map(lambda x: f"{x:.1%}"),
+            textposition='top center',
+            textfont=dict(size=11),
+            marker=dict(size=8),
+            line=dict(width=2),
+        ))
+    fig_sin_ramo_seg.update_layout(
+        xaxis=dict(title='Ano', tickmode='linear', dtick=1),
+        yaxis=dict(title='Sinistralidade (%)', tickformat='.0%'),
+        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+        margin=dict(t=40, b=20, l=0, r=0),
+        height=400,
+        hovermode='x unified'
+    )
+    fig_sin_ramo_seg.update_traces(hovertemplate='%{y:.2%}')
+    st.plotly_chart(fig_sin_ramo_seg, use_container_width=True, config={'displayModeBar': False})
+else:
+    st.info("Sem dados suficientes para o gráfico de sinistralidade por ramo.")
 
 # Lista dos ramos que desejamos detalhar
 ramos_detalhar = [23, 28, 82]
