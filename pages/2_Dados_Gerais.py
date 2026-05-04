@@ -176,29 +176,38 @@ st.sidebar.markdown("---")
 st.sidebar.header('Dados por Apólice')
 st.sidebar.page_link("app_homologacao.py", label="📋  Apólice / Segurado")
 
-# ── Âncora invisível no topo — link HTML para scroll confiável ──────────────
-st.markdown('<div id="topo-pagina" style="position:absolute;top:0"></div>', unsafe_allow_html=True)
+# ── Âncora invisível no topo ─────────────────────────────────────────────────
+st.markdown('<div id="topo-pagina"></div>', unsafe_allow_html=True)
 
-# Detecta mudança de filtro
-_estado_filtros = str([
-    st.session_state.get(k, []) for k in _filtro_keys
-] + [str(st.session_state.get('slider_anos', ''))])
-
-if '_ultimo_estado_filtros' not in st.session_state:
-    st.session_state['_ultimo_estado_filtros'] = _estado_filtros
-    _filtros_mudaram = False
-else:
-    _filtros_mudaram = st.session_state['_ultimo_estado_filtros'] != _estado_filtros
-    st.session_state['_ultimo_estado_filtros'] = _estado_filtros
-
-if _filtros_mudaram:
-    st.markdown(
-        '<a href="#topo-pagina" style="display:inline-block;padding:5px 14px;'
-        'background:#1A56A0;color:white;border-radius:6px;'
-        'text-decoration:none;font-size:13px;margin-bottom:6px;">'
-        '⬆  Voltar ao topo</a>',
-        unsafe_allow_html=True
-    )
+# Botão flutuante fixo no canto inferior direito — sempre visível
+st.markdown("""
+    <style>
+    .btn-topo {
+        position: fixed;
+        bottom: 2.5rem;
+        right: 1.5rem;
+        z-index: 9999;
+        background-color: #1A56A0;
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 46px;
+        height: 46px;
+        font-size: 22px;
+        cursor: pointer;
+        text-align: center;
+        line-height: 46px;
+        text-decoration: none;
+        box-shadow: 0 3px 10px rgba(0,0,0,0.25);
+        display: block;
+    }
+    .btn-topo:hover {
+        background-color: #36A2EB;
+        color: white;
+    }
+    </style>
+    <a href='#topo-pagina' class='btn-topo' title='Voltar ao topo'>&#8679;</a>
+""", unsafe_allow_html=True)
 
 st.subheader("Dados Gerais")
 
