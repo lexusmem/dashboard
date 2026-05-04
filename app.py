@@ -8,7 +8,7 @@ import plotly.express as px
 import streamlit_antd_components as sac
 
 # Configura a página para layout amplo
-st.set_page_config(layout='wide', page_title='Homolog Painel Allseg', page_icon='📊')
+st.set_page_config(layout='wide', page_title='Painel Allseg', page_icon='📊')
 
 # CSS do botão flutuante — âncora fica no início do conteúdo visível
 st.markdown(
