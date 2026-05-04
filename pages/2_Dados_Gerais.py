@@ -176,38 +176,23 @@ st.sidebar.markdown("---")
 st.sidebar.header('Dados por Apólice')
 st.sidebar.page_link("app_homologacao.py", label="📋  Apólice / Segurado")
 
-# ── Âncora invisível no topo ─────────────────────────────────────────────────
-st.markdown('<div id="topo-pagina"></div>', unsafe_allow_html=True)
-
-# Botão flutuante fixo no canto inferior direito — sempre visível
-st.markdown("""
-    <style>
-    .btn-topo {
-        position: fixed;
-        bottom: 2.5rem;
-        right: 1.5rem;
-        z-index: 9999;
-        background-color: #1A56A0;
-        color: white;
-        border: none;
-        border-radius: 50%;
-        width: 46px;
-        height: 46px;
-        font-size: 22px;
-        cursor: pointer;
-        text-align: center;
-        line-height: 46px;
-        text-decoration: none;
-        box-shadow: 0 3px 10px rgba(0,0,0,0.25);
-        display: block;
-    }
-    .btn-topo:hover {
-        background-color: #36A2EB;
-        color: white;
-    }
-    </style>
-    <a href='#topo-pagina' class='btn-topo' title='Voltar ao topo'>&#8679;</a>
-""", unsafe_allow_html=True)
+# Âncora invisível no topo + botão flutuante fixo no canto inferior direito
+st.markdown(
+    '<div id="topo-pagina"></div>'
+    '<style>'
+    '.btn-topo {'
+    '  position:fixed; bottom:4.5rem; right:1.5rem; z-index:9999;'
+    '  background-color:#D1D5DB; color:white; border:none;'
+    '  border-radius:50%; width:46px; height:46px;'
+    '  font-size:24px; cursor:pointer; text-align:center;'
+    '  line-height:44px; text-decoration:none;'
+    '  box-shadow:0 2px 8px rgba(0,0,0,0.18); display:block;'
+    '}'
+    '.btn-topo:hover { background-color:#9CA3AF; color:white; text-decoration:none; }'
+    '</style>'
+    '<a href="#topo-pagina" class="btn-topo" title="Voltar ao topo">&#8679;</a>',
+    unsafe_allow_html=True
+)
 
 st.subheader("Dados Gerais")
 
