@@ -174,7 +174,7 @@ if not df_sinistro_geral_com_rep_cor.empty:
 # Link de volta para a página principal na sidebar
 st.sidebar.markdown("---")
 st.sidebar.header('Dados por Apólice')
-st.sidebar.page_link("app_homologacao.py", label="📋  Apólice / Segurado")
+st.sidebar.page_link("app.py", label="📋  Apólice / Segurado")
 
 # Âncora invisível no topo + botão flutuante fixo no canto inferior direito
 st.markdown(
