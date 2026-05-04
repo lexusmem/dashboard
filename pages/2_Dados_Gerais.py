@@ -176,10 +176,7 @@ st.sidebar.markdown("---")
 st.sidebar.header('Dados por Apólice')
 st.sidebar.page_link("app_homologacao.py", label="📋  Apólice / Segurado")
 
-# Âncora no topo da página
-st.markdown('<a name="topo"></a>', unsafe_allow_html=True)
-
-# Detecta mudança de filtro e injeta scroll ao topo via JS
+# Detecta mudança de filtro e rola para o topo via st.components.v1.html
 _estado_filtros = str([
     st.session_state.get(k, []) for k in _filtro_keys
 ] + [str(st.session_state.get('slider_anos', ''))])
@@ -189,12 +186,8 @@ if '_ultimo_estado_filtros' not in st.session_state:
 
 if st.session_state['_ultimo_estado_filtros'] != _estado_filtros:
     st.session_state['_ultimo_estado_filtros'] = _estado_filtros
-    st.markdown("""
-        <script>
-            var main = window.parent.document.querySelector('.main');
-            if (main) { main.scrollTop = 0; }
-        </script>
-    """, unsafe_allow_html=True)
+    scroll_js = '<script>window.parent.document.querySelector("section.main").scrollTo({top:0,behavior:"instant"});</script>'
+    st.components.v1.html(scroll_js, height=0, scrolling=False)
 
 st.subheader("Dados Gerais")
 
