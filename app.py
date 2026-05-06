@@ -1236,6 +1236,8 @@ if not df_cobertura.empty and not df_sinistro_segurado.empty:
     df_franquia_cob_seg = df_cobertura[
         df_cobertura['N° Apólice'].isin(df_sinistro_segurado['N° Apólice'].unique())
     ][['Cobertura Apólice', 'Franquia Apólice']].rename(columns={'Cobertura Apólice': 'Cobertura'})
+    # Deduplica por Cobertura mantendo franquia máxima — evita multiplicar linhas no merge
+    df_franquia_cob_seg = df_franquia_cob_seg.groupby('Cobertura', as_index=False)['Franquia Apólice'].max()
     df_sinistro_segurado = pd.merge(df_sinistro_segurado, df_franquia_cob_seg, on='Cobertura', how='left')
     df_sinistro_segurado['Franquia Apólice'] = df_sinistro_segurado['Franquia Apólice'].fillna(0)
 else:
