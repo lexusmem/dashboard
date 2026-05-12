@@ -466,7 +466,17 @@ with col_final_1:
         # Formata para exibição
         df_sinistro_final_exibicao['Total Sinistro'] = df_sinistro_final_exibicao['Total Sinistro'].map(formatar_valor_br)
         df_sinistro_final_exibicao['Franquia Apólice'] = df_sinistro_final_exibicao['Franquia Apólice'].map(formatar_valor_br)
-        st.dataframe(df_sinistro_final_exibicao, hide_index=True)
+        # Reordena colunas: Representante | Corretor | Franquia Apólice na sequência correta
+        colunas_base = ['nr_sinistro', 'N° Apólice', 'nm_cliente', 'Cobertura',
+                        'dt_aviso', 'dt_ocorrencia',
+                        'vl_sinistro_pago', 'vl_sinistro_pendente', 'vl_sinistro_total',
+                        'vl_despesa_pago', 'vl_despesa_pendente', 'vl_despesa_total',
+                        'vl_honorario_pago', 'vl_honorario_pendente', 'vl_honorario_total',
+                        'vl_salvado_pago', 'vl_salvado_pendente', 'vl_salvado_total',
+                        'Total Sinistro', 'status_processo', 'status_movimento', 'nm_causa',
+                        'Representante', 'Corretor', 'Franquia Apólice']
+        colunas_exibir = [c for c in colunas_base if c in df_sinistro_final_exibicao.columns]
+        st.dataframe(df_sinistro_final_exibicao[colunas_exibir], hide_index=True)
     else:
         st.info("Nenhum sinistro no período selecionado.")
         
