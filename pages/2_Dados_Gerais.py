@@ -464,8 +464,17 @@ with col_final_1:
         else:
             df_sinistro_final_exibicao['Franquia Apólice'] = 0.0
         # Formata para exibição
-        df_sinistro_final_exibicao['Total Sinistro'] = df_sinistro_final_exibicao['Total Sinistro'].map(formatar_valor_br)
-        df_sinistro_final_exibicao['Franquia Apólice'] = df_sinistro_final_exibicao['Franquia Apólice'].map(formatar_valor_br)
+        # Formata todas as colunas de valor no padrão BR — igual aos DFs do app
+        _colunas_valor = [
+            'vl_sinistro_pago', 'vl_sinistro_pendente', 'vl_sinistro_total',
+            'vl_despesa_pago', 'vl_despesa_pendente', 'vl_despesa_total',
+            'vl_honorario_pago', 'vl_honorario_pendente', 'vl_honorario_total',
+            'vl_salvado_pago', 'vl_salvado_pendente', 'vl_salvado_total',
+            'Total Sinistro', 'Franquia Apólice'
+        ]
+        for _col in _colunas_valor:
+            if _col in df_sinistro_final_exibicao.columns:
+                df_sinistro_final_exibicao[_col] = df_sinistro_final_exibicao[_col].map(formatar_valor_br)
         # Colunas na mesma sequência dos DFs do app_homologacao
         colunas_base = [
             'nr_sinistro', 'nr_ramo', 'N° Apólice', 'nr_endosso', 'nm_cliente', 'Cobertura',
