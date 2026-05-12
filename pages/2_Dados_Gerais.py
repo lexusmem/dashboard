@@ -40,6 +40,7 @@ if 'dados_calculados' not in st.session_state or st.session_state['dados_calcula
 
 dados_calculados = st.session_state['dados_calculados']
 df_sinistros     = st.session_state['df_sinistros']
+df_cobertura     = st.session_state.get('df_cobertura', pd.DataFrame())
 
 # Prepara dados_exibicao
 dados_exibicao = dados_calculados.copy()
@@ -452,8 +453,19 @@ with col_final_1:
     )
     
     if not df_sinistro_final_exibicao.empty:
+        # Adiciona Franquia Apólice por Cobertura — deduplica para evitar duplicatas no merge
+        if not df_cobertura.empty:
+            df_franquia_geral = df_cobertura[
+                df_cobertura['N° Apólice'].isin(df_sinistro_final_exibicao['N° Apólice'].unique())
+            ][['Cobertura Apólice', 'Franquia Apólice']].rename(columns={'Cobertura Apólice': 'Cobertura'})
+            df_franquia_geral = df_franquia_geral.groupby('Cobertura', as_index=False)['Franquia Apólice'].max()
+            df_sinistro_final_exibicao = pd.merge(df_sinistro_final_exibicao, df_franquia_geral, on='Cobertura', how='left')
+            df_sinistro_final_exibicao['Franquia Apólice'] = df_sinistro_final_exibicao['Franquia Apólice'].fillna(0)
+        else:
+            df_sinistro_final_exibicao['Franquia Apólice'] = 0.0
         # Formata para exibição
         df_sinistro_final_exibicao['Total Sinistro'] = df_sinistro_final_exibicao['Total Sinistro'].map(formatar_valor_br)
+        df_sinistro_final_exibicao['Franquia Apólice'] = df_sinistro_final_exibicao['Franquia Apólice'].map(formatar_valor_br)
         st.dataframe(df_sinistro_final_exibicao, hide_index=True)
     else:
         st.info("Nenhum sinistro no período selecionado.")
