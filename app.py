@@ -563,7 +563,14 @@ df_sinistro_apolice['Franquia Apólice'] = df_sinistro_apolice['Franquia Apólic
 
 st.text("Dados de Sinistro da Apólice")
 if not df_sinistro_apolice.empty:
-    st.dataframe(df_sinistro_apolice, hide_index=True)
+    df_sinistro_apolice = pd.merge(
+        df_sinistro_apolice,
+        dados_exibicao[['N° Apólice', 'Representante', 'Corretor']].drop_duplicates('N° Apólice'),
+        on='N° Apólice', how='left'
+    )
+    _cols_ap = ['nr_sinistro', 'nr_ramo', 'N° Apólice', 'nr_endosso', 'nm_cliente', 'Cobertura', 'dt_aviso', 'dt_ocorrencia', 'vl_sinistro_pago', 'vl_sinistro_pendente', 'vl_sinistro_total', 'vl_despesa_pago', 'vl_despesa_pendente', 'vl_despesa_total', 'vl_honorario_pago', 'vl_honorario_pendente', 'vl_honorario_total', 'vl_salvado_pago', 'vl_salvado_pendente', 'vl_salvado_total', 'status_processo', 'status_movimento', 'nm_causa', 'id_endosso', 't', 'Total Sinistro', 'Representante', 'Corretor', 'Franquia Apólice']
+    _cols_ap = [c for c in _cols_ap if c in df_sinistro_apolice.columns]
+    st.dataframe(df_sinistro_apolice[_cols_ap], hide_index=True)
 else:
     st.info("Apólice não possui sinistro.")
 
@@ -1269,7 +1276,14 @@ with df_apolices_segurado_1:
     st.dataframe(df_segurado_exibicao, hide_index=True)
 with df_sinistro_segurado_2:
     st.text("Dados de Sinistro do Segurado")
-    st.dataframe(df_sinistro_segurado, hide_index=True)
+    df_sinistro_segurado = pd.merge(
+        df_sinistro_segurado,
+        dados_exibicao[['N° Apólice', 'Representante', 'Corretor']].drop_duplicates('N° Apólice'),
+        on='N° Apólice', how='left'
+    )
+    _cols_seg = ['nr_sinistro', 'nr_ramo', 'N° Apólice', 'nr_endosso', 'nm_cliente', 'Cobertura', 'dt_aviso', 'dt_ocorrencia', 'vl_sinistro_pago', 'vl_sinistro_pendente', 'vl_sinistro_total', 'vl_despesa_pago', 'vl_despesa_pendente', 'vl_despesa_total', 'vl_honorario_pago', 'vl_honorario_pendente', 'vl_honorario_total', 'vl_salvado_pago', 'vl_salvado_pendente', 'vl_salvado_total', 'status_processo', 'status_movimento', 'nm_causa', 'id_endosso', 't', 'Total Sinistro', 'Representante', 'Corretor', 'Franquia Apólice']
+    _cols_seg = [c for c in _cols_seg if c in df_sinistro_segurado.columns]
+    st.dataframe(df_sinistro_segurado[_cols_seg], hide_index=True)
 
 # --- Desempenho por Tipo de Emissão — Segurado ---
 st.text("Desempenho por Tipo de Emissão do Segurado")
