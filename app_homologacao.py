@@ -294,6 +294,52 @@ a.btn-topo:hover {
     border-left: 4px solid var(--accent) !important;
     border-radius: var(--radius) !important;
 }
+
+/* ── Info Cards (Segurado, Corretor etc) — idêntico ao st.metric ─ */
+.info-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.1rem 1.4rem;
+    box-shadow: var(--shadow-md);
+    transition: box-shadow 0.2s, transform 0.15s;
+    height: 100%;
+}
+.info-card:hover {
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-2px);
+}
+.info-card-label {
+    margin: 0 0 0.4rem 0;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-secondary);
+    font-family: var(--font-main);
+}
+.info-card-value {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    font-family: var(--font-main);
+    line-height: 1.35;
+    word-break: break-word;
+}
+
+/* ── Labels de seção (st.text acima de df/gráfico) ─────────────── */
+/* Unifica st.text, st.subheader quando usado como label de bloco   */
+[data-testid="stText"] p,
+[data-testid="stText"] {
+    font-size: 0.65rem !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.1em !important;
+    color: var(--text-secondary) !important;
+    font-family: var(--font-main) !important;
+    margin-bottom: 0.4rem !important;
+}
 </style>
 """
 
@@ -762,16 +808,9 @@ utilização = list(
 
 def info_card(label, value):
     st.markdown(f"""
-        <div style="
-            background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;
-            padding:1.1rem 1.4rem;
-            box-shadow:0 4px 12px rgba(0,0,0,0.08),0 2px 4px rgba(0,0,0,0.04);
-        ">
-            <p style="margin:0 0 0.35rem 0;font-size:0.65rem;font-weight:700;
-                text-transform:uppercase;letter-spacing:0.1em;color:#6b7280;
-                font-family:'Inter',sans-serif;">{label}</p>
-            <p style="margin:0;font-size:1rem;font-weight:600;color:#111827;
-                font-family:'Inter',sans-serif;line-height:1.35;word-break:break-word;">{value}</p>
+        <div class="info-card">
+            <p class="info-card-label">{label}</p>
+            <p class="info-card-value">{value}</p>
         </div>
     """, unsafe_allow_html=True)
 
@@ -784,7 +823,7 @@ with col_rep_3:
 with col_util_4:
     info_card("Utilização", str(utilização[0]).title())
 
-st.metric("Dados da Apólice")
+st.text("Dados da Apólice")
 st.dataframe(dados_filtrados_filtro_apolice, hide_index=True)
 
 # Adiciona Franquia por Cobertura (antes da formatação — dados ainda numéricos)
