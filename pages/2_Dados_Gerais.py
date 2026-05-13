@@ -334,7 +334,6 @@ dados_exibicao = dados_exibicao[colunas].sort_values('N° Apólice')
 
 # --- Lógica de Filtragem Hierárquica na Sidebar ---
 st.sidebar.header('Filtros Dados Gerais')
-st.write("")
 
 # Botão para Resetar Filtros — limpa todas as keys do session_state
 _filtro_keys = ['filtro_rep', 'filtro_cor', 'filtro_seg', 'filtro_ramo', 'filtro_util', 'filtro_tp_emissao', 'filtro_regiao', 'filtro_uf', 'filtro_apolice']
