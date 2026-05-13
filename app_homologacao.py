@@ -784,7 +784,7 @@ with col_rep_3:
 with col_util_4:
     info_card("Utilização", str(utilização[0]).title())
 
-st.text("Dados da Apólice")
+st.metric("Dados da Apólice")
 st.dataframe(dados_filtrados_filtro_apolice, hide_index=True)
 
 # Adiciona Franquia por Cobertura (antes da formatação — dados ainda numéricos)
