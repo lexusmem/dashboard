@@ -444,7 +444,6 @@ if not df_sinistro_geral_com_rep_cor.empty:
 # 'https://nicedouble-streamlitantdcomponentsdemo-app-middmy.streamlit.app/'
 
 # Link de volta para a página principal na sidebar
-st.sidebar.markdown("---")
 st.sidebar.header('Dados por Apólice')
 st.sidebar.page_link("app_homologacao.py", label="📋  Apólice / Segurado")
 
