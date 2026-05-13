@@ -140,22 +140,22 @@ h1 { font-size: 1.5rem !important; font-weight: 700 !important; letter-spacing: 
 
 /* ── DataFrames — card com sombra ─────────────────────────────── */
 [data-testid="stDataFrame"] {
-    background: var(--bg-card) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: var(--radius) !important;
-    box-shadow: var(--shadow-md) !important;
-    overflow: hidden !important;
+    background: transparent !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    overflow: visible !important;
     padding: 0 !important;
 }
 
 /* ── Gráficos Plotly — card com sombra ───────────────────────── */
 [data-testid="stPlotlyChart"] > div {
-    background: var(--bg-card) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: var(--radius) !important;
-    box-shadow: var(--shadow-md) !important;
-    padding: 0.75rem !important;
-    overflow: hidden !important;
+    background: transparent !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    overflow: visible !important;
 }
 
 /* ── st.text — label de seção estilizado ─────────────────────── */
@@ -364,6 +364,20 @@ a.btn-topo:hover {
     color: var(--text-primary) !important;
     font-family: var(--font-main) !important;
     line-height: 1 !important;
+}
+
+/* ── Content card wrapper (label + df/gráfico juntos) ─────────── */
+.content-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    padding: 1.25rem 1.25rem 1rem;
+    margin-bottom: 0.5rem;
+    overflow: visible;
+}
+.content-card .section-label {
+    margin-bottom: 0.75rem !important;
 }
 </style>
 """
@@ -842,8 +856,10 @@ with col_util_4:
     st.metric(label="Utilização", value=str(utilização[0]).title())
 st.markdown('</div>', unsafe_allow_html=True)
 
+st.markdown('<div class="content-card">', unsafe_allow_html=True)
 st.markdown('<p class="section-label">Dados da Apólice</p>', unsafe_allow_html=True)
 st.dataframe(dados_filtrados_filtro_apolice, hide_index=True)
+st.markdown('</div>', unsafe_allow_html=True)
 
 # Adiciona Franquia por Cobertura (antes da formatação — dados ainda numéricos)
 if not df_cobertura.empty and not df_sinistro_apolice.empty:
@@ -888,11 +904,13 @@ else:
 col_cob_sin_1, col_cob_sin_2 = st.columns(2)
 
 with col_cob_sin_1:
+    st.markdown('<div class="content-card">', unsafe_allow_html=True)
     st.markdown('<p class="section-label">Sinistros por Cobertura da Apólice</p>', unsafe_allow_html=True)
     if not df_sinistro_apolice_cobertura.empty:
         st.dataframe(df_sinistro_apolice_cobertura, hide_index=True)
     else:
         st.info("Apólice não possui sinistro.")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 with col_cob_sin_2:
     # --- Coberturas e Franquia da Apólice ---
@@ -1120,9 +1138,11 @@ with col_graf_seg_3:
         'Soma Sinistro Por Apolice': 'Total Sinistro'
     }, inplace=True)
   
+    st.markdown('<div class="content-card">', unsafe_allow_html=True)
     st.markdown(f'<p class="section-label">Desempenho Consolidado por Ano - Segurado</p>', unsafe_allow_html=True)
     # 4. Exibição da Tabela
     st.dataframe(df_consolidado_view, hide_index=True, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 with col_graf_seg_4:
     st.markdown('<p class="section-label">Evolução da Sinistralidade (%)  - Segurado</p>', unsafe_allow_html=True)
@@ -1403,29 +1423,37 @@ if not df_para_grafico.empty:
 dados_chart_1, dados_chart_2 = st.columns(2)
 
 with dados_chart_1:
+    st.markdown('<div class="content-card">', unsafe_allow_html=True)
     st.markdown('<p class="section-label">Sinistro por Ramo</p>', unsafe_allow_html=True)
     # Exibe a tabela formatada (com Qtd Apolices, Qtd Sinistros e % Sinistralidade)
     st.dataframe(df_ramo_segurado_view, hide_index=True, use_container_width=True) 
+    st.markdown('</div>', unsafe_allow_html=True)
 
 with dados_chart_2:
+    st.markdown('<div class="content-card">', unsafe_allow_html=True)
     st.markdown('<p class="section-label">Sinistros por Cobertura</p>', unsafe_allow_html=True)
     # Exibe a tabela de coberturas que você criou anteriormente (df_sinistro_segurado_cobertura)
     st.dataframe(df_sinistro_segurado_cobertura, hide_index=True, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 seg_chart_1, seg_chart_2 = st.columns(2)
 
 with seg_chart_1:
+    st.markdown('<div class="content-card">', unsafe_allow_html=True)
     st.markdown('<p class="section-label">Gráfico Sinistro Por Ramo</p>', unsafe_allow_html=True)
     if fig:
         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
     else:
         st.info('Segurado sem Sinistro')
+    st.markdown('</div>', unsafe_allow_html=True)
 with seg_chart_2:
+    st.markdown('<div class="content-card">', unsafe_allow_html=True)
     st.markdown('<p class="section-label">Gráfico Sinistro Por Cobertura</p>', unsafe_allow_html=True)
     if fig_pizza: # Verifica se o gráfico foi criado antes de exibi-lo
         st.plotly_chart(fig_pizza, use_container_width=True, config={'displayModeBar': False})
     else:
         st.info("Segurado sem Sinistro")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ── Evolução da Sinistralidade (%) por Ramo — Segurado ───────────────────────
 st.markdown('<p class="section-label">Evolução da Sinistralidade (%) por Ramo - Segurado</p>', unsafe_allow_html=True)
@@ -1505,8 +1533,10 @@ if len(ramos_ativos) >= 2:
         col_ramo_tab, col_ramo_chart = st.columns(2)
         
         with col_ramo_tab:
+            st.markdown('<div class="content-card">', unsafe_allow_html=True)
             st.markdown(f'<p class="section-label">Dados de Sinistro por Cobertura - Ramo {ramo}</p>', unsafe_allow_html=True)
             st.dataframe(df_cobertura_ramo_exibicao, hide_index=True, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
             
         with col_ramo_chart:
             st.markdown(f'<p class="section-label">Gráfico Sinistro Por Cobertura - Ramo {ramo}</p>', unsafe_allow_html=True)
@@ -1580,10 +1610,14 @@ df_sinistro_segurado['Franquia Apólice'] = df_sinistro_segurado['Franquia Apól
 df_apolices_segurado_1, df_sinistro_segurado_2 = st.columns(2)
 
 with df_apolices_segurado_1:
+    st.markdown('<div class="content-card">', unsafe_allow_html=True)
     # st.markdown('<p class="section-label">Dados das Apólices</p>', unsafe_allow_html=True)
     # st.dataframe(df_segurado_calculo, hide_index=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('<div class="content-card">', unsafe_allow_html=True)
     st.markdown('<p class="section-label">Dados das Apólices do Segurado</p>', unsafe_allow_html=True)
     st.dataframe(df_segurado_exibicao, hide_index=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 with df_sinistro_segurado_2:
     st.markdown('<p class="section-label">Dados de Sinistro do Segurado</p>', unsafe_allow_html=True)
     df_sinistro_segurado = pd.merge(
