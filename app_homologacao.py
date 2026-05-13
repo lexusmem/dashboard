@@ -164,7 +164,7 @@ h1 { font-size: 1.5rem !important; font-weight: 700 !important; letter-spacing: 
     font-weight: 700 !important;
     text-transform: uppercase !important;
     letter-spacing: 0.1em !important;
-    color: var(--text-muted) !important;
+    color: var(--text-primary) !important;
     margin-bottom: 0.4rem !important;
 }
 
@@ -339,7 +339,7 @@ a.btn-topo:hover {
     font-weight: 700 !important;
     text-transform: uppercase !important;
     letter-spacing: 0.1em !important;
-    color: var(--text-secondary) !important;
+    color: var(--text-primary) !important;
     font-family: var(--font-main) !important;
     margin-bottom: 0.4rem !important;
 }
