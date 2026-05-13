@@ -334,6 +334,7 @@ dados_exibicao = dados_exibicao[colunas].sort_values('N° Apólice')
 
 # --- Lógica de Filtragem Hierárquica na Sidebar ---
 st.sidebar.header('Filtros Dados Gerais')
+st.write("")
 
 # Botão para Resetar Filtros — limpa todas as keys do session_state
 _filtro_keys = ['filtro_rep', 'filtro_cor', 'filtro_seg', 'filtro_ramo', 'filtro_util', 'filtro_tp_emissao', 'filtro_regiao', 'filtro_uf', 'filtro_apolice']
@@ -443,7 +444,7 @@ if not df_sinistro_geral_com_rep_cor.empty:
 # 'https://nicedouble-streamlitantdcomponentsdemo-app-middmy.streamlit.app/'
 
 # Link de volta para a página principal na sidebar
-st.sidebar.markdown("---")
+# st.sidebar.markdown("---")
 st.sidebar.header('Dados por Apólice')
 st.sidebar.page_link("app_homologacao.py", label="📋  Apólice / Segurado")
 
@@ -1539,12 +1540,3 @@ with tab_p_rep:
 
 st.write("---")
 st.caption("Desenvolvido por Alex Sousa.")
-
-# Instruções para executar o Streamlit:
-# python -m streamlit run nome_do_arquivo.py
-# ---
-# **Para executar este aplicativo Streamlit:**
-# 1. Abra o terminal ou prompt de comando.
-# 2. Navegue até o diretório onde você salvou o arquivo.
-# 5. Execute o comando: `python -m streamlit nome_do_arquivo.py`
-# Se o Streamlit não estiver instalado, execute: `pip install streamlit pandas openpyxl`
