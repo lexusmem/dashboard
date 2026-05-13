@@ -353,6 +353,18 @@ a.btn-topo:hover {
     white-space: normal !important;
     line-height: 1.3 !important;
 }
+
+/* ── Label de seção (df e gráficos) — igual ao stMetricLabel ──── */
+.section-label {
+    margin: 0 0 0.4rem 0 !important;
+    font-size: 0.65rem !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.1em !important;
+    color: var(--text-primary) !important;
+    font-family: var(--font-main) !important;
+    line-height: 1 !important;
+}
 </style>
 """
 
@@ -806,7 +818,7 @@ with col_apl_5:
 # st.subheader('Segurado: ')
 # st.caption('Segurado: ')
 # st.write('Segurado: ')
-# st.text('Segurado: ')
+# st.markdown('<p class="section-label">Segurado: </p>', unsafe_allow_html=True)
 # st.markdown("**Segurado:**")
 
 col_seg_1, col_cor_2, col_rep_3, col_util_4 = st.columns(4)
@@ -830,7 +842,7 @@ with col_util_4:
     st.metric(label="Utilização", value=str(utilização[0]).title())
 st.markdown('</div>', unsafe_allow_html=True)
 
-st.text("Dados da Apólice")
+st.markdown('<p class="section-label">Dados da Apólice</p>', unsafe_allow_html=True)
 st.dataframe(dados_filtrados_filtro_apolice, hide_index=True)
 
 # Adiciona Franquia por Cobertura (antes da formatação — dados ainda numéricos)
@@ -859,7 +871,7 @@ df_sinistro_apolice['vl_salvado_total'] = (df_sinistro_apolice['vl_salvado_total
 df_sinistro_apolice['Total Sinistro'] = (df_sinistro_apolice['Total Sinistro'].map(formatar_valor_br))
 df_sinistro_apolice['Franquia Apólice'] = df_sinistro_apolice['Franquia Apólice'].map(formatar_valor_br)
 
-st.text("Dados de Sinistro da Apólice")
+st.markdown('<p class="section-label">Dados de Sinistro da Apólice</p>', unsafe_allow_html=True)
 if not df_sinistro_apolice.empty:
     df_sinistro_apolice = pd.merge(
         df_sinistro_apolice,
@@ -876,7 +888,7 @@ else:
 col_cob_sin_1, col_cob_sin_2 = st.columns(2)
 
 with col_cob_sin_1:
-    st.text("Sinistros por Cobertura da Apólice")
+    st.markdown('<p class="section-label">Sinistros por Cobertura da Apólice</p>', unsafe_allow_html=True)
     if not df_sinistro_apolice_cobertura.empty:
         st.dataframe(df_sinistro_apolice_cobertura, hide_index=True)
     else:
@@ -884,7 +896,7 @@ with col_cob_sin_1:
 
 with col_cob_sin_2:
     # --- Coberturas e Franquia da Apólice ---
-    st.text("Coberturas e Franquia da Apólice")
+    st.markdown('<p class="section-label">Coberturas e Franquia da Apólice</p>', unsafe_allow_html=True)
 
     # Franquias vigentes da apólice (endosso mais recente, já deduplicado na função)
     df_cob_ap = df_cobertura[df_cobertura['N° Apólice'] == apolices_selecionadas_filtro_apolice][
@@ -1142,7 +1154,7 @@ with col_graf_seg_4:
 col_util_1, col_util_2 = st.columns(2)
 
 with col_util_1:
-    st.text("Desempenho por Utilização - Segurado")
+    st.markdown('<p class="section-label">Desempenho por Utilização - Segurado</p>', unsafe_allow_html=True)
     df_util_seg = df_segurado_calculo.groupby('Utilização').agg({
         'Soma Prêmio Pago por Apolice': 'sum',
         'Soma Sinistro Por Apolice': 'sum'
@@ -1391,25 +1403,25 @@ if not df_para_grafico.empty:
 dados_chart_1, dados_chart_2 = st.columns(2)
 
 with dados_chart_1:
-    st.text("Sinistro por Ramo")
+    st.markdown('<p class="section-label">Sinistro por Ramo</p>', unsafe_allow_html=True)
     # Exibe a tabela formatada (com Qtd Apolices, Qtd Sinistros e % Sinistralidade)
     st.dataframe(df_ramo_segurado_view, hide_index=True, use_container_width=True) 
 
 with dados_chart_2:
-    st.text("Sinistros por Cobertura")
+    st.markdown('<p class="section-label">Sinistros por Cobertura</p>', unsafe_allow_html=True)
     # Exibe a tabela de coberturas que você criou anteriormente (df_sinistro_segurado_cobertura)
     st.dataframe(df_sinistro_segurado_cobertura, hide_index=True, use_container_width=True)
 
 seg_chart_1, seg_chart_2 = st.columns(2)
 
 with seg_chart_1:
-    st.text("Gráfico Sinistro Por Ramo")
+    st.markdown('<p class="section-label">Gráfico Sinistro Por Ramo</p>', unsafe_allow_html=True)
     if fig:
         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
     else:
         st.info('Segurado sem Sinistro')
 with seg_chart_2:
-    st.text("Gráfico Sinistro Por Cobertura")
+    st.markdown('<p class="section-label">Gráfico Sinistro Por Cobertura</p>', unsafe_allow_html=True)
     if fig_pizza: # Verifica se o gráfico foi criado antes de exibi-lo
         st.plotly_chart(fig_pizza, use_container_width=True, config={'displayModeBar': False})
     else:
@@ -1493,11 +1505,11 @@ if len(ramos_ativos) >= 2:
         col_ramo_tab, col_ramo_chart = st.columns(2)
         
         with col_ramo_tab:
-            st.text(f"Dados de Sinistro por Cobertura - Ramo {ramo}")
+            st.markdown(f'<p class="section-label">Dados de Sinistro por Cobertura - Ramo {ramo}</p>', unsafe_allow_html=True)
             st.dataframe(df_cobertura_ramo_exibicao, hide_index=True, use_container_width=True)
             
         with col_ramo_chart:
-            st.text(f"Gráfico Sinistro Por Cobertura - Ramo {ramo}")
+            st.markdown(f'<p class="section-label">Gráfico Sinistro Por Cobertura - Ramo {ramo}</p>', unsafe_allow_html=True)
             if not df_pizza_ramo.empty:
                 fig_ramo = px.pie(
                     df_pizza_ramo,
@@ -1568,12 +1580,12 @@ df_sinistro_segurado['Franquia Apólice'] = df_sinistro_segurado['Franquia Apól
 df_apolices_segurado_1, df_sinistro_segurado_2 = st.columns(2)
 
 with df_apolices_segurado_1:
-    # st.text('Dados das Apólices')
+    # st.markdown('<p class="section-label">Dados das Apólices</p>', unsafe_allow_html=True)
     # st.dataframe(df_segurado_calculo, hide_index=True)
-    st.text("Dados das Apólices do Segurado")
+    st.markdown('<p class="section-label">Dados das Apólices do Segurado</p>', unsafe_allow_html=True)
     st.dataframe(df_segurado_exibicao, hide_index=True)
 with df_sinistro_segurado_2:
-    st.text("Dados de Sinistro do Segurado")
+    st.markdown('<p class="section-label">Dados de Sinistro do Segurado</p>', unsafe_allow_html=True)
     df_sinistro_segurado = pd.merge(
         df_sinistro_segurado,
         dados_exibicao[['N° Apólice', 'Representante', 'Corretor']].drop_duplicates('N° Apólice'),
@@ -1584,7 +1596,7 @@ with df_sinistro_segurado_2:
     st.dataframe(df_sinistro_segurado[_cols_seg], hide_index=True)
 
 # --- Desempenho por Tipo de Emissão — Segurado ---
-st.text("Desempenho por Tipo de Emissão do Segurado")
+st.markdown('<p class="section-label">Desempenho por Tipo de Emissão do Segurado</p>', unsafe_allow_html=True)
 
 # Usa df_segurado_calculo (ainda numérico — a formatação ocorreu em df_segurado_exibicao)
 # Precisamos de uma cópia numérica antes das formatações de display
