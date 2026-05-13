@@ -132,6 +132,9 @@ h1 { font-size: 1.5rem !important; font-weight: 700 !important; letter-spacing: 
     color: var(--text-primary) !important;
     font-family: var(--font-mono) !important;
     letter-spacing: -0.02em !important;
+    word-break: break-word !important;
+    white-space: normal !important;
+    line-height: 1.25 !important;
 }
 [data-testid="stMetricDelta"] { font-size: 0.8rem !important; }
 
@@ -339,6 +342,16 @@ a.btn-topo:hover {
     color: var(--text-secondary) !important;
     font-family: var(--font-main) !important;
     margin-bottom: 0.4rem !important;
+}
+
+
+/* Cards de texto (Segurado, Corretor…) — valor em fonte de texto, menor */
+.text-metric-row [data-testid="stMetricValue"] {
+    font-size: 1rem !important;
+    font-family: var(--font-main) !important;
+    letter-spacing: 0 !important;
+    white-space: normal !important;
+    line-height: 1.3 !important;
 }
 </style>
 """
@@ -806,22 +819,16 @@ utilização = list(
     dados_filtrados_filtro_apolice['Utilização'].unique())
 
 
-def info_card(label, value):
-    st.markdown(f"""
-        <div class="info-card">
-            <p class="info-card-label">{label}</p>
-            <p class="info-card-value">{value}</p>
-        </div>
-    """, unsafe_allow_html=True)
-
+st.markdown('<div class="text-metric-row">', unsafe_allow_html=True)
 with col_seg_1:
-    info_card("Segurado", str(segurado[0]).title())
+    st.metric(label="Segurado", value=str(segurado[0]).title())
 with col_cor_2:
-    info_card("Corretor", str(corretor[0]).title())
+    st.metric(label="Corretor", value=str(corretor[0]).title())
 with col_rep_3:
-    info_card("Representante", str(representante[0]).title())
+    st.metric(label="Representante", value=str(representante[0]).title())
 with col_util_4:
-    info_card("Utilização", str(utilização[0]).title())
+    st.metric(label="Utilização", value=str(utilização[0]).title())
+st.markdown('</div>', unsafe_allow_html=True)
 
 st.text("Dados da Apólice")
 st.dataframe(dados_filtrados_filtro_apolice, hide_index=True)
