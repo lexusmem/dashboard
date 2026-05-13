@@ -8,273 +8,52 @@ import plotly.express as px
 import streamlit_antd_components as sac
 
 # Configura a página para layout amplo
-st.set_page_config(layout='wide', page_title='Painel Allseg', page_icon='📊')
+st.set_page_config(layout='wide', page_title='Homolog Painel Allseg', page_icon='📊')
 
-ALLSEG_CSS = """
-<style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
-
-/* ── Raiz & Fundo ─────────────────────────────────────────────── */
-:root {
-    --bg-base:       #0d1117;
-    --bg-card:       #161b22;
-    --bg-hover:      #1c2230;
-    --border:        #21262d;
-    --border-accent: #30363d;
-    --accent:        #2f81f7;
-    --accent-soft:   rgba(47,129,247,0.12);
-    --accent-glow:   rgba(47,129,247,0.25);
-    --success:       #3fb950;
-    --warning:       #d29922;
-    --danger:        #f85149;
-    --text-primary:  #e6edf3;
-    --text-secondary:#8b949e;
-    --text-muted:    #484f58;
-    --radius:        10px;
-    --radius-sm:     6px;
-    --font-main:     'DM Sans', sans-serif;
-    --font-mono:     'DM Mono', monospace;
-}
-
-html, body, [class*="css"] {
-    font-family: var(--font-main) !important;
-}
-
-/* Fundo geral */
-.stApp {
-    background-color: var(--bg-base) !important;
-    background-image:
-        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(47,129,247,0.08), transparent),
-        radial-gradient(ellipse 60% 40% at 80% 110%, rgba(63,185,80,0.04), transparent);
-}
-
-/* ── Layout principal ─────────────────────────────────────────── */
-.main .block-container {
-    overflow-y: visible !important;
-    max-width: 96% !important;
-    padding: 1.5rem 2rem 10rem !important;
-}
-
-/* ── Sidebar ──────────────────────────────────────────────────── */
-[data-testid="stSidebar"] {
-    background-color: var(--bg-card) !important;
-    border-right: 1px solid var(--border) !important;
-}
-[data-testid="stSidebar"] * {
-    color: var(--text-primary) !important;
-}
-[data-testid="stSidebarNav"] { display: none !important; }
-
-/* Headers da sidebar */
-[data-testid="stSidebar"] h1,
-[data-testid="stSidebar"] h2,
-[data-testid="stSidebar"] h3 {
-    font-size: 0.7rem !important;
-    font-weight: 600 !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.12em !important;
-    color: var(--text-muted) !important;
-    padding-top: 1rem !important;
-}
-
-/* ── Títulos ──────────────────────────────────────────────────── */
-h1, h2, h3, h4, h5, h6 {
-    color: var(--text-primary) !important;
-    font-family: var(--font-main) !important;
-}
-h1 { font-size: 1.6rem !important; font-weight: 700 !important; letter-spacing: -0.02em; }
-h2, h3 { font-size: 1.1rem !important; font-weight: 600 !important; }
-
-/* st.subheader */
-[data-testid="stHeading"] h2 {
-    border-left: 3px solid var(--accent);
-    padding-left: 0.65rem;
-    font-size: 1rem !important;
-    font-weight: 600 !important;
-    color: var(--text-primary) !important;
-    margin-top: 1.8rem !important;
-}
-
-/* ── Métricas (KPI Cards) ─────────────────────────────────────── */
-[data-testid="stMetric"] {
-    background: var(--bg-card) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: var(--radius) !important;
-    padding: 1rem 1.25rem !important;
-    transition: border-color 0.2s, box-shadow 0.2s;
-}
-[data-testid="stMetric"]:hover {
-    border-color: var(--accent) !important;
-    box-shadow: 0 0 0 1px var(--accent-glow), 0 4px 20px rgba(0,0,0,0.4) !important;
-}
-[data-testid="stMetricLabel"] {
-    font-size: 0.68rem !important;
-    font-weight: 600 !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.08em !important;
-    color: var(--text-secondary) !important;
-}
-[data-testid="stMetricValue"] {
-    font-size: 1.5rem !important;
-    font-weight: 700 !important;
-    color: var(--text-primary) !important;
-    font-family: var(--font-mono) !important;
-}
-[data-testid="stMetricDelta"] { font-size: 0.8rem !important; }
-
-/* ── Dataframes / Tabelas ─────────────────────────────────────── */
-[data-testid="stDataFrame"] {
-    border: 1px solid var(--border) !important;
-    border-radius: var(--radius) !important;
-    overflow: hidden !important;
-    background: var(--bg-card) !important;
-}
-.stDataFrame thead tr th {
-    background: #1c2230 !important;
-    color: var(--text-secondary) !important;
-    font-size: 0.7rem !important;
-    font-weight: 600 !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.06em !important;
-    border-bottom: 1px solid var(--border-accent) !important;
-}
-.stDataFrame tbody tr:hover td {
-    background: var(--bg-hover) !important;
-}
-.stDataFrame tbody tr td {
-    color: var(--text-primary) !important;
-    font-size: 0.82rem !important;
-    border-bottom: 1px solid var(--border) !important;
-}
-
-/* ── st.text (labels de seção) ────────────────────────────────── */
-[data-testid="stText"] {
-    font-size: 0.72rem !important;
-    font-weight: 600 !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.09em !important;
-    color: var(--text-muted) !important;
-    margin-bottom: 0.35rem !important;
-}
-
-/* ── Selectbox / Multiselect ──────────────────────────────────── */
-[data-testid="stSelectbox"] > div > div,
-[data-testid="stMultiSelect"] > div > div {
-    background: var(--bg-card) !important;
-    border: 1px solid var(--border-accent) !important;
-    border-radius: var(--radius-sm) !important;
-    color: var(--text-primary) !important;
-}
-[data-testid="stSelectbox"] > div > div:focus-within,
-[data-testid="stMultiSelect"] > div > div:focus-within {
-    border-color: var(--accent) !important;
-    box-shadow: 0 0 0 2px var(--accent-soft) !important;
-}
-
-/* ── File Uploader ────────────────────────────────────────────── */
-[data-testid="stFileUploader"] {
-    background: var(--bg-card) !important;
-    border: 1px dashed var(--border-accent) !important;
-    border-radius: var(--radius) !important;
-    padding: 0.75rem !important;
-}
-
-/* ── Botões ───────────────────────────────────────────────────── */
-.stButton > button {
-    background: var(--bg-card) !important;
-    color: var(--text-primary) !important;
-    border: 1px solid var(--border-accent) !important;
-    border-radius: var(--radius-sm) !important;
-    font-size: 0.8rem !important;
-    font-weight: 500 !important;
-    padding: 0.4rem 1rem !important;
-    transition: all 0.15s !important;
-}
-.stButton > button:hover {
-    background: var(--accent-soft) !important;
-    border-color: var(--accent) !important;
-    color: var(--accent) !important;
-}
-
-/* ── Info / Warning / Error ───────────────────────────────────── */
-[data-testid="stAlert"] {
-    border-radius: var(--radius) !important;
-    border-left: 3px solid var(--accent) !important;
-    background: var(--bg-card) !important;
-    font-size: 0.84rem !important;
-}
-
-/* ── Tabs ─────────────────────────────────────────────────────── */
-[data-testid="stTabs"] [role="tablist"] {
-    gap: 0.25rem;
-    border-bottom: 1px solid var(--border) !important;
-}
-[data-testid="stTabs"] [role="tab"] {
-    font-size: 0.8rem !important;
-    font-weight: 500 !important;
-    color: var(--text-secondary) !important;
-    border-radius: var(--radius-sm) var(--radius-sm) 0 0 !important;
-    padding: 0.45rem 1rem !important;
-    border: none !important;
-    background: transparent !important;
-    transition: color 0.15s !important;
-}
-[data-testid="stTabs"] [role="tab"][aria-selected="true"] {
-    color: var(--accent) !important;
-    border-bottom: 2px solid var(--accent) !important;
-    background: var(--accent-soft) !important;
-}
-
-/* ── Divider ──────────────────────────────────────────────────── */
-hr {
-    border-color: var(--border) !important;
-    margin: 1.5rem 0 !important;
-}
-
-/* ── Caption ──────────────────────────────────────────────────── */
-[data-testid="stCaption"] {
-    color: var(--text-muted) !important;
-    font-size: 0.72rem !important;
-}
-
-/* ── Scrollbar ────────────────────────────────────────────────── */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: var(--bg-base); }
-::-webkit-scrollbar-thumb { background: var(--border-accent); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
-
-/* ── Botão flutuante "voltar ao topo" ─────────────────────────── */
-a.btn-topo, a.btn-topo:link, a.btn-topo:visited {
-    position: fixed; bottom: 4.5rem; right: 1.5rem; z-index: 9999;
-    background: var(--bg-card);
-    color: var(--accent) !important;
-    border: 1px solid var(--border-accent);
-    border-radius: 50%; width: 42px; height: 42px;
-    font-size: 20px; cursor: pointer; text-align: center;
-    line-height: 40px; text-decoration: none !important;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.4);
-    transition: all 0.2s;
-}
-a.btn-topo:hover {
-    background: var(--accent) !important;
-    color: white !important;
-    border-color: var(--accent) !important;
-    box-shadow: 0 4px 20px var(--accent-glow) !important;
-}
-
-/* ── Slider ───────────────────────────────────────────────────── */
-[data-testid="stSlider"] [role="slider"] {
-    background: var(--accent) !important;
-}
-</style>
-"""
-
-st.markdown(ALLSEG_CSS, unsafe_allow_html=True)
-
+# CSS do botão flutuante — âncora fica no início do conteúdo visível
 st.markdown(
+    '<style>'
+    'a.btn-topo, a.btn-topo:link, a.btn-topo:visited {'
+    '  position:fixed; bottom:4.5rem; right:1.5rem; z-index:9999;'
+    '  background-color:#D1D5DB; color:white !important; border:none;'
+    '  border-radius:50%; width:46px; height:46px;'
+    '  font-size:24px; cursor:pointer; text-align:center;'
+    '  line-height:44px; text-decoration:none !important;'
+    '  box-shadow:0 2px 8px rgba(0,0,0,0.18); display:block;'
+    '}'
+    'a.btn-topo:hover {'
+    '  background-color:#6B7280; color:white !important;'
+    '  text-decoration:none !important;'
+    '  box-shadow:0 4px 12px rgba(0,0,0,0.28);'
+    '}'
+    '</style>'
     '<a href="#topo-pagina" class="btn-topo" title="Voltar ao topo">&#8679;</a>',
     unsafe_allow_html=True
 )
+
+st.markdown("""
+    <style>
+    /* Forçar o contentor principal a permitir scroll sempre */
+    .main .block-container {
+        overflow-y: visible !important;
+        max-width: 95% !important;
+        padding-bottom: 10rem !important;
+    }
+    /* Estilizar a barra de rolagem para garantir que ela apareça */
+    ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+    ::-webkit-scrollbar-thumb {
+        background: #888;
+        border-radius: 5px;
+    }
+    /* Oculta a navegação automática de páginas gerada pelo Streamlit no topo da sidebar */
+    [data-testid="stSidebarNav"] {
+        display: none !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
 
 # --- Upload dos arquivos na Sidebar ---
