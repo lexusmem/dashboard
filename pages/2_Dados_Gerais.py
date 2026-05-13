@@ -1,13 +1,3 @@
-import streamlit as st
-import pandas as pd
-import io
-import base64
-import logging
-import plotly.graph_objects as go
-import plotly.express as px
-import streamlit_antd_components as sac
-from datetime import datetime
-
 st.set_page_config(layout='wide', page_title='Dados Gerais — Allseg', page_icon='📊')
 
 ALLSEG_CSS = """
@@ -24,9 +14,6 @@ ALLSEG_CSS = """
     --text-secondary:#6b7280;
     --text-muted:    #9ca3af;
     --border:        #e5e7eb;
-    --success:       #059669;
-    --warning:       #d97706;
-    --danger:        #dc2626;
     --shadow-sm:     0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
     --shadow-md:     0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
     --shadow-lg:     0 10px 28px rgba(0,0,0,0.10), 0 4px 8px rgba(0,0,0,0.06);
@@ -37,264 +24,69 @@ ALLSEG_CSS = """
 }
 
 html, body, [class*="css"] { font-family: var(--font-main) !important; color: var(--text-primary) !important; }
-
 .stApp { background-color: var(--bg-page) !important; background-image: none !important; }
+.main .block-container { overflow-y: visible !important; max-width: 96% !important; padding: 1.5rem 2rem 10rem !important; background: transparent !important; }
 
-.main .block-container {
-    overflow-y: visible !important;
-    max-width: 96% !important;
-    padding: 1.5rem 2rem 10rem !important;
-    background: transparent !important;
-}
-
-[data-testid="stSidebar"] {
-    background-color: var(--bg-sidebar) !important;
-    border-right: 1px solid var(--border) !important;
-    box-shadow: 2px 0 12px rgba(0,0,0,0.06) !important;
-}
+[data-testid="stSidebar"] { background-color: var(--bg-sidebar) !important; border-right: 1px solid var(--border) !important; box-shadow: 2px 0 12px rgba(0,0,0,0.06) !important; }
 [data-testid="stSidebarNav"] { display: none !important; }
-[data-testid="stSidebar"] h1,
-[data-testid="stSidebar"] h2,
-[data-testid="stSidebar"] h3 {
-    font-size: 0.65rem !important;
-    font-weight: 700 !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.12em !important;
-    color: var(--text-muted) !important;
-    padding-top: 1.2rem !important;
-    margin-bottom: 0.4rem !important;
-}
+[data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 { font-size: 0.65rem !important; font-weight: 700 !important; text-transform: uppercase !important; letter-spacing: 0.12em !important; color: var(--text-muted) !important; padding-top: 1.2rem !important; margin-bottom: 0.4rem !important; }
 
 h1, h2, h3, h4, h5, h6 { color: var(--text-primary) !important; font-family: var(--font-main) !important; }
 h1 { font-size: 1.5rem !important; font-weight: 700 !important; letter-spacing: -0.025em !important; }
+[data-testid="stHeading"] h2 { font-size: 0.9rem !important; font-weight: 700 !important; color: var(--text-primary) !important; text-transform: uppercase !important; letter-spacing: 0.06em !important; margin-top: 0.5rem !important; padding-bottom: 0.6rem !important; border-bottom: 2px solid var(--accent-soft) !important; }
 
-[data-testid="stHeading"] h2 {
-    font-size: 0.9rem !important;
-    font-weight: 700 !important;
-    color: var(--text-primary) !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.06em !important;
-    margin-top: 0.5rem !important;
-    padding-bottom: 0.6rem !important;
-    border-bottom: 2px solid var(--accent-soft) !important;
-}
+[data-testid="stMetric"] { background: var(--bg-card) !important; border: 1px solid var(--border) !important; border-radius: var(--radius) !important; padding: 1.1rem 1.4rem !important; box-shadow: var(--shadow-md) !important; transition: box-shadow 0.2s, transform 0.15s !important; }
+[data-testid="stMetric"]:hover { box-shadow: var(--shadow-lg) !important; transform: translateY(-2px) !important; }
+[data-testid="stMetricLabel"] { font-size: 0.65rem !important; font-weight: 700 !important; text-transform: uppercase !important; letter-spacing: 0.1em !important; color: var(--text-secondary) !important; }
+[data-testid="stMetricValue"] { font-size: 1.6rem !important; font-weight: 700 !important; color: var(--text-primary) !important; font-family: var(--font-mono) !important; letter-spacing: -0.02em !important; word-break: break-word !important; white-space: normal !important; line-height: 1.25 !important; }
 
-[data-testid="stMetric"] {
-    background: var(--bg-card) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: var(--radius) !important;
-    padding: 1.1rem 1.4rem !important;
-    box-shadow: var(--shadow-md) !important;
-    transition: box-shadow 0.2s, transform 0.15s !important;
-}
-[data-testid="stMetric"]:hover {
-    box-shadow: var(--shadow-lg) !important;
-    transform: translateY(-2px) !important;
-}
-[data-testid="stMetricLabel"] {
-    font-size: 0.65rem !important;
-    font-weight: 700 !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.1em !important;
-    color: var(--text-secondary) !important;
-}
-[data-testid="stMetricValue"] {
-    font-size: 1.6rem !important;
-    font-weight: 700 !important;
-    color: var(--text-primary) !important;
-    font-family: var(--font-mono) !important;
-    letter-spacing: -0.02em !important;
-}
+[data-testid="stDataFrame"] { background: var(--bg-card) !important; border: 1px solid var(--border) !important; border-radius: var(--radius) !important; box-shadow: var(--shadow-md) !important; overflow: visible !important; padding: 0 !important; }
+[data-testid="stPlotlyChart"] > div { background: var(--bg-card) !important; border: 1px solid var(--border) !important; border-radius: var(--radius) !important; box-shadow: var(--shadow-md) !important; padding: 0.75rem !important; overflow: visible !important; }
 
-[data-testid="stDataFrame"] {
-    background: var(--bg-card) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: var(--radius) !important;
-    box-shadow: var(--shadow-md) !important;
-    overflow: hidden !important;
-    padding: 0 !important;
-}
+[data-testid="stSelectbox"] > div > div, [data-testid="stMultiSelect"] > div > div { background: #f9fafb !important; border: 1px solid var(--border) !important; border-radius: var(--radius-sm) !important; }
+[data-testid="stSelectbox"] > div > div:focus-within, [data-testid="stMultiSelect"] > div > div:focus-within { border-color: var(--accent) !important; box-shadow: 0 0 0 3px var(--accent-soft) !important; }
+[data-testid="stFileUploader"] { background: var(--bg-card) !important; border: 1.5px dashed #cbd5e1 !important; border-radius: var(--radius) !important; box-shadow: var(--shadow-sm) !important; }
 
-[data-testid="stPlotlyChart"] > div {
-    background: var(--bg-card) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: var(--radius) !important;
-    box-shadow: var(--shadow-md) !important;
-    padding: 0.75rem !important;
-    overflow: hidden !important;
-}
+.stButton > button { background: var(--bg-card) !important; color: var(--accent) !important; border: 1.5px solid var(--accent) !important; border-radius: var(--radius-sm) !important; font-size: 0.8rem !important; font-weight: 600 !important; padding: 0.4rem 1.1rem !important; transition: all 0.15s !important; box-shadow: var(--shadow-sm) !important; }
+.stButton > button:hover { background: var(--accent) !important; color: #fff !important; box-shadow: 0 4px 14px rgba(26,86,219,0.35) !important; }
 
-[data-testid="stText"] {
-    font-size: 0.65rem !important;
-    font-weight: 700 !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.1em !important;
-    color: var(--text-primary) !important;
-    margin-bottom: 0.4rem !important;
-}
+[data-testid="stAlert"] { border-radius: var(--radius) !important; border-left: 4px solid var(--accent) !important; background: #f0f5ff !important; box-shadow: var(--shadow-sm) !important; font-size: 0.84rem !important; }
 
-[data-testid="stSelectbox"] > div > div,
-[data-testid="stMultiSelect"] > div > div {
-    background: #f9fafb !important;
-    border: 1px solid var(--border) !important;
-    border-radius: var(--radius-sm) !important;
-}
-[data-testid="stSelectbox"] > div > div:focus-within,
-[data-testid="stMultiSelect"] > div > div:focus-within {
-    border-color: var(--accent) !important;
-    box-shadow: 0 0 0 3px var(--accent-soft) !important;
-}
-
-[data-testid="stFileUploader"] {
-    background: var(--bg-card) !important;
-    border: 1.5px dashed #cbd5e1 !important;
-    border-radius: var(--radius) !important;
-    box-shadow: var(--shadow-sm) !important;
-}
-
-.stButton > button {
-    background: var(--bg-card) !important;
-    color: var(--accent) !important;
-    border: 1.5px solid var(--accent) !important;
-    border-radius: var(--radius-sm) !important;
-    font-size: 0.8rem !important;
-    font-weight: 600 !important;
-    padding: 0.4rem 1.1rem !important;
-    transition: all 0.15s !important;
-    box-shadow: var(--shadow-sm) !important;
-}
-.stButton > button:hover {
-    background: var(--accent) !important;
-    color: #fff !important;
-    box-shadow: 0 4px 14px rgba(26,86,219,0.35) !important;
-}
-
-[data-testid="stAlert"] {
-    border-radius: var(--radius) !important;
-    border-left: 4px solid var(--accent) !important;
-    background: #f0f5ff !important;
-    box-shadow: var(--shadow-sm) !important;
-    font-size: 0.84rem !important;
-}
-
-[data-testid="stTabs"] {
-    background: var(--bg-card) !important;
-    border-radius: var(--radius) !important;
-    border: 1px solid var(--border) !important;
-    box-shadow: var(--shadow-md) !important;
-    padding: 0 1rem !important;
-}
-[data-testid="stTabs"] [role="tablist"] {
-    gap: 0.1rem;
-    border-bottom: 1px solid var(--border) !important;
-    padding-top: 0.5rem;
-}
-[data-testid="stTabs"] [role="tab"] {
-    font-size: 0.78rem !important;
-    font-weight: 600 !important;
-    color: var(--text-secondary) !important;
-    border-radius: var(--radius-sm) var(--radius-sm) 0 0 !important;
-    padding: 0.5rem 1.1rem !important;
-    border: none !important;
-    background: transparent !important;
-    transition: color 0.15s !important;
-}
-[data-testid="stTabs"] [role="tab"][aria-selected="true"] {
-    color: var(--accent) !important;
-    border-bottom: 2px solid var(--accent) !important;
-    background: var(--accent-soft) !important;
-}
+[data-testid="stTabs"] { background: var(--bg-card) !important; border-radius: var(--radius) !important; border: 1px solid var(--border) !important; box-shadow: var(--shadow-md) !important; padding: 0 1rem !important; }
+[data-testid="stTabs"] [role="tablist"] { gap: 0.1rem; border-bottom: 1px solid var(--border) !important; padding-top: 0.5rem; }
+[data-testid="stTabs"] [role="tab"] { font-size: 0.78rem !important; font-weight: 600 !important; color: var(--text-secondary) !important; border-radius: var(--radius-sm) var(--radius-sm) 0 0 !important; padding: 0.5rem 1.1rem !important; border: none !important; background: transparent !important; transition: color 0.15s !important; }
+[data-testid="stTabs"] [role="tab"][aria-selected="true"] { color: var(--accent) !important; border-bottom: 2px solid var(--accent) !important; background: var(--accent-soft) !important; }
 [data-testid="stTabs"] [role="tabpanel"] { padding: 1rem 0.25rem 0.75rem !important; }
 
 hr { border: none !important; border-top: 1px solid var(--border) !important; margin: 2rem 0 !important; }
 [data-testid="stCaption"] { color: var(--text-muted) !important; font-size: 0.72rem !important; }
-
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg-page); }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-a.btn-topo, a.btn-topo:link, a.btn-topo:visited {
-    position: fixed; bottom: 4.5rem; right: 1.5rem; z-index: 9999;
-    background: var(--bg-card);
-    color: var(--accent) !important;
-    border: 1.5px solid var(--accent);
-    border-radius: 50%; width: 42px; height: 42px;
-    font-size: 20px; cursor: pointer; text-align: center;
-    line-height: 40px; text-decoration: none !important;
-    box-shadow: var(--shadow-md);
-    transition: all 0.2s;
-}
-a.btn-topo:hover {
-    background: var(--accent) !important;
-    color: white !important;
-    box-shadow: 0 6px 20px rgba(26,86,219,0.35) !important;
-}
+a.btn-topo, a.btn-topo:link, a.btn-topo:visited { position: fixed; bottom: 4.5rem; right: 1.5rem; z-index: 9999; background: var(--bg-card); color: var(--accent) !important; border: 1.5px solid var(--accent); border-radius: 50%; width: 42px; height: 42px; font-size: 20px; cursor: pointer; text-align: center; line-height: 40px; text-decoration: none !important; box-shadow: var(--shadow-md); transition: all 0.2s; }
+a.btn-topo:hover { background: var(--accent) !important; color: white !important; box-shadow: 0 6px 20px rgba(26,86,219,0.35) !important; }
+[data-testid="stSlider"] [role="slider"] { background: var(--accent) !important; box-shadow: 0 2px 6px rgba(26,86,219,0.4) !important; }
+[data-testid="stInfo"] { background: #eff6ff !important; border-left: 4px solid var(--accent) !important; border-radius: var(--radius) !important; }
 
-[data-testid="stSlider"] [role="slider"] {
-    background: var(--accent) !important;
-    box-shadow: 0 2px 6px rgba(26,86,219,0.4) !important;
-}
-
-/* ── Info Cards — idêntico ao st.metric ──────────────────────── */
-.info-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 1.1rem 1.4rem;
-    box-shadow: var(--shadow-md);
-    transition: box-shadow 0.2s, transform 0.15s;
-    height: 100%;
-}
-.info-card:hover {
-    box-shadow: var(--shadow-lg);
-    transform: translateY(-2px);
-}
-.info-card-label {
-    margin: 0 0 0.4rem 0;
-    font-size: 0.65rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--text-secondary);
-    font-family: var(--font-main);
-}
-.info-card-value {
-    margin: 0;
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--text-primary);
-    font-family: var(--font-main);
-    line-height: 1.35;
-    word-break: break-word;
-}
-
-/* ── Labels de seção (st.text acima de df/gráfico) ─────────────── */
-[data-testid="stText"] p,
-[data-testid="stText"] {
-    font-size: 0.65rem !important;
-    font-weight: 700 !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.1em !important;
-    color: var(--text-primary) !important;
-    font-family: var(--font-main) !important;
-    margin-bottom: 0.4rem !important;
-}
-
-/* ── Label de seção (df e gráficos) — igual ao stMetricLabel ──── */
-.section-label {
-    margin: 0 0 0.5rem 0 !important;
-    font-size: 0.8rem !important;
-    font-weight: 700 !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.07em !important;
-    color: var(--text-primary) !important;
-    font-family: var(--font-main) !important;
-    line-height: 1 !important;
-}
+.text-metric-row [data-testid="stMetricValue"] { font-size: 1rem !important; font-family: var(--font-main) !important; letter-spacing: 0 !important; white-space: normal !important; line-height: 1.3 !important; }
+.section-label { margin: 0 0 0.5rem 0 !important; font-size: 0.8rem !important; font-weight: 700 !important; text-transform: uppercase !important; letter-spacing: 0.07em !important; color: var(--text-primary) !important; font-family: var(--font-main) !important; line-height: 1 !important; }
 </style>
 """
+
 st.markdown(ALLSEG_CSS, unsafe_allow_html=True)
+import streamlit as st
+import pandas as pd
+import io
+import base64
+import logging
+import plotly.graph_objects as go
+import plotly.express as px
+import streamlit_antd_components as sac
+from datetime import datetime
+
+
 
 # Função de Formatação de Valores para o padrão Brasileiro
 def formatar_valor_br(valor):
@@ -448,9 +240,24 @@ st.sidebar.markdown("---")
 st.sidebar.header('Dados por Apólice')
 st.sidebar.page_link("app_homologacao.py", label="📋  Apólice / Segurado")
 
-# Âncora invisível no topo + botão flutuante (estilizado via ALLSEG_CSS)
+# Âncora invisível no topo + botão flutuante fixo no canto inferior direito
 st.markdown(
     '<div id="topo-pagina"></div>'
+    '<style>'
+    'a.btn-topo, a.btn-topo:link, a.btn-topo:visited {'
+    '  position:fixed; bottom:4.5rem; right:1.5rem; z-index:9999;'
+    '  background-color:#D1D5DB; color:white !important; border:none;'
+    '  border-radius:50%; width:46px; height:46px;'
+    '  font-size:24px; cursor:pointer; text-align:center;'
+    '  line-height:44px; text-decoration:none !important;'
+    '  box-shadow:0 2px 8px rgba(0,0,0,0.18); display:block;'
+    '}'
+    'a.btn-topo:hover {'
+    '  background-color:#6B7280; color:white !important;'
+    '  text-decoration:none !important;'
+    '  box-shadow:0 4px 12px rgba(0,0,0,0.28);'
+    '}'
+    '</style>'
     '<a href="#topo-pagina" class="btn-topo" title="Voltar ao topo">&#8679;</a>',
     unsafe_allow_html=True
 )
@@ -468,7 +275,7 @@ with col_esq:
     # Criar o Slider de Intervalo (Range Slider)
     if ano_min_absoluto < ano_max_absoluto:
         # Título customizado com espaçamento para não colar no slider
-        st.markdown('<p class="section-label">Selecione o Intervalo de Anos (Início de Vigência Apólice)</p>', unsafe_allow_html=True)
+        st.text("Selecione o Intervalo de Anos (Início de Vigência Apólice)")
         # Flag: se botão limpar foi clicado, força visualmente o valor padrão
         if st.session_state.get('resetar_slider', False):
             st.session_state['slider_anos'] = (ano_min_absoluto, ano_max_absoluto)
@@ -692,7 +499,7 @@ with col_ano_1:
     st.dataframe(df_ano_view[['Ano Vigência','Total_Premio', 'Total_Sinistro', '% Sinistralidade', 'Qtd_Apolices', 'Qtd_Sinistros']], 
                 hide_index=True, use_container_width=True)
 with col_ano_2:
-    st.markdown('<p class="section-label">Evolução da Sinistralidade (%)</p>', unsafe_allow_html=True)
+    st.subheader("Evolução da Sinistralidade (%)")
     st.plotly_chart(fig_sin_ano, use_container_width=True, config={'displayModeBar': False})
 
 # --- Exibição dos Resultados ---
@@ -918,7 +725,7 @@ with col_pr_sin_util_2:
 
 
 # ── Evolução da Sinistralidade (%) por Utilização ────────────────────────────
-st.markdown('<p class="section-label">Evolução da Sinistralidade (%) por Utilização</p>', unsafe_allow_html=True)
+st.subheader("Evolução da Sinistralidade (%) por Utilização")
 
 if not df_para_soma.empty:
     df_util_ano = df_para_soma.groupby(['Ano Vigência', 'Utilização']).agg(
@@ -1096,7 +903,7 @@ with c2:
     st.plotly_chart(fig_pizza_geral, use_container_width=True, config={'displayModeBar': False})
 
 # ── Evolução da Sinistralidade (%) por Ramo ──────────────────────────────────
-st.markdown('<p class="section-label">Evolução da Sinistralidade (%) por Ramo</p>', unsafe_allow_html=True)
+st.subheader("Evolução da Sinistralidade (%) por Ramo")
 
 df_ramo_ano = df_para_soma.groupby(['Ano Vigência', 'Ramo']).agg(
     Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
@@ -1290,7 +1097,7 @@ if not df_geral_periodo.empty:
         st.dataframe(df_regiao_view, hide_index=True, use_container_width=True)
 
     with col_reg_graf:
-        st.markdown('<p class="section-label">Top 10 Piores Regiões — Sinistralidade (%)</p>', unsafe_allow_html=True)
+        st.subheader("Top 10 Piores Regiões — Sinistralidade (%)")
         # Top 10 piores regiões — barras horizontais escala Reds
         df_top10 = groupby_regiao[groupby_regiao['Sinistralidade_Num'] > 0].copy()
         df_top10 = df_top10.sort_values('Sinistralidade_Num', ascending=False).head(10)
