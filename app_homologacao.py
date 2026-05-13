@@ -760,26 +760,29 @@ utilização = list(
     dados_filtrados_filtro_apolice['Utilização'].unique())
 
 
+def info_card(label, value):
+    st.markdown(f"""
+        <div style="
+            background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;
+            padding:1.1rem 1.4rem;
+            box-shadow:0 4px 12px rgba(0,0,0,0.08),0 2px 4px rgba(0,0,0,0.04);
+        ">
+            <p style="margin:0 0 0.35rem 0;font-size:0.65rem;font-weight:700;
+                text-transform:uppercase;letter-spacing:0.1em;color:#6b7280;
+                font-family:'Inter',sans-serif;">{label}</p>
+            <p style="margin:0;font-size:1rem;font-weight:600;color:#111827;
+                font-family:'Inter',sans-serif;line-height:1.35;word-break:break-word;">{value}</p>
+        </div>
+    """, unsafe_allow_html=True)
+
 with col_seg_1:
-    st.markdown("<p style='margin-bottom: 0;'>Segurado</p>",
-                unsafe_allow_html=True)
-    st.markdown(
-        f"<h6 style='margin-top: 0; margin-bottom: 0.2rem;'>{str(segurado[0]).title()}</h6>", unsafe_allow_html=True)
+    info_card("Segurado", str(segurado[0]).title())
 with col_cor_2:
-    st.markdown("<p style='margin-bottom: 0;'>Corretor</p>",
-                unsafe_allow_html=True)
-    st.markdown(
-        f"<h6 style='margin-top: 0; margin-bottom: 0.2rem;'>{str(corretor[0]).title()}</h6>", unsafe_allow_html=True)
+    info_card("Corretor", str(corretor[0]).title())
 with col_rep_3:
-    st.markdown("<p style='margin-bottom: 0;'>Representante</p>",
-                unsafe_allow_html=True)
-    st.markdown(
-        f"<h6 style='margin-top: 0; margin-bottom: 0.2rem;'>{str(representante[0]).title()}</h6>", unsafe_allow_html=True)
+    info_card("Representante", str(representante[0]).title())
 with col_util_4:
-    st.markdown("<p style='margin-bottom: 0;'>Utilização</p>",
-                unsafe_allow_html=True)
-    st.markdown(
-        f"<h6 style='margin-top: 0; margin-bottom: 0.2rem;'>{str(utilização[0]).title()}</h6>", unsafe_allow_html=True)
+    info_card("Utilização", str(utilização[0]).title())
 
 st.text("Dados da Apólice")
 st.dataframe(dados_filtrados_filtro_apolice, hide_index=True)
