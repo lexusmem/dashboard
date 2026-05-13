@@ -997,7 +997,7 @@ col_graf_seg_1, col_graf_seg_2 = st.columns(2)
 
 with col_graf_seg_1:
     # --- GRÁFICO CORRIGIDO: EVOLUÇÃO POR ANO DO SEGURADO ---
-    st.subheader(f"Evolução Anual - Segurado")
+    st.markdown(f'<p class="section-label">Evolução Anual - Segurado</p>', unsafe_allow_html=True)
 
     # 1. Preparar os dados (utilizando a coluna 'Ano Vigência' já existente)
     df_evolucao_segurado = df_segurado_calculo.copy()
@@ -1042,7 +1042,7 @@ with col_graf_seg_1:
     st.plotly_chart(fig_evolucao_seg, use_container_width=True, config={'displayModeBar': False})
 
 with col_graf_seg_2:
-    st.subheader("Prêmio x Sinistro - Segurado")
+    st.markdown('<p class="section-label">Prêmio x Sinistro - Segurado</p>', unsafe_allow_html=True)
     
     # Agrupamento por Ano para o Segurado
     df_ano_seg = df_segurado_calculo.groupby('Ano Vigência').agg({
@@ -1120,12 +1120,12 @@ with col_graf_seg_3:
         'Soma Sinistro Por Apolice': 'Total Sinistro'
     }, inplace=True)
   
-    st.subheader(f"Desempenho Consolidado por Ano - Segurado")
+    st.markdown(f'<p class="section-label">Desempenho Consolidado por Ano - Segurado</p>', unsafe_allow_html=True)
     # 4. Exibição da Tabela
     st.dataframe(df_consolidado_view, hide_index=True, use_container_width=True)
 
 with col_graf_seg_4:
-    st.subheader("Evolução da Sinistralidade (%)  - Segurado")
+    st.markdown('<p class="section-label">Evolução da Sinistralidade (%)  - Segurado</p>', unsafe_allow_html=True)
     
     # Cálculo da Sinistralidade por Ano
     df_ano_seg['% Sin'] = (df_ano_seg['Soma Sinistro Por Apolice'] / df_ano_seg['Soma Prêmio Pago por Apolice']).fillna(0)
@@ -1168,7 +1168,7 @@ with col_util_1:
     st.dataframe(df_util_view, hide_index=True, use_container_width=True)
 
 with col_util_2:
-    st.subheader("Sinistralidade por Utilização - Segurado")
+    st.markdown('<p class="section-label">Sinistralidade por Utilização - Segurado</p>', unsafe_allow_html=True)
 
     # 1. Criamos o DF auxiliar para o gráfico a partir do df_util_seg já agrupado
     df_grafico_util_seg = df_util_seg.copy()
@@ -1222,7 +1222,7 @@ with col_util_2:
         st.info("Sem dados de Sinistro.")
 
 # ── Evolução da Sinistralidade (%) por Utilização — Segurado ─────────────────
-st.subheader("Evolução da Sinistralidade (%) por Utilização - Segurado")
+st.markdown('<p class="section-label">Evolução da Sinistralidade (%) por Utilização - Segurado</p>', unsafe_allow_html=True)
 
 df_util_ano_seg = df_segurado_calculo.groupby(['Ano Vigência', 'Utilização']).agg(
     Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
@@ -1428,7 +1428,7 @@ with seg_chart_2:
         st.info("Segurado sem Sinistro")
 
 # ── Evolução da Sinistralidade (%) por Ramo — Segurado ───────────────────────
-st.subheader("Evolução da Sinistralidade (%) por Ramo - Segurado")
+st.markdown('<p class="section-label">Evolução da Sinistralidade (%) por Ramo - Segurado</p>', unsafe_allow_html=True)
 
 df_ramo_ano_seg = df_segurado_calculo.groupby(['Ano Vigência', 'Ramo']).agg(
     Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
