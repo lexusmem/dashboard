@@ -40,6 +40,7 @@ if 'dados_calculados' not in st.session_state or st.session_state['dados_calcula
 
 dados_calculados = st.session_state['dados_calculados']
 df_sinistros     = st.session_state['df_sinistros']
+df_cobertura     = st.session_state.get('df_cobertura', pd.DataFrame())
 
 # Prepara dados_exibicao
 dados_exibicao = dados_calculados.copy()
@@ -452,9 +453,41 @@ with col_final_1:
     )
     
     if not df_sinistro_final_exibicao.empty:
+        # Adiciona Franquia Apólice por Cobertura — deduplica para evitar duplicatas no merge
+        if not df_cobertura.empty:
+            df_franquia_geral = df_cobertura[
+                df_cobertura['N° Apólice'].isin(df_sinistro_final_exibicao['N° Apólice'].unique())
+            ][['Cobertura Apólice', 'Franquia Apólice']].rename(columns={'Cobertura Apólice': 'Cobertura'})
+            df_franquia_geral = df_franquia_geral.groupby('Cobertura', as_index=False)['Franquia Apólice'].max()
+            df_sinistro_final_exibicao = pd.merge(df_sinistro_final_exibicao, df_franquia_geral, on='Cobertura', how='left')
+            df_sinistro_final_exibicao['Franquia Apólice'] = df_sinistro_final_exibicao['Franquia Apólice'].fillna(0)
+        else:
+            df_sinistro_final_exibicao['Franquia Apólice'] = 0.0
         # Formata para exibição
-        df_sinistro_final_exibicao['Total Sinistro'] = df_sinistro_final_exibicao['Total Sinistro'].map(formatar_valor_br)
-        st.dataframe(df_sinistro_final_exibicao, hide_index=True)
+        # Formata todas as colunas de valor no padrão BR — igual aos DFs do app
+        _colunas_valor = [
+            'vl_sinistro_pago', 'vl_sinistro_pendente', 'vl_sinistro_total',
+            'vl_despesa_pago', 'vl_despesa_pendente', 'vl_despesa_total',
+            'vl_honorario_pago', 'vl_honorario_pendente', 'vl_honorario_total',
+            'vl_salvado_pago', 'vl_salvado_pendente', 'vl_salvado_total',
+            'Total Sinistro', 'Franquia Apólice'
+        ]
+        for _col in _colunas_valor:
+            if _col in df_sinistro_final_exibicao.columns:
+                df_sinistro_final_exibicao[_col] = df_sinistro_final_exibicao[_col].map(formatar_valor_br)
+        # Colunas na mesma sequência dos DFs do app_homologacao
+        colunas_base = [
+            'nr_sinistro', 'nr_ramo', 'N° Apólice', 'nr_endosso', 'nm_cliente', 'Cobertura',
+            'dt_aviso', 'dt_ocorrencia',
+            'vl_sinistro_pago', 'vl_sinistro_pendente', 'vl_sinistro_total',
+            'vl_despesa_pago', 'vl_despesa_pendente', 'vl_despesa_total',
+            'vl_honorario_pago', 'vl_honorario_pendente', 'vl_honorario_total',
+            'vl_salvado_pago', 'vl_salvado_pendente', 'vl_salvado_total',
+            'status_processo', 'status_movimento', 'nm_causa', 'id_endosso', 't',
+            'Total Sinistro', 'Representante', 'Corretor', 'Franquia Apólice'
+        ]
+        colunas_exibir = [c for c in colunas_base if c in df_sinistro_final_exibicao.columns]
+        st.dataframe(df_sinistro_final_exibicao[colunas_exibir], hide_index=True)
     else:
         st.info("Nenhum sinistro no período selecionado.")
         
