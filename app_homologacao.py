@@ -894,7 +894,7 @@ col_cob_sin_1, col_cob_sin_2 = st.columns(2)
 
 with col_cob_sin_1:
     st.markdown('<p class="section-label">Sinistros por Cobertura da Apólice</p>', unsafe_allow_html=True)
-    if not df_sinistro_apolice_cobertura.empty:
+    if df_sinistro_apolice_cobertura is not None and len(df_sinistro_apolice_cobertura) > 0:
         st.dataframe(df_sinistro_apolice_cobertura, hide_index=True)
     else:
         st.info("Apólice não possui sinistro.")
