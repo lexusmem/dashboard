@@ -295,6 +295,7 @@ a.btn-topo:hover {
 </style>
 """
 st.markdown(ALLSEG_CSS, unsafe_allow_html=True)
+st.markdown('<div id="topo-pagina" style="position:absolute;top:0;left:0;"></div>', unsafe_allow_html=True)
 
 # Função de Formatação de Valores para o padrão Brasileiro
 def formatar_valor_br(valor):
@@ -448,11 +449,7 @@ st.sidebar.header('Dados por Apólice')
 st.sidebar.page_link("app_homologacao.py", label="📋  Apólice / Segurado")
 
 # Âncora invisível no topo + botão flutuante (estilizado via ALLSEG_CSS)
-st.markdown(
-    '<div id="topo-pagina"></div>'
-    '<a href="#topo-pagina" class="btn-topo" title="Voltar ao topo">&#8679;</a>',
-    unsafe_allow_html=True
-)
+st.markdown('<a href="#topo-pagina" class="btn-topo" title="Voltar ao topo">&#8679;</a>', unsafe_allow_html=True)
 
 st.subheader("Dados Gerais")
 
