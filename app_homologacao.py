@@ -925,7 +925,10 @@ with col_cob_sin_2:
     df_cob_view_ap['Franquia Apólice'] = df_cob_view_ap['Franquia Apólice'].map(formatar_valor_br)
     df_cob_view_ap['Total Sinistro']   = df_cob_view_ap['Total Sinistro'].map(formatar_valor_br)
     df_cob_view_ap = df_cob_view_ap[['Cobertura Apólice', 'Franquia Apólice', 'Total Sinistro']]
-    st.dataframe(df_cob_view_ap, hide_index=True, use_container_width=True)
+    if df_cob_view_ap.empty:
+        st.info("Apólice sem dados de Coberturas.")
+    else:
+        st.dataframe(df_cob_view_ap, hide_index=True, use_container_width=True)
 
 #
 #
