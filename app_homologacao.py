@@ -366,6 +366,11 @@ a.btn-topo:hover {
     font-family: var(--font-main) !important;
     line-height: 1 !important;
 }
+
+/* ── Oculta header e footer fixos do Streamlit ───────────────── */
+[data-testid="stHeader"] { display: none !important; }
+[data-testid="stToolbar"] { display: none !important; }
+footer { display: none !important; }
 </style>
 """
 
