@@ -12,7 +12,7 @@ st.set_page_config(layout='wide', page_title='Painel Allseg', page_icon='📊')
 
 ALLSEG_CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
 
 /* ── Variáveis — tema claro com cards elevados ─────────────────── */
 :root {
@@ -128,7 +128,7 @@ h1 { font-size: 1.5rem !important; font-weight: 700 !important; letter-spacing: 
 }
 [data-testid="stMetricValue"] {
     font-size: 1.6rem !important;
-    font-weight: 400 !important;
+    font-weight: 300 !important;
     color: var(--text-primary) !important;
     font-family: var(--font-main) !important;
     letter-spacing: -0.01em !important;
@@ -348,7 +348,7 @@ a.btn-topo:hover {
 /* Cards de texto (Segurado, Corretor…) — valor em fonte de texto, menor */
 .text-metric-row [data-testid="stMetricValue"] {
     font-size: 1rem !important;
-    font-weight: 400 !important;
+    font-weight: 300 !important;
     font-family: var(--font-main) !important;
     letter-spacing: 0 !important;
     white-space: normal !important;
