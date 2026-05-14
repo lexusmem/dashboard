@@ -102,8 +102,11 @@ h1 { font-size: 1.5rem !important; font-weight: 700 !important; letter-spacing: 
     font-size: 1.3rem !important;
     font-weight: 400 !important;
     color: var(--text-primary) !important;
-    font-family: var(--font-mono) !important;
-    letter-spacing: -0.02em !important;
+    font-family: var(--font-main) !important;
+    letter-spacing: -0.01em !important;
+    word-break: break-word !important;
+    white-space: normal !important;
+    line-height: 1.25 !important;
 }
 
 [data-testid="stDataFrame"] {
