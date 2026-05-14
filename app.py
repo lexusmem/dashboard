@@ -10,50 +10,376 @@ import streamlit_antd_components as sac
 # Configura a página para layout amplo
 st.set_page_config(layout='wide', page_title='Painel Allseg', page_icon='📊')
 
-# CSS do botão flutuante — âncora fica no início do conteúdo visível
+ALLSEG_CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+
+/* ── Variáveis — tema claro com cards elevados ─────────────────── */
+:root {
+    --bg-page:       #f0f2f6;
+    --bg-card:       #ffffff;
+    --bg-card-hover: #f8f9fc;
+    --bg-sidebar:    #ffffff;
+    --accent:        #1a56db;
+    --accent-soft:   #e8effd;
+    --accent-hover:  #1648c0;
+    --text-primary:  #111827;
+    --text-secondary:#6b7280;
+    --text-muted:    #9ca3af;
+    --border:        #e5e7eb;
+    --success:       #059669;
+    --warning:       #d97706;
+    --danger:        #dc2626;
+    --shadow-sm:     0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    --shadow-md:     0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
+    --shadow-lg:     0 10px 28px rgba(0,0,0,0.10), 0 4px 8px rgba(0,0,0,0.06);
+    --radius:        12px;
+    --radius-sm:     8px;
+    --font-main:     'Inter', sans-serif;
+    --font-mono:     'DM Mono', monospace;
+}
+
+html, body, [class*="css"] {
+    font-family: var(--font-main) !important;
+    color: var(--text-primary) !important;
+}
+
+/* ── Fundo da página ──────────────────────────────────────────── */
+.stApp {
+    background-color: var(--bg-page) !important;
+    background-image: none !important;
+}
+
+/* ── Layout principal ─────────────────────────────────────────── */
+.main .block-container {
+    overflow-y: visible !important;
+    max-width: 96% !important;
+    padding: 1.5rem 2rem 10rem !important;
+    background: transparent !important;
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────── */
+[data-testid="stSidebar"] {
+    background-color: var(--bg-sidebar) !important;
+    border-right: 1px solid var(--border) !important;
+    box-shadow: 2px 0 12px rgba(0,0,0,0.06) !important;
+}
+[data-testid="stSidebarNav"] { display: none !important; }
+
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+    font-size: 0.65rem !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.12em !important;
+    color: var(--text-muted) !important;
+    padding-top: 1.2rem !important;
+    margin-bottom: 0.4rem !important;
+}
+
+/* ── Títulos globais ──────────────────────────────────────────── */
+h1, h2, h3, h4, h5, h6 {
+    color: var(--text-primary) !important;
+    font-family: var(--font-main) !important;
+}
+h1 { font-size: 1.5rem !important; font-weight: 700 !important; letter-spacing: -0.025em !important; }
+
+/* st.subheader — recebe estilo de "título de seção de card" */
+[data-testid="stHeading"] h2 {
+    font-size: 0.9rem !important;
+    font-weight: 700 !important;
+    color: var(--text-primary) !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.06em !important;
+    margin-top: 0.5rem !important;
+    margin-bottom: 0.25rem !important;
+    padding-bottom: 0.6rem !important;
+    border-bottom: 2px solid var(--accent-soft) !important;
+}
+
+/* ── Card wrapper — aplicado em cada bloco principal ─────────── */
+/* KPI row e cada linha de conteúdo ganham aparência de card via
+   column containers e element containers  */
+[data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"],
+[data-testid="column"] {
+    background: transparent !important;
+}
+
+/* KPI Métricas ─ card individual */
+[data-testid="stMetric"] {
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius) !important;
+    padding: 1.1rem 1.4rem !important;
+    box-shadow: var(--shadow-md) !important;
+    transition: box-shadow 0.2s, transform 0.15s !important;
+}
+[data-testid="stMetric"]:hover {
+    box-shadow: var(--shadow-lg) !important;
+    transform: translateY(-2px) !important;
+}
+[data-testid="stMetricLabel"] {
+    font-size: 0.65rem !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.1em !important;
+    color: var(--text-secondary) !important;
+}
+[data-testid="stMetricValue"] {
+    font-size: 1.3rem !important;
+    font-weight: 400 !important;
+    color: var(--text-primary) !important;
+    font-family: var(--font-main) !important;
+    letter-spacing: -0.01em !important;
+    word-break: break-word !important;
+    white-space: normal !important;
+    line-height: 1.25 !important;
+}
+[data-testid="stMetricDelta"] { font-size: 0.8rem !important; }
+
+/* ── DataFrames — card com sombra ─────────────────────────────── */
+[data-testid="stDataFrame"] {
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius) !important;
+    box-shadow: var(--shadow-md) !important;
+    overflow: visible !important;
+    padding: 0 !important;
+}
+
+/* ── Gráficos Plotly — card com sombra ───────────────────────── */
+[data-testid="stPlotlyChart"] > div {
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius) !important;
+    box-shadow: var(--shadow-md) !important;
+    padding: 0.75rem !important;
+    overflow: visible !important;
+}
+
+/* ── st.text — label de seção estilizado ─────────────────────── */
+[data-testid="stText"] {
+    font-size: 0.65rem !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.1em !important;
+    color: var(--text-primary) !important;
+    margin-bottom: 0.4rem !important;
+}
+
+/* ── Controles da sidebar ─────────────────────────────────────── */
+[data-testid="stSelectbox"] > div > div,
+[data-testid="stMultiSelect"] > div > div {
+    background: #f9fafb !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-sm) !important;
+}
+[data-testid="stSelectbox"] > div > div:focus-within,
+[data-testid="stMultiSelect"] > div > div:focus-within {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 3px var(--accent-soft) !important;
+}
+
+/* ── File Uploader ────────────────────────────────────────────── */
+[data-testid="stFileUploader"] {
+    background: var(--bg-card) !important;
+    border: 1.5px dashed #cbd5e1 !important;
+    border-radius: var(--radius) !important;
+    box-shadow: var(--shadow-sm) !important;
+}
+
+/* ── Botões ───────────────────────────────────────────────────── */
+.stButton > button {
+    background: var(--bg-card) !important;
+    color: var(--accent) !important;
+    border: 1.5px solid var(--accent) !important;
+    border-radius: var(--radius-sm) !important;
+    font-size: 0.8rem !important;
+    font-weight: 600 !important;
+    padding: 0.4rem 1.1rem !important;
+    transition: all 0.15s !important;
+    box-shadow: var(--shadow-sm) !important;
+}
+.stButton > button:hover {
+    background: var(--accent) !important;
+    color: #fff !important;
+    box-shadow: 0 4px 14px rgba(26,86,219,0.35) !important;
+}
+
+/* ── Alerts ───────────────────────────────────────────────────── */
+[data-testid="stAlert"] {
+    border-radius: var(--radius) !important;
+    border-left: 4px solid var(--accent) !important;
+    background: #f0f5ff !important;
+    box-shadow: var(--shadow-sm) !important;
+    font-size: 0.84rem !important;
+}
+
+/* ── Tabs ─────────────────────────────────────────────────────── */
+[data-testid="stTabs"] {
+    background: var(--bg-card) !important;
+    border-radius: var(--radius) !important;
+    border: 1px solid var(--border) !important;
+    box-shadow: var(--shadow-md) !important;
+    padding: 0 1rem !important;
+}
+[data-testid="stTabs"] [role="tablist"] {
+    gap: 0.1rem;
+    border-bottom: 1px solid var(--border) !important;
+    padding-top: 0.5rem;
+}
+[data-testid="stTabs"] [role="tab"] {
+    font-size: 0.78rem !important;
+    font-weight: 600 !important;
+    color: var(--text-secondary) !important;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0 !important;
+    padding: 0.5rem 1.1rem !important;
+    border: none !important;
+    background: transparent !important;
+    transition: color 0.15s !important;
+}
+[data-testid="stTabs"] [role="tab"][aria-selected="true"] {
+    color: var(--accent) !important;
+    border-bottom: 2px solid var(--accent) !important;
+    background: var(--accent-soft) !important;
+}
+[data-testid="stTabs"] [role="tabpanel"] {
+    padding: 1rem 0.25rem 0.75rem !important;
+}
+
+/* ── Divider ──────────────────────────────────────────────────── */
+hr {
+    border: none !important;
+    border-top: 1px solid var(--border) !important;
+    margin: 2rem 0 !important;
+}
+
+/* ── Caption ──────────────────────────────────────────────────── */
+[data-testid="stCaption"] {
+    color: var(--text-muted) !important;
+    font-size: 0.72rem !important;
+}
+
+/* ── Scrollbar ────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-page); }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* ── Botão "voltar ao topo" ───────────────────────────────────── */
+a.btn-topo, a.btn-topo:link, a.btn-topo:visited {
+    position: fixed; bottom: 4.5rem; right: 1.5rem; z-index: 9999;
+    background: var(--bg-card);
+    color: var(--accent) !important;
+    border: 1.5px solid var(--accent);
+    border-radius: 50%; width: 42px; height: 42px;
+    font-size: 20px; cursor: pointer; text-align: center;
+    line-height: 40px; text-decoration: none !important;
+    box-shadow: var(--shadow-md);
+    transition: all 0.2s;
+}
+a.btn-topo:hover {
+    background: var(--accent) !important;
+    color: white !important;
+    box-shadow: 0 6px 20px rgba(26,86,219,0.35) !important;
+}
+
+/* ── Slider ───────────────────────────────────────────────────── */
+[data-testid="stSlider"] [role="slider"] {
+    background: var(--accent) !important;
+    box-shadow: 0 2px 6px rgba(26,86,219,0.4) !important;
+}
+
+/* ── Info box de upload ───────────────────────────────────────── */
+[data-testid="stInfo"] {
+    background: #eff6ff !important;
+    border-left: 4px solid var(--accent) !important;
+    border-radius: var(--radius) !important;
+}
+
+/* ── Info Cards (Segurado, Corretor etc) — idêntico ao st.metric ─ */
+.info-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.1rem 1.4rem;
+    box-shadow: var(--shadow-md);
+    transition: box-shadow 0.2s, transform 0.15s;
+    height: 100%;
+}
+.info-card:hover {
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-2px);
+}
+.info-card-label {
+    margin: 0 0 0.4rem 0;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-secondary);
+    font-family: var(--font-main);
+}
+.info-card-value {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    font-family: var(--font-main);
+    line-height: 1.35;
+    word-break: break-word;
+}
+
+/* ── Labels de seção (st.text acima de df/gráfico) ─────────────── */
+/* Unifica st.text, st.subheader quando usado como label de bloco   */
+[data-testid="stText"] p,
+[data-testid="stText"] {
+    font-size: 0.65rem !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.1em !important;
+    color: var(--text-primary) !important;
+    font-family: var(--font-main) !important;
+    margin-bottom: 0.4rem !important;
+}
+
+
+/* Cards de texto (Segurado, Corretor…) — valor em fonte de texto, menor */
+.text-metric-row [data-testid="stMetricValue"] {
+    font-size: 1rem !important;
+    font-weight: 400 !important;
+    font-family: var(--font-main) !important;
+    letter-spacing: 0 !important;
+    white-space: normal !important;
+    line-height: 1.3 !important;
+}
+
+/* ── Label de seção (df e gráficos) — igual ao stMetricLabel ──── */
+.section-label {
+    margin: 0 0 0.5rem 0 !important;
+    font-size: 0.8rem !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.07em !important;
+    color: var(--text-primary) !important;
+    font-family: var(--font-main) !important;
+    line-height: 1 !important;
+}
+
+/* ── Oculta header e footer fixos do Streamlit ───────────────── */
+[data-testid="stHeader"] { display: none !important; }
+[data-testid="stToolbar"] { display: none !important; }
+footer { display: none !important; }
+</style>
+"""
+
+st.markdown(ALLSEG_CSS, unsafe_allow_html=True)
+
 st.markdown(
-    '<style>'
-    'a.btn-topo, a.btn-topo:link, a.btn-topo:visited {'
-    '  position:fixed; bottom:4.5rem; right:1.5rem; z-index:9999;'
-    '  background-color:#D1D5DB; color:white !important; border:none;'
-    '  border-radius:50%; width:46px; height:46px;'
-    '  font-size:24px; cursor:pointer; text-align:center;'
-    '  line-height:44px; text-decoration:none !important;'
-    '  box-shadow:0 2px 8px rgba(0,0,0,0.18); display:block;'
-    '}'
-    'a.btn-topo:hover {'
-    '  background-color:#6B7280; color:white !important;'
-    '  text-decoration:none !important;'
-    '  box-shadow:0 4px 12px rgba(0,0,0,0.28);'
-    '}'
-    '</style>'
     '<a href="#topo-pagina" class="btn-topo" title="Voltar ao topo">&#8679;</a>',
     unsafe_allow_html=True
 )
-
-st.markdown("""
-    <style>
-    /* Forçar o contentor principal a permitir scroll sempre */
-    .main .block-container {
-        overflow-y: visible !important;
-        max-width: 95% !important;
-        padding-bottom: 10rem !important;
-    }
-    /* Estilizar a barra de rolagem para garantir que ela apareça */
-    ::-webkit-scrollbar {
-        width: 10px;
-        height: 10px;
-    }
-    ::-webkit-scrollbar-thumb {
-        background: #888;
-        border-radius: 5px;
-    }
-    /* Oculta a navegação automática de páginas gerada pelo Streamlit no topo da sidebar */
-    [data-testid="stSidebarNav"] {
-        display: none !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
 
 
 # --- Upload dos arquivos na Sidebar ---
@@ -409,6 +735,10 @@ if img_base64:
 
 # ── PÁGINA 1: APÓLICE / SEGURADO ────────────────────────────────────────────
 
+# Link para a página de Dados Gerais na sidebar
+st.sidebar.header('Dados Gerais')
+st.sidebar.page_link("pages/2_Dados_Gerais.py", label="📊  Dados Gerais")
+
 # --- Filtragem dados da Apólice ---
 st.sidebar.header('Filtro Apólice')
 
@@ -423,11 +753,6 @@ apolices_selecionadas_filtro_apolice = st.sidebar.selectbox(
     options=apolices_filtro_apolice,
     index=default_index_apolice  # Selecionar o primeiro registro por padrão
 )
-
-# Link para a página de Dados Gerais na sidebar
-st.sidebar.markdown("---")
-st.sidebar.header('Dados Gerais')
-st.sidebar.page_link("pages/2_Dados_Gerais.py", label="📊  Dados Gerais")
 
 st.markdown('<div id="topo-pagina" style="margin-top:-60px;padding-top:60px;"></div>', unsafe_allow_html=True)
 
@@ -498,7 +823,7 @@ with col_apl_5:
 # st.subheader('Segurado: ')
 # st.caption('Segurado: ')
 # st.write('Segurado: ')
-# st.text('Segurado: ')
+# st.markdown('<p class="section-label">Segurado: </p>', unsafe_allow_html=True)
 # st.markdown("**Segurado:**")
 
 col_seg_1, col_cor_2, col_rep_3, col_util_4 = st.columns(4)
@@ -511,28 +836,18 @@ utilização = list(
     dados_filtrados_filtro_apolice['Utilização'].unique())
 
 
+st.markdown('<div class="text-metric-row">', unsafe_allow_html=True)
 with col_seg_1:
-    st.markdown("<p style='margin-bottom: 0;'>Segurado</p>",
-                unsafe_allow_html=True)
-    st.markdown(
-        f"<h6 style='margin-top: 0; margin-bottom: 0.2rem;'>{str(segurado[0]).title()}</h6>", unsafe_allow_html=True)
+    st.metric(label="Segurado", value=str(segurado[0]).title())
 with col_cor_2:
-    st.markdown("<p style='margin-bottom: 0;'>Corretor</p>",
-                unsafe_allow_html=True)
-    st.markdown(
-        f"<h6 style='margin-top: 0; margin-bottom: 0.2rem;'>{str(corretor[0]).title()}</h6>", unsafe_allow_html=True)
+    st.metric(label="Corretor", value=str(corretor[0]).title())
 with col_rep_3:
-    st.markdown("<p style='margin-bottom: 0;'>Representante</p>",
-                unsafe_allow_html=True)
-    st.markdown(
-        f"<h6 style='margin-top: 0; margin-bottom: 0.2rem;'>{str(representante[0]).title()}</h6>", unsafe_allow_html=True)
+    st.metric(label="Representante", value=str(representante[0]).title())
 with col_util_4:
-    st.markdown("<p style='margin-bottom: 0;'>Utilização</p>",
-                unsafe_allow_html=True)
-    st.markdown(
-        f"<h6 style='margin-top: 0; margin-bottom: 0.2rem;'>{str(utilização[0]).title()}</h6>", unsafe_allow_html=True)
+    st.metric(label="Utilização", value=str(utilização[0]).title())
+st.markdown('</div>', unsafe_allow_html=True)
 
-st.text("Dados da Apólice")
+st.markdown('<p class="section-label">Dados da Apólice</p>', unsafe_allow_html=True)
 st.dataframe(dados_filtrados_filtro_apolice, hide_index=True)
 
 # Adiciona Franquia por Cobertura (antes da formatação — dados ainda numéricos)
@@ -561,7 +876,7 @@ df_sinistro_apolice['vl_salvado_total'] = (df_sinistro_apolice['vl_salvado_total
 df_sinistro_apolice['Total Sinistro'] = (df_sinistro_apolice['Total Sinistro'].map(formatar_valor_br))
 df_sinistro_apolice['Franquia Apólice'] = df_sinistro_apolice['Franquia Apólice'].map(formatar_valor_br)
 
-st.text("Dados de Sinistro da Apólice")
+st.markdown('<p class="section-label">Dados de Sinistro da Apólice</p>', unsafe_allow_html=True)
 if not df_sinistro_apolice.empty:
     df_sinistro_apolice = pd.merge(
         df_sinistro_apolice,
@@ -578,15 +893,15 @@ else:
 col_cob_sin_1, col_cob_sin_2 = st.columns(2)
 
 with col_cob_sin_1:
-    st.text("Sinistros por Cobertura da Apólice")
-    if not df_sinistro_apolice_cobertura.empty:
-        st.dataframe(df_sinistro_apolice_cobertura, hide_index=True)
-    else:
+    st.markdown('<p class="section-label">Sinistros por Cobertura da Apólice</p>', unsafe_allow_html=True)
+    if df_sinistro_apolice.empty:
         st.info("Apólice não possui sinistro.")
+    else:
+        st.dataframe(df_sinistro_apolice_cobertura, hide_index=True)
 
 with col_cob_sin_2:
     # --- Coberturas e Franquia da Apólice ---
-    st.text("Coberturas e Franquia da Apólice")
+    st.markdown('<p class="section-label">Coberturas e Franquia da Apólice</p>', unsafe_allow_html=True)
 
     # Franquias vigentes da apólice (endosso mais recente, já deduplicado na função)
     df_cob_ap = df_cobertura[df_cobertura['N° Apólice'] == apolices_selecionadas_filtro_apolice][
@@ -610,7 +925,10 @@ with col_cob_sin_2:
     df_cob_view_ap['Franquia Apólice'] = df_cob_view_ap['Franquia Apólice'].map(formatar_valor_br)
     df_cob_view_ap['Total Sinistro']   = df_cob_view_ap['Total Sinistro'].map(formatar_valor_br)
     df_cob_view_ap = df_cob_view_ap[['Cobertura Apólice', 'Franquia Apólice', 'Total Sinistro']]
-    st.dataframe(df_cob_view_ap, hide_index=True, use_container_width=True)
+    if df_cob_view_ap.empty:
+        st.info("Apólice sem dados de Coberturas.")
+    else:
+        st.dataframe(df_cob_view_ap, hide_index=True, use_container_width=True)
 
 #
 #
@@ -687,7 +1005,7 @@ col_graf_seg_1, col_graf_seg_2 = st.columns(2)
 
 with col_graf_seg_1:
     # --- GRÁFICO CORRIGIDO: EVOLUÇÃO POR ANO DO SEGURADO ---
-    st.subheader(f"Evolução Anual - Segurado")
+    st.markdown(f'<p class="section-label">Evolução Anual - Segurado</p>', unsafe_allow_html=True)
 
     # 1. Preparar os dados (utilizando a coluna 'Ano Vigência' já existente)
     df_evolucao_segurado = df_segurado_calculo.copy()
@@ -732,7 +1050,7 @@ with col_graf_seg_1:
     st.plotly_chart(fig_evolucao_seg, use_container_width=True, config={'displayModeBar': False})
 
 with col_graf_seg_2:
-    st.subheader("Prêmio x Sinistro - Segurado")
+    st.markdown('<p class="section-label">Prêmio x Sinistro - Segurado</p>', unsafe_allow_html=True)
     
     # Agrupamento por Ano para o Segurado
     df_ano_seg = df_segurado_calculo.groupby('Ano Vigência').agg({
@@ -810,12 +1128,12 @@ with col_graf_seg_3:
         'Soma Sinistro Por Apolice': 'Total Sinistro'
     }, inplace=True)
   
-    st.subheader(f"Desempenho Consolidado por Ano - Segurado")
+    st.markdown(f'<p class="section-label">Desempenho Consolidado por Ano - Segurado</p>', unsafe_allow_html=True)
     # 4. Exibição da Tabela
     st.dataframe(df_consolidado_view, hide_index=True, use_container_width=True)
 
 with col_graf_seg_4:
-    st.subheader("Evolução da Sinistralidade (%)  - Segurado")
+    st.markdown('<p class="section-label">Evolução da Sinistralidade (%)  - Segurado</p>', unsafe_allow_html=True)
     
     # Cálculo da Sinistralidade por Ano
     df_ano_seg['% Sin'] = (df_ano_seg['Soma Sinistro Por Apolice'] / df_ano_seg['Soma Prêmio Pago por Apolice']).fillna(0)
@@ -844,7 +1162,7 @@ with col_graf_seg_4:
 col_util_1, col_util_2 = st.columns(2)
 
 with col_util_1:
-    st.text("Desempenho por Utilização - Segurado")
+    st.markdown('<p class="section-label">Desempenho por Utilização - Segurado</p>', unsafe_allow_html=True)
     df_util_seg = df_segurado_calculo.groupby('Utilização').agg({
         'Soma Prêmio Pago por Apolice': 'sum',
         'Soma Sinistro Por Apolice': 'sum'
@@ -858,7 +1176,7 @@ with col_util_1:
     st.dataframe(df_util_view, hide_index=True, use_container_width=True)
 
 with col_util_2:
-    st.subheader("Sinistralidade por Utilização - Segurado")
+    st.markdown('<p class="section-label">Sinistralidade por Utilização - Segurado</p>', unsafe_allow_html=True)
 
     # 1. Criamos o DF auxiliar para o gráfico a partir do df_util_seg já agrupado
     df_grafico_util_seg = df_util_seg.copy()
@@ -912,7 +1230,7 @@ with col_util_2:
         st.info("Sem dados de Sinistro.")
 
 # ── Evolução da Sinistralidade (%) por Utilização — Segurado ─────────────────
-st.subheader("Evolução da Sinistralidade (%) por Utilização - Segurado")
+st.markdown('<p class="section-label">Evolução da Sinistralidade (%) por Utilização - Segurado</p>', unsafe_allow_html=True)
 
 df_util_ano_seg = df_segurado_calculo.groupby(['Ano Vigência', 'Utilização']).agg(
     Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
@@ -1093,32 +1411,32 @@ if not df_para_grafico.empty:
 dados_chart_1, dados_chart_2 = st.columns(2)
 
 with dados_chart_1:
-    st.text("Sinistro por Ramo")
+    st.markdown('<p class="section-label">Sinistro por Ramo</p>', unsafe_allow_html=True)
     # Exibe a tabela formatada (com Qtd Apolices, Qtd Sinistros e % Sinistralidade)
     st.dataframe(df_ramo_segurado_view, hide_index=True, use_container_width=True) 
 
 with dados_chart_2:
-    st.text("Sinistros por Cobertura")
+    st.markdown('<p class="section-label">Sinistros por Cobertura</p>', unsafe_allow_html=True)
     # Exibe a tabela de coberturas que você criou anteriormente (df_sinistro_segurado_cobertura)
     st.dataframe(df_sinistro_segurado_cobertura, hide_index=True, use_container_width=True)
 
 seg_chart_1, seg_chart_2 = st.columns(2)
 
 with seg_chart_1:
-    st.text("Gráfico Sinistro Por Ramo")
+    st.markdown('<p class="section-label">Gráfico Sinistro Por Ramo</p>', unsafe_allow_html=True)
     if fig:
         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
     else:
         st.info('Segurado sem Sinistro')
 with seg_chart_2:
-    st.text("Gráfico Sinistro Por Cobertura")
+    st.markdown('<p class="section-label">Gráfico Sinistro Por Cobertura</p>', unsafe_allow_html=True)
     if fig_pizza: # Verifica se o gráfico foi criado antes de exibi-lo
         st.plotly_chart(fig_pizza, use_container_width=True, config={'displayModeBar': False})
     else:
         st.info("Segurado sem Sinistro")
 
 # ── Evolução da Sinistralidade (%) por Ramo — Segurado ───────────────────────
-st.subheader("Evolução da Sinistralidade (%) por Ramo - Segurado")
+st.markdown('<p class="section-label">Evolução da Sinistralidade (%) por Ramo - Segurado</p>', unsafe_allow_html=True)
 
 df_ramo_ano_seg = df_segurado_calculo.groupby(['Ano Vigência', 'Ramo']).agg(
     Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
@@ -1195,11 +1513,11 @@ if len(ramos_ativos) >= 2:
         col_ramo_tab, col_ramo_chart = st.columns(2)
         
         with col_ramo_tab:
-            st.text(f"Dados de Sinistro por Cobertura - Ramo {ramo}")
+            st.markdown(f'<p class="section-label">Dados de Sinistro por Cobertura - Ramo {ramo}</p>', unsafe_allow_html=True)
             st.dataframe(df_cobertura_ramo_exibicao, hide_index=True, use_container_width=True)
             
         with col_ramo_chart:
-            st.text(f"Gráfico Sinistro Por Cobertura - Ramo {ramo}")
+            st.markdown(f'<p class="section-label">Gráfico Sinistro Por Cobertura - Ramo {ramo}</p>', unsafe_allow_html=True)
             if not df_pizza_ramo.empty:
                 fig_ramo = px.pie(
                     df_pizza_ramo,
@@ -1270,12 +1588,12 @@ df_sinistro_segurado['Franquia Apólice'] = df_sinistro_segurado['Franquia Apól
 df_apolices_segurado_1, df_sinistro_segurado_2 = st.columns(2)
 
 with df_apolices_segurado_1:
-    # st.text('Dados das Apólices')
+    # st.markdown('<p class="section-label">Dados das Apólices</p>', unsafe_allow_html=True)
     # st.dataframe(df_segurado_calculo, hide_index=True)
-    st.text("Dados das Apólices do Segurado")
+    st.markdown('<p class="section-label">Dados das Apólices do Segurado</p>', unsafe_allow_html=True)
     st.dataframe(df_segurado_exibicao, hide_index=True)
 with df_sinistro_segurado_2:
-    st.text("Dados de Sinistro do Segurado")
+    st.markdown('<p class="section-label">Dados de Sinistro do Segurado</p>', unsafe_allow_html=True)
     df_sinistro_segurado = pd.merge(
         df_sinistro_segurado,
         dados_exibicao[['N° Apólice', 'Representante', 'Corretor']].drop_duplicates('N° Apólice'),
@@ -1286,7 +1604,7 @@ with df_sinistro_segurado_2:
     st.dataframe(df_sinistro_segurado[_cols_seg], hide_index=True)
 
 # --- Desempenho por Tipo de Emissão — Segurado ---
-st.text("Desempenho por Tipo de Emissão do Segurado")
+st.markdown('<p class="section-label">Desempenho por Tipo de Emissão do Segurado</p>', unsafe_allow_html=True)
 
 # Usa df_segurado_calculo (ainda numérico — a formatação ocorreu em df_segurado_exibicao)
 # Precisamos de uma cópia numérica antes das formatações de display
