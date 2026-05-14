@@ -8,23 +8,301 @@ import plotly.express as px
 import streamlit_antd_components as sac
 from datetime import datetime
 
-st.set_page_config(layout='wide')
+st.set_page_config(layout='wide', page_title='Dados Gerais — Allseg', page_icon='📊')
 
-st.markdown("""
-    <style>
-    .main .block-container {
-        overflow-y: visible !important;
-        max-width: 95% !important;
-        padding-bottom: 10rem !important;
-    }
-    ::-webkit-scrollbar { width: 10px; height: 10px; }
-    ::-webkit-scrollbar-thumb { background: #888; border-radius: 5px; }
-    /* Oculta a navegação automática de páginas gerada pelo Streamlit no topo da sidebar */
-    [data-testid="stSidebarNav"] {
-        display: none !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+ALLSEG_CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+
+:root {
+    --bg-page:       #f0f2f6;
+    --bg-card:       #ffffff;
+    --bg-sidebar:    #ffffff;
+    --accent:        #1a56db;
+    --accent-soft:   #e8effd;
+    --text-primary:  #111827;
+    --text-secondary:#6b7280;
+    --text-muted:    #9ca3af;
+    --border:        #e5e7eb;
+    --success:       #059669;
+    --warning:       #d97706;
+    --danger:        #dc2626;
+    --shadow-sm:     0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    --shadow-md:     0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
+    --shadow-lg:     0 10px 28px rgba(0,0,0,0.10), 0 4px 8px rgba(0,0,0,0.06);
+    --radius:        12px;
+    --radius-sm:     8px;
+    --font-main:     'Inter', sans-serif;
+    --font-mono:     'DM Mono', monospace;
+}
+
+html, body, [class*="css"] { font-family: var(--font-main) !important; color: var(--text-primary) !important; }
+
+.stApp { background-color: var(--bg-page) !important; background-image: none !important; }
+
+.main .block-container {
+    overflow-y: visible !important;
+    max-width: 96% !important;
+    padding: 1.5rem 2rem 10rem !important;
+    background: transparent !important;
+}
+
+[data-testid="stSidebar"] {
+    background-color: var(--bg-sidebar) !important;
+    border-right: 1px solid var(--border) !important;
+    box-shadow: 2px 0 12px rgba(0,0,0,0.06) !important;
+}
+[data-testid="stSidebarNav"] { display: none !important; }
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+    font-size: 0.65rem !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.12em !important;
+    color: var(--text-muted) !important;
+    padding-top: 1.2rem !important;
+    margin-bottom: 0.4rem !important;
+}
+
+h1, h2, h3, h4, h5, h6 { color: var(--text-primary) !important; font-family: var(--font-main) !important; }
+h1 { font-size: 1.5rem !important; font-weight: 700 !important; letter-spacing: -0.025em !important; }
+
+[data-testid="stHeading"] h2 {
+    font-size: 0.9rem !important;
+    font-weight: 700 !important;
+    color: var(--text-primary) !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.06em !important;
+    margin-top: 0.5rem !important;
+    padding-bottom: 0.6rem !important;
+    border-bottom: 2px solid var(--accent-soft) !important;
+}
+
+[data-testid="stMetric"] {
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius) !important;
+    padding: 1.1rem 1.4rem !important;
+    box-shadow: var(--shadow-md) !important;
+    transition: box-shadow 0.2s, transform 0.15s !important;
+}
+[data-testid="stMetric"]:hover {
+    box-shadow: var(--shadow-lg) !important;
+    transform: translateY(-2px) !important;
+}
+[data-testid="stMetricLabel"] {
+    font-size: 0.65rem !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.1em !important;
+    color: var(--text-secondary) !important;
+}
+[data-testid="stMetricValue"] {
+    font-size: 1.3rem !important;
+    font-weight: 400 !important;
+    color: var(--text-primary) !important;
+    font-family: var(--font-main) !important;
+    letter-spacing: -0.01em !important;
+    word-break: break-word !important;
+    white-space: normal !important;
+    line-height: 1.25 !important;
+}
+
+[data-testid="stDataFrame"] {
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius) !important;
+    box-shadow: var(--shadow-md) !important;
+    overflow: visible !important;
+    padding: 0 !important;
+}
+
+[data-testid="stPlotlyChart"] > div {
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius) !important;
+    box-shadow: var(--shadow-md) !important;
+    padding: 0.75rem !important;
+    overflow: visible !important;
+}
+
+[data-testid="stText"] {
+    font-size: 0.65rem !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.1em !important;
+    color: var(--text-primary) !important;
+    margin-bottom: 0.4rem !important;
+}
+
+[data-testid="stSelectbox"] > div > div,
+[data-testid="stMultiSelect"] > div > div {
+    background: #f9fafb !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-sm) !important;
+}
+[data-testid="stSelectbox"] > div > div:focus-within,
+[data-testid="stMultiSelect"] > div > div:focus-within {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 3px var(--accent-soft) !important;
+}
+
+[data-testid="stFileUploader"] {
+    background: var(--bg-card) !important;
+    border: 1.5px dashed #cbd5e1 !important;
+    border-radius: var(--radius) !important;
+    box-shadow: var(--shadow-sm) !important;
+}
+
+.stButton > button {
+    background: var(--bg-card) !important;
+    color: var(--accent) !important;
+    border: 1.5px solid var(--accent) !important;
+    border-radius: var(--radius-sm) !important;
+    font-size: 0.8rem !important;
+    font-weight: 600 !important;
+    padding: 0.4rem 1.1rem !important;
+    transition: all 0.15s !important;
+    box-shadow: var(--shadow-sm) !important;
+}
+.stButton > button:hover {
+    background: var(--accent) !important;
+    color: #fff !important;
+    box-shadow: 0 4px 14px rgba(26,86,219,0.35) !important;
+}
+
+[data-testid="stAlert"] {
+    border-radius: var(--radius) !important;
+    border-left: 4px solid var(--accent) !important;
+    background: #f0f5ff !important;
+    box-shadow: var(--shadow-sm) !important;
+    font-size: 0.84rem !important;
+}
+
+[data-testid="stTabs"] {
+    background: var(--bg-card) !important;
+    border-radius: var(--radius) !important;
+    border: 1px solid var(--border) !important;
+    box-shadow: var(--shadow-md) !important;
+    padding: 0 1rem !important;
+}
+[data-testid="stTabs"] [role="tablist"] {
+    gap: 0.1rem;
+    border-bottom: 1px solid var(--border) !important;
+    padding-top: 0.5rem;
+}
+[data-testid="stTabs"] [role="tab"] {
+    font-size: 0.78rem !important;
+    font-weight: 600 !important;
+    color: var(--text-secondary) !important;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0 !important;
+    padding: 0.5rem 1.1rem !important;
+    border: none !important;
+    background: transparent !important;
+    transition: color 0.15s !important;
+}
+[data-testid="stTabs"] [role="tab"][aria-selected="true"] {
+    color: var(--accent) !important;
+    border-bottom: 2px solid var(--accent) !important;
+    background: var(--accent-soft) !important;
+}
+[data-testid="stTabs"] [role="tabpanel"] { padding: 1rem 0.25rem 0.75rem !important; }
+
+hr { border: none !important; border-top: 1px solid var(--border) !important; margin: 2rem 0 !important; }
+[data-testid="stCaption"] { color: var(--text-muted) !important; font-size: 0.72rem !important; }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-page); }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+a.btn-topo, a.btn-topo:link, a.btn-topo:visited {
+    position: fixed; bottom: 4.5rem; right: 1.5rem; z-index: 9999;
+    background: var(--bg-card);
+    color: var(--accent) !important;
+    border: 1.5px solid var(--accent);
+    border-radius: 50%; width: 42px; height: 42px;
+    font-size: 20px; cursor: pointer; text-align: center;
+    line-height: 40px; text-decoration: none !important;
+    box-shadow: var(--shadow-md);
+    transition: all 0.2s;
+}
+a.btn-topo:hover {
+    background: var(--accent) !important;
+    color: white !important;
+    box-shadow: 0 6px 20px rgba(26,86,219,0.35) !important;
+}
+
+[data-testid="stSlider"] [role="slider"] {
+    background: var(--accent) !important;
+    box-shadow: 0 2px 6px rgba(26,86,219,0.4) !important;
+}
+
+/* ── Info Cards — idêntico ao st.metric ──────────────────────── */
+.info-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.1rem 1.4rem;
+    box-shadow: var(--shadow-md);
+    transition: box-shadow 0.2s, transform 0.15s;
+    height: 100%;
+}
+.info-card:hover {
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-2px);
+}
+.info-card-label {
+    margin: 0 0 0.4rem 0;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-secondary);
+    font-family: var(--font-main);
+}
+.info-card-value {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    font-family: var(--font-main);
+    line-height: 1.35;
+    word-break: break-word;
+}
+
+/* ── Labels de seção (st.text acima de df/gráfico) ─────────────── */
+[data-testid="stText"] p,
+[data-testid="stText"] {
+    font-size: 0.65rem !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.1em !important;
+    color: var(--text-primary) !important;
+    font-family: var(--font-main) !important;
+    margin-bottom: 0.4rem !important;
+}
+
+/* ── Label de seção (df e gráficos) — igual ao stMetricLabel ──── */
+.section-label {
+    margin: 0 0 0.5rem 0 !important;
+    font-size: 0.8rem !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.07em !important;
+    color: var(--text-primary) !important;
+    font-family: var(--font-main) !important;
+    line-height: 1 !important;
+}
+
+/* ── Oculta header e footer fixos do Streamlit ───────────────── */
+[data-testid="stHeader"] { display: none !important; }
+[data-testid="stToolbar"] { display: none !important; }
+footer { display: none !important; }
+</style>
+"""
+st.markdown(ALLSEG_CSS, unsafe_allow_html=True)
 
 # Função de Formatação de Valores para o padrão Brasileiro
 def formatar_valor_br(valor):
@@ -62,12 +340,17 @@ dados_exibicao = dados_exibicao[colunas].sort_values('N° Apólice')
 
 # ── PÁGINA 2: DADOS GERAIS ────────────────────────────────────────────────────
 
+# Link de volta para a página principal na sidebar
+st.sidebar.header('Dados por Apólice')
+st.sidebar.page_link("app.py", label="📋  Apólice / Segurado")
+
 # --- Lógica de Filtragem Hierárquica na Sidebar ---
 st.sidebar.header('Filtros Dados Gerais')
 
 # Botão para Resetar Filtros — limpa todas as keys do session_state
 _filtro_keys = ['filtro_rep', 'filtro_cor', 'filtro_seg', 'filtro_ramo', 'filtro_util', 'filtro_tp_emissao', 'filtro_regiao', 'filtro_uf', 'filtro_apolice']
 
+st.sidebar.markdown('<div style="margin-top:1rem"></div>', unsafe_allow_html=True)
 if st.sidebar.button('Limpar Todos os Filtros'):
     for k in _filtro_keys:
         if k in st.session_state:
@@ -172,29 +455,9 @@ if not df_sinistro_geral_com_rep_cor.empty:
 # sac.divider(label='Dados Gerais', icon=sac.BsIcon(name='gear', size=20), align='start', color='gray')
 # 'https://nicedouble-streamlitantdcomponentsdemo-app-middmy.streamlit.app/'
 
-# Link de volta para a página principal na sidebar
-st.sidebar.markdown("---")
-st.sidebar.header('Dados por Apólice')
-st.sidebar.page_link("app.py", label="📋  Apólice / Segurado")
-
-# Âncora invisível no topo + botão flutuante fixo no canto inferior direito
+# Âncora invisível no topo + botão flutuante (estilizado via ALLSEG_CSS)
 st.markdown(
     '<div id="topo-pagina"></div>'
-    '<style>'
-    'a.btn-topo, a.btn-topo:link, a.btn-topo:visited {'
-    '  position:fixed; bottom:4.5rem; right:1.5rem; z-index:9999;'
-    '  background-color:#D1D5DB; color:white !important; border:none;'
-    '  border-radius:50%; width:46px; height:46px;'
-    '  font-size:24px; cursor:pointer; text-align:center;'
-    '  line-height:44px; text-decoration:none !important;'
-    '  box-shadow:0 2px 8px rgba(0,0,0,0.18); display:block;'
-    '}'
-    'a.btn-topo:hover {'
-    '  background-color:#6B7280; color:white !important;'
-    '  text-decoration:none !important;'
-    '  box-shadow:0 4px 12px rgba(0,0,0,0.28);'
-    '}'
-    '</style>'
     '<a href="#topo-pagina" class="btn-topo" title="Voltar ao topo">&#8679;</a>',
     unsafe_allow_html=True
 )
@@ -212,7 +475,7 @@ with col_esq:
     # Criar o Slider de Intervalo (Range Slider)
     if ano_min_absoluto < ano_max_absoluto:
         # Título customizado com espaçamento para não colar no slider
-        st.text("Selecione o Intervalo de Anos (Início de Vigência Apólice)")
+        st.markdown('<p class="section-label">Selecione o Intervalo de Anos (Início de Vigência Apólice)</p>', unsafe_allow_html=True)
         # Flag: se botão limpar foi clicado, força visualmente o valor padrão
         if st.session_state.get('resetar_slider', False):
             st.session_state['slider_anos'] = (ano_min_absoluto, ano_max_absoluto)
@@ -359,12 +622,12 @@ st.markdown("<br>", unsafe_allow_html=True) # Espaço antes dos KPIs
 col_linha_barra_1, col_linha_barra_2 = st.columns(2)
 with col_linha_barra_1:
     # plot grafico linhas premio x sinistro
-    st.subheader("Evolução Anual")
+    st.markdown('<p class="section-label">Evolução Anual</p>', unsafe_allow_html=True)
     st.plotly_chart(fig_evolucao, use_container_width=True, config={'displayModeBar': False})
 with col_linha_barra_2:
     # plot grafico barras premio x sinistro
     # st.markdown("<br>", unsafe_allow_html=True)
-    st.subheader("Prêmio x Sinistro Anual")
+    st.markdown('<p class="section-label">Prêmio x Sinistro Anual</p>', unsafe_allow_html=True)
     st.plotly_chart(fig_barras_h, use_container_width=True, config={'displayModeBar': False})
     st.markdown("<br><br>", unsafe_allow_html=True)
 
@@ -432,18 +695,18 @@ fig_sin_ano.update_layout(
 col_ano_1,col_ano_2 = st.columns(2)
 
 with col_ano_1:
-    st.subheader("Desempenho Consolidado por Ano")
+    st.markdown('<p class="section-label">Desempenho Consolidado por Ano</p>', unsafe_allow_html=True)
     st.dataframe(df_ano_view[['Ano Vigência','Total_Premio', 'Total_Sinistro', '% Sinistralidade', 'Qtd_Apolices', 'Qtd_Sinistros']], 
                 hide_index=True, use_container_width=True)
 with col_ano_2:
-    st.subheader("Evolução da Sinistralidade (%)")
+    st.markdown('<p class="section-label">Evolução da Sinistralidade (%)</p>', unsafe_allow_html=True)
     st.plotly_chart(fig_sin_ano, use_container_width=True, config={'displayModeBar': False})
 
 # --- Exibição dos Resultados ---
 col_final_1, col_final_2 = st.columns(2)
 
 with col_final_1:
-    st.subheader("Sinistros")
+    st.markdown('<p class="section-label">Sinistros</p>', unsafe_allow_html=True)
     # Trazemos os nomes de Representante e Corretor para o DF que já está filtrado por ANO
     df_sinistro_final_exibicao = pd.merge(
         df_sinistro_periodo_atualizado, # Este já está filtrado pelo Slider
@@ -492,7 +755,7 @@ with col_final_1:
         st.info("Nenhum sinistro no período selecionado.")
         
 with col_final_2:
-    st.subheader("Prêmios e Sinistros Apólices")
+    st.markdown('<p class="section-label">Prêmios e Sinistros Apólices</p>', unsafe_allow_html=True)
     # Usamos o df_geral_periodo que contém o filtro do Slider de Ano
     if not df_geral_periodo.empty:
         st.dataframe(df_geral_periodo, hide_index=True)
@@ -500,7 +763,7 @@ with col_final_2:
         st.info("Nenhum dado encontrado com os filtros selecionados.")
 
 # --- Dados de Prêmio e Sinistro por Tipo de Emissão (Dados Gerais) ---
-st.subheader("Prêmio e Sinistro por Tipo de Emissão")
+st.markdown('<p class="section-label">Prêmio e Sinistro por Tipo de Emissão</p>', unsafe_allow_html=True)
 
 if not df_geral_periodo.empty:
     df_tp_em = df_geral_periodo.copy()
@@ -541,7 +804,7 @@ else:
 col_pr_sin_util_1, col_pr_sin_util_2 = st.columns(2)
 
 with col_pr_sin_util_1:
-    st.subheader("Prêmio e Sinistro por Utilização")
+    st.markdown('<p class="section-label">Prêmio e Sinistro por Utilização</p>', unsafe_allow_html=True)
 
     if not df_geral_periodo.empty:
         # 1. Preparação dos dados numéricos para soma
@@ -609,7 +872,7 @@ with col_pr_sin_util_1:
 
 with col_pr_sin_util_2:
     # === Gráfico de Sinistralidade por Utilização ===
-    st.subheader("Gráfico Sinistralidade por Utilização")
+    st.markdown('<p class="section-label">Gráfico Sinistralidade por Utilização</p>', unsafe_allow_html=True)
 
     # 1. Criamos o DF auxiliar para o gráfico
     df_grafico_util = groupby_utilizacao.copy()
@@ -662,7 +925,7 @@ with col_pr_sin_util_2:
 
 
 # ── Evolução da Sinistralidade (%) por Utilização ────────────────────────────
-st.subheader("Evolução da Sinistralidade (%) por Utilização")
+st.markdown('<p class="section-label">Evolução da Sinistralidade (%) por Utilização</p>', unsafe_allow_html=True)
 
 if not df_para_soma.empty:
     df_util_ano = df_para_soma.groupby(['Ano Vigência', 'Utilização']).agg(
@@ -821,10 +1084,10 @@ fig_ramo_geral.update_layout(barmode='group', margin=dict(t=20, b=0, l=0, r=0), 
 # Exibição em Colunas
 c1, c2 = st.columns(2)
 with c1:
-    st.subheader("Prêmio e Sinistro por Ramo")
+    st.markdown('<p class="section-label">Prêmio e Sinistro por Ramo</p>', unsafe_allow_html=True)
     st.dataframe(df_geral_ramo_exibicao, hide_index=True, use_container_width=True)
 with c2:
-    st.subheader("Sinistros por Cobertura")
+    st.markdown('<p class="section-label">Sinistros por Cobertura</p>', unsafe_allow_html=True)
     # Formatação apenas para exibição
     df_disp_cob = df_sinistro_geral_cobertura.copy()
     df_disp_cob['Total Sinistro'] = df_disp_cob['Total Sinistro'].map(formatar_valor_br)
@@ -833,14 +1096,14 @@ with c2:
 # exibir grafico de linhas ramos e pizza das coberturas
 c1, c2 = st.columns(2)
 with c1:
-    st.subheader("Prêmio e Sinistro por Ramo")
+    st.markdown('<p class="section-label">Prêmio e Sinistro por Ramo</p>', unsafe_allow_html=True)
     st.plotly_chart(fig_ramo_geral, use_container_width=True, config={'displayModeBar': False})
 with c2:
-    st.subheader("Sinistros por Cobertura")
+    st.markdown('<p class="section-label">Sinistros por Cobertura</p>', unsafe_allow_html=True)
     st.plotly_chart(fig_pizza_geral, use_container_width=True, config={'displayModeBar': False})
 
 # ── Evolução da Sinistralidade (%) por Ramo ──────────────────────────────────
-st.subheader("Evolução da Sinistralidade (%) por Ramo")
+st.markdown('<p class="section-label">Evolução da Sinistralidade (%) por Ramo</p>', unsafe_allow_html=True)
 
 df_ramo_ano = df_para_soma.groupby(['Ano Vigência', 'Ramo']).agg(
     Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
@@ -901,13 +1164,13 @@ if len(ramos_com_dados) >= 2:
         
         col_t, col_g = st.columns(2)
         with col_t:
-            st.text(f"Dados de Sinistro por Cobertura - Ramo {r}")
+            st.markdown(f'<p class="section-label">Dados de Sinistro por Cobertura - Ramo {r}</p>', unsafe_allow_html=True)
             df_cob_r_view = df_cob_r.copy()
             df_cob_r_view['Total Sinistro'] = df_cob_r_view['Total Sinistro'].map(formatar_valor_br)
             st.dataframe(df_cob_r_view, hide_index=True, use_container_width=True)
             
         with col_g:
-            st.text(f"Gráfico Sinistro Por Cobertura - Ramo {r}")
+            st.markdown(f'<p class="section-label">Gráfico Sinistro Por Cobertura - Ramo {r}</p>', unsafe_allow_html=True)
             fig_r = px.pie(df_cob_r, values='Total Sinistro', names='Cobertura', hole=0.4, height=300)
             fig_r.update_layout(
                 margin=dict(t=20, b=20, l=0, r=0),
@@ -1030,11 +1293,11 @@ if not df_geral_periodo.empty:
     col_reg_df, col_reg_graf = st.columns(2)
 
     with col_reg_df:
-        st.subheader("Prêmio e Sinistro por Região de Circulação")
+        st.markdown('<p class="section-label">Prêmio e Sinistro por Região de Circulação</p>', unsafe_allow_html=True)
         st.dataframe(df_regiao_view, hide_index=True, use_container_width=True)
 
     with col_reg_graf:
-        st.subheader("Top 10 Piores Regiões — Sinistralidade (%)")
+        st.markdown('<p class="section-label">Top 10 Piores Regiões — Sinistralidade (%)</p>', unsafe_allow_html=True)
         # Top 10 piores regiões — barras horizontais escala Reds
         df_top10 = groupby_regiao[groupby_regiao['Sinistralidade_Num'] > 0].copy()
         df_top10 = df_top10.sort_values('Sinistralidade_Num', ascending=False).head(10)
@@ -1083,7 +1346,7 @@ if not df_geral_periodo.empty:
     col_uf_df, col_uf_mapa = st.columns(2)
 
     with col_uf_df:
-        st.subheader("Sinistralidade por UF")
+        st.markdown('<p class="section-label">Sinistralidade por UF</p>', unsafe_allow_html=True)
         df_uf_view = df_uf.sort_values('Sinistralidade_UF', ascending=False).copy()
         df_uf_view['% Sinistralidade'] = df_uf_view['Sinistralidade_UF'].map(lambda x: f"{x:.2%}")
         df_uf_view['Total_Premio']     = df_uf_view['Total_Premio'].map(formatar_valor_br)
@@ -1094,7 +1357,7 @@ if not df_geral_periodo.empty:
         st.dataframe(df_uf_view, hide_index=True, use_container_width=True)
 
     with col_uf_mapa:
-        st.subheader("Mapa de Calor")
+        st.markdown('<p class="section-label">Mapa de Calor</p>', unsafe_allow_html=True)
         df_uf_mapa = df_uf.copy()
         df_uf_mapa['Sin_Pct']      = df_uf_mapa['Sinistralidade_UF'].map(lambda x: f"{x:.2%}")
         df_uf_mapa['Premio_fmt']   = df_uf_mapa['Total_Premio'].apply(formatar_valor_br)
@@ -1219,7 +1482,7 @@ def gerar_ranking_producao(df_base, coluna_agrupadora):
     return ranking
 
 st.subheader("🏆 Top 10 Produção (Emissões e Prêmios)")
-st.text("Este ranking destaca os parceiros com maior volume financeiro e quantidade de apólices emitidas.")
+st.markdown('<p class="section-label">Este ranking destaca os parceiros com maior volume financeiro e quantidade de apólices emitidas.</p>', unsafe_allow_html=True)
 # st.info("Este ranking destaca os parceiros com maior volume financeiro e quantidade de apólices emitidas.")
 
 # Gerar os rankings de produção com a nova função
@@ -1231,7 +1494,7 @@ prod_rep = gerar_ranking_producao(df_geral_periodo, 'Representante')
 tab_p_seg, tab_p_cor, tab_p_rep = st.columns(3)
 
 with tab_p_seg:
-    st.text('Top Segurados')
+    st.markdown('<p class="section-label">Top Segurados</p>', unsafe_allow_html=True)
     if not prod_seg.empty:
         st.dataframe(
             prod_seg,
@@ -1248,7 +1511,7 @@ with tab_p_seg:
         st.warning("Sem dados de produção.")
 
 with tab_p_cor:
-    st.text('Top Corretores')
+    st.markdown('<p class="section-label">Top Corretores</p>', unsafe_allow_html=True)
     if not prod_cor.empty:
         st.dataframe(
             prod_cor,
@@ -1265,7 +1528,7 @@ with tab_p_cor:
         st.warning("Sem dados de produção.")
 
 with tab_p_rep:
-    st.text('Top Representantes')
+    st.markdown('<p class="section-label">Top Representantes</p>', unsafe_allow_html=True)
     if not prod_rep.empty:
         st.dataframe(
             prod_rep,
