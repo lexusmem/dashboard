@@ -99,8 +99,8 @@ h1 { font-size: 1.5rem !important; font-weight: 700 !important; letter-spacing: 
     color: var(--text-secondary) !important;
 }
 [data-testid="stMetricValue"] {
-    font-size: 1.6rem !important;
-    font-weight: 700 !important;
+    font-size: 1.3rem !important;
+    font-weight: 400 !important;
     color: var(--text-primary) !important;
     font-family: var(--font-mono) !important;
     letter-spacing: -0.02em !important;
