@@ -340,6 +340,10 @@ dados_exibicao = dados_exibicao[colunas].sort_values('N° Apólice')
 
 # ── PÁGINA 2: DADOS GERAIS ────────────────────────────────────────────────────
 
+# Link de volta para a página principal na sidebar
+st.sidebar.header('Dados por Apólice')
+st.sidebar.page_link("app_homologacao.py", label="📋  Apólice / Segurado")
+
 # --- Lógica de Filtragem Hierárquica na Sidebar ---
 st.sidebar.header('Filtros Dados Gerais')
 
@@ -450,10 +454,6 @@ if not df_sinistro_geral_com_rep_cor.empty:
 
 # sac.divider(label='Dados Gerais', icon=sac.BsIcon(name='gear', size=20), align='start', color='gray')
 # 'https://nicedouble-streamlitantdcomponentsdemo-app-middmy.streamlit.app/'
-
-# Link de volta para a página principal na sidebar
-st.sidebar.header('Dados por Apólice')
-st.sidebar.page_link("app_homologacao.py", label="📋  Apólice / Segurado")
 
 # Âncora invisível no topo + botão flutuante (estilizado via ALLSEG_CSS)
 st.markdown(
