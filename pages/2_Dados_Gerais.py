@@ -1415,19 +1415,17 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
     df_sin_tend['Mes']    = df_sin_tend['dt_aviso'].dt.month
     df_sin_tend['AnoMes'] = df_sin_tend['dt_aviso'].dt.to_period('M').astype(str)
 
-    # Prêmio por ano (base numérica — converte de volta se necessário)
-    df_apo_tend = df_geral_periodo.copy()
-    if df_apo_tend['Soma Prêmio Pago por Apolice'].dtype == object:
-        df_apo_tend['Premio_Num'] = df_apo_tend['Soma Prêmio Pago por Apolice'].str.replace('.','').str.replace(',','.').astype(float)
-    else:
-        df_apo_tend['Premio_Num'] = df_apo_tend['Soma Prêmio Pago por Apolice']
+    # Prêmio por ano — usa dados_calculados (sempre numérico, nunca formatado)
+    df_apo_tend = dados_calculados.copy()
+    df_apo_tend['Premio_Num'] = pd.to_numeric(df_apo_tend['Soma Prêmio Pago por Apolice'], errors='coerce').fillna(0)
     df_premio_ano = df_apo_tend.groupby('Ano Vigência')['Premio_Num'].sum().reset_index()
     df_premio_ano.columns = ['Ano', 'Premio']
 
     # Sinistro por ano (aviso)
     df_sin_ano = df_sin_tend.groupby('Ano')['Total Sinistro'].sum().reset_index()
     df_tend_ano = pd.merge(df_sin_ano, df_premio_ano, on='Ano', how='inner')
-    df_tend_ano = df_tend_ano[df_tend_ano['Premio'] > 0].copy()
+    df_tend_ano = df_tend_ano[pd.to_numeric(df_tend_ano['Premio'], errors='coerce').fillna(0) > 0].copy()
+    df_tend_ano['Premio'] = pd.to_numeric(df_tend_ano['Premio'], errors='coerce').fillna(0)
     df_tend_ano['Sinistralidade'] = df_tend_ano['Total Sinistro'] / df_tend_ano['Premio']
     df_tend_ano = df_tend_ano[df_tend_ano['Ano'] >= df_tend_ano['Ano'].max() - 9]  # últimos 10 anos
 
