@@ -1399,6 +1399,215 @@ if not df_geral_periodo.empty:
 else:
     st.info("Nenhum dado disponível para agrupar por Região de Circulação.")
 
+# ══════════════════════════════════════════════════════════════════════════════
+# SEÇÃO DE ANÁLISE DE TENDÊNCIA 📈
+# ══════════════════════════════════════════════════════════════════════════════
+st.write("---")
+st.subheader("📈 Análise de Tendência da Sinistralidade")
+st.caption("Baseado na data de aviso dos sinistros vs prêmio por ano de vigência da apólice.")
+
+if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
+
+    # ── Prepara base de sinistros com datas ───────────────────────────────────
+    df_sin_tend = df_sinistro_periodo_atualizado.copy()
+    df_sin_tend['dt_aviso'] = pd.to_datetime(df_sin_tend['dt_aviso'], dayfirst=True, errors='coerce')
+    df_sin_tend['Ano']    = df_sin_tend['dt_aviso'].dt.year
+    df_sin_tend['Mes']    = df_sin_tend['dt_aviso'].dt.month
+    df_sin_tend['AnoMes'] = df_sin_tend['dt_aviso'].dt.to_period('M').astype(str)
+
+    # Prêmio por ano (base numérica — converte de volta se necessário)
+    df_apo_tend = df_geral_periodo.copy()
+    if df_apo_tend['Soma Prêmio Pago por Apolice'].dtype == object:
+        df_apo_tend['Premio_Num'] = df_apo_tend['Soma Prêmio Pago por Apolice'].str.replace('.','').str.replace(',','.').astype(float)
+    else:
+        df_apo_tend['Premio_Num'] = df_apo_tend['Soma Prêmio Pago por Apolice']
+    df_premio_ano = df_apo_tend.groupby('Ano Vigência')['Premio_Num'].sum().reset_index()
+    df_premio_ano.columns = ['Ano', 'Premio']
+
+    # Sinistro por ano (aviso)
+    df_sin_ano = df_sin_tend.groupby('Ano')['Total Sinistro'].sum().reset_index()
+    df_tend_ano = pd.merge(df_sin_ano, df_premio_ano, on='Ano', how='inner')
+    df_tend_ano = df_tend_ano[df_tend_ano['Premio'] > 0].copy()
+    df_tend_ano['Sinistralidade'] = df_tend_ano['Total Sinistro'] / df_tend_ano['Premio']
+    df_tend_ano = df_tend_ano[df_tend_ano['Ano'] >= df_tend_ano['Ano'].max() - 9]  # últimos 10 anos
+
+    # Sinistro por mês (últimos 24 meses)
+    df_sin_mes = df_sin_tend.groupby('AnoMes').agg(
+        Total_Sinistro=('Total Sinistro', 'sum'),
+        Qtd_Sinistros=('nr_sinistro', 'nunique')
+    ).reset_index().sort_values('AnoMes')
+    df_sin_mes = df_sin_mes.tail(24).copy()
+    df_sin_mes['MM3'] = df_sin_mes['Total_Sinistro'].rolling(3).mean()
+    df_sin_mes['MM6'] = df_sin_mes['Total_Sinistro'].rolling(6).mean()
+
+    # ── Linha 1: Sinistralidade anual + linha de tendência ───────────────────
+    col_t1, col_t2 = st.columns(2)
+
+    with col_t1:
+        st.markdown("**Sinistralidade % Anual com Tendência Linear**")
+        if len(df_tend_ano) >= 3:
+            import numpy as np
+            anos_num = df_tend_ano['Ano'].values
+            sin_vals  = df_tend_ano['Sinistralidade'].values
+            coef = np.polyfit(anos_num, sin_vals, 1)
+            tendencia_vals = np.polyval(coef, anos_num)
+            direcao = "📈 Subindo" if coef[0] > 0.01 else ("📉 Caindo" if coef[0] < -0.01 else "➡ Estável")
+            variacao_pct = (tendencia_vals[-1] - tendencia_vals[0]) / abs(tendencia_vals[0]) * 100 if tendencia_vals[0] != 0 else 0
+
+            fig_tend = go.Figure()
+            fig_tend.add_trace(go.Scatter(
+                x=df_tend_ano['Ano'], y=df_tend_ano['Sinistralidade'],
+                mode='lines+markers+text',
+                name='Sinistralidade Real',
+                text=df_tend_ano['Sinistralidade'].map(lambda x: f"{x:.1%}"),
+                textposition='top center', textfont=dict(size=10),
+                marker=dict(size=8, color='#1A56A0'), line=dict(width=2.5, color='#1A56A0')
+            ))
+            fig_tend.add_trace(go.Scatter(
+                x=df_tend_ano['Ano'], y=tendencia_vals,
+                mode='lines', name=f'Tendência ({direcao})',
+                line=dict(color='red', width=2, dash='dash'),
+            ))
+            fig_tend.update_layout(
+                xaxis=dict(title='Ano', tickmode='linear', dtick=1),
+                yaxis=dict(title='Sinistralidade (%)', tickformat='.0%'),
+                legend=dict(orientation='h', y=1.15),
+                margin=dict(t=20, b=20, l=0, r=0), height=360,
+                hovermode='x unified'
+            )
+            st.plotly_chart(fig_tend, use_container_width=True, config={'displayModeBar': False})
+
+            # Alerta de tendência
+            if coef[0] > 0.05:
+                st.error(f"⚠️ **Tendência de alta acelerada** — sinistralidade cresceu ~{variacao_pct:.1f}% no período. Avaliar aumento de prêmio.")
+            elif coef[0] > 0.01:
+                st.warning(f"⚠️ **Tendência de alta moderada** — sinistralidade cresceu ~{variacao_pct:.1f}% no período. Monitorar.")
+            elif coef[0] < -0.01:
+                st.success(f"✅ **Tendência de queda** — sinistralidade caiu ~{abs(variacao_pct):.1f}% no período. Bom resultado.")
+            else:
+                st.info("➡️ **Sinistralidade estável** no período analisado.")
+        else:
+            st.info("Dados insuficientes para calcular tendência (mínimo 3 anos).")
+
+    with col_t2:
+        st.markdown("**Evolução Mensal do Sinistro — Últimos 24 Meses**")
+        fig_mes = go.Figure()
+        fig_mes.add_trace(go.Bar(
+            x=df_sin_mes['AnoMes'], y=df_sin_mes['Total_Sinistro'],
+            name='Sinistro Mensal', marker_color='#CBD5E1', opacity=0.7
+        ))
+        fig_mes.add_trace(go.Scatter(
+            x=df_sin_mes['AnoMes'], y=df_sin_mes['MM3'],
+            mode='lines', name='Média Móvel 3M',
+            line=dict(color='#1A56A0', width=2.5)
+        ))
+        fig_mes.add_trace(go.Scatter(
+            x=df_sin_mes['AnoMes'], y=df_sin_mes['MM6'],
+            mode='lines', name='Média Móvel 6M',
+            line=dict(color='red', width=2, dash='dot')
+        ))
+        fig_mes.update_layout(
+            xaxis=dict(title='', tickangle=-45, tickfont=dict(size=9)),
+            yaxis=dict(title='R$ Sinistro'),
+            legend=dict(orientation='h', y=1.15),
+            margin=dict(t=20, b=60, l=0, r=0), height=360,
+            hovermode='x unified', barmode='overlay'
+        )
+        st.plotly_chart(fig_mes, use_container_width=True, config={'displayModeBar': False})
+
+    # ── Linha 2: Frequência mensal + Indicador de necessidade de reajuste ────
+    col_t3, col_t4 = st.columns(2)
+
+    with col_t3:
+        st.markdown("**Frequência de Sinistros por Mês — Últimos 24 Meses**")
+        df_sin_mes['MM3_Qtd'] = df_sin_mes['Qtd_Sinistros'].rolling(3).mean()
+        fig_freq = go.Figure()
+        fig_freq.add_trace(go.Bar(
+            x=df_sin_mes['AnoMes'], y=df_sin_mes['Qtd_Sinistros'],
+            name='Qtd Sinistros', marker_color='#FCA5A5', opacity=0.75
+        ))
+        fig_freq.add_trace(go.Scatter(
+            x=df_sin_mes['AnoMes'], y=df_sin_mes['MM3_Qtd'],
+            mode='lines', name='Média Móvel 3M',
+            line=dict(color='#DC2626', width=2.5)
+        ))
+        fig_freq.update_layout(
+            xaxis=dict(title='', tickangle=-45, tickfont=dict(size=9)),
+            yaxis=dict(title='Qtd Sinistros'),
+            legend=dict(orientation='h', y=1.15),
+            margin=dict(t=20, b=60, l=0, r=0), height=340,
+            hovermode='x unified'
+        )
+        st.plotly_chart(fig_freq, use_container_width=True, config={'displayModeBar': False})
+
+    with col_t4:
+        st.markdown("**Painel de Indicadores — Necessidade de Reajuste de Prêmio**")
+        if len(df_tend_ano) >= 2:
+            import numpy as np
+            # Indicadores calculados
+            anos_rec = df_tend_ano.tail(3)
+            sin_media_3a = anos_rec['Sinistralidade'].mean()
+            sin_ultimo   = df_tend_ano.iloc[-1]['Sinistralidade']
+            sin_anterior = df_tend_ano.iloc[-2]['Sinistralidade']
+            variacao_yoy = (sin_ultimo - sin_anterior) / sin_anterior * 100 if sin_anterior != 0 else 0
+
+            coef2 = np.polyfit(df_tend_ano['Ano'].values, df_tend_ano['Sinistralidade'].values, 1)
+            aceleracao = coef2[0] * 100  # % ao ano
+
+            # Ticket médio por sinistro (últimos 12 meses)
+            df_12m = df_sin_tend[df_sin_tend['dt_aviso'] >= df_sin_tend['dt_aviso'].max() - pd.DateOffset(months=12)]
+            ticket_medio = df_12m['Total Sinistro'].sum() / max(df_12m['nr_sinistro'].nunique(), 1)
+
+            # Score de reajuste (0 = sem necessidade, 100 = urgente)
+            score = 0
+            if sin_media_3a > 0.80: score += 40
+            elif sin_media_3a > 0.60: score += 20
+            elif sin_media_3a > 0.40: score += 10
+
+            if variacao_yoy > 20: score += 30
+            elif variacao_yoy > 10: score += 15
+            elif variacao_yoy > 0: score += 5
+
+            if aceleracao > 0.05: score += 30
+            elif aceleracao > 0.02: score += 15
+
+            score = min(score, 100)
+
+            # Cor do score
+            if score >= 70:
+                cor_score = "#DC2626"
+                veredicto = "🔴 REAJUSTE URGENTE"
+                desc = "Sinistralidade elevada com tendência de alta. Necessário reajuste imediato de prêmio."
+            elif score >= 40:
+                cor_score = "#F59E0B"
+                veredicto = "🟡 REAJUSTE RECOMENDADO"
+                desc = "Tendência de deterioração identificada. Avaliar reajuste preventivo."
+            else:
+                cor_score = "#16A34A"
+                veredicto = "🟢 PRÊMIO ADEQUADO"
+                desc = "Sinistralidade dentro de parâmetros aceitáveis."
+
+            st.markdown(f"""
+            <div style="background:#F8FAFC;border-radius:10px;padding:18px;border:1px solid #E2E8F0;">
+                <div style="text-align:center;font-size:52px;font-weight:bold;color:{cor_score};">{score}</div>
+                <div style="text-align:center;font-size:13px;color:#64748B;margin-bottom:8px;">Score de Necessidade de Reajuste (0-100)</div>
+                <div style="text-align:center;font-size:15px;font-weight:bold;color:{cor_score};margin-bottom:14px;">{veredicto}</div>
+                <hr style="border:1px solid #E2E8F0;margin:10px 0;">
+                <table style="width:100%;font-size:12px;color:#334155;">
+                    <tr><td>📊 Sinistralidade média 3 anos</td><td style="text-align:right;font-weight:bold;">{sin_media_3a:.1%}</td></tr>
+                    <tr><td>📅 Variação ano a ano</td><td style="text-align:right;font-weight:bold;">{variacao_yoy:+.1f}%</td></tr>
+                    <tr><td>📈 Aceleração anual</td><td style="text-align:right;font-weight:bold;">{aceleracao:+.2f}% a.a.</td></tr>
+                    <tr><td>💰 Ticket médio sinistro (12m)</td><td style="text-align:right;font-weight:bold;">R$ {ticket_medio:,.2f}</td></tr>
+                </table>
+                <hr style="border:1px solid #E2E8F0;margin:10px 0;">
+                <div style="font-size:11px;color:#64748B;">{desc}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.info("Dados insuficientes para calcular indicadores de reajuste.")
+else:
+    st.info("Nenhum dado disponível para análise de tendência.")
+
 # --- SEÇÃO DE RANKING DE CRITICIDADE 🚩---
 st.write("---")
 st.subheader("⚠️ Análise de Criticidade (Top 10 Piores Resultados)")
