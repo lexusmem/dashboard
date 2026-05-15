@@ -1777,6 +1777,171 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
             "Curvas que ainda sobem indicam safras em desenvolvimento — sinistros ainda estão sendo avisados. "
             "Safras recentes (direita com poucos pontos) tendem a ter sinistralidade subestimada."
         )
+
+        # ── Chain-Ladder: Projeção da sinistralidade final por safra ─────────
+        st.write("---")
+        st.subheader("🔮 Projeção Chain-Ladder — Sinistralidade Final Estimada")
+        st.caption(
+            "Usa o padrão histórico de desenvolvimento das safras completas para projetar "
+            "a sinistralidade final das safras recentes ainda em desenvolvimento."
+        )
+
+        import numpy as np
+
+        # Monta matriz de sinistralidade acumulada: linhas=safra, colunas=lag
+        lags_disponiveis = sorted(df_saf_grp['Lag'].unique())
+        safras_disponiveis = sorted(df_saf_grp['Ano_Vigencia'].dropna().unique())
+
+        # Matriz numérica de sinistralidade acumulada
+        matriz = {}
+        for av in safras_disponiveis:
+            df_v = df_saf_grp[df_saf_grp['Ano_Vigencia'] == av].sort_values('Lag')
+            for _, row in df_v.iterrows():
+                matriz[(av, int(row['Lag']))] = row['Sin_Rate_Acum']
+
+        max_lag = int(max(lags_disponiveis))
+
+        # Calcula fatores de desenvolvimento (link ratios) por lag
+        # Fator lag→lag+1 = média ponderada de (Acum_lag+1 / Acum_lag) nas safras que têm ambos
+        fatores = {}
+        for lag in range(0, max_lag):
+            numerador   = 0.0
+            denominador = 0.0
+            for av in safras_disponiveis:
+                v0 = matriz.get((av, lag),   None)
+                v1 = matriz.get((av, lag+1), None)
+                if v0 is not None and v1 is not None and v0 > 0:
+                    # Pondera pelo prêmio da safra para dar mais peso às safras maiores
+                    premio_saf = df_premio_saf[df_premio_saf['Ano_Vigencia'] == av]['Premio'].values
+                    peso = float(premio_saf[0]) if len(premio_saf) > 0 else 1.0
+                    numerador   += v1 * peso
+                    denominador += v0 * peso
+            if denominador > 0:
+                fatores[lag] = numerador / denominador
+
+        # Projeta cada safra incompleta até o lag máximo observado
+        ano_atual = int(df_saf_grp['Ano_Vigencia'].max())
+        rows_proj = []
+
+        for av in safras_disponiveis:
+            av = int(av)
+            # Encontra último lag disponível para esta safra
+            lags_saf = [lag for lag in lags_disponiveis if (av, int(lag)) in matriz]
+            if not lags_saf:
+                continue
+            ultimo_lag = int(max(lags_saf))
+            sin_atual  = matriz.get((av, ultimo_lag), None)
+            if sin_atual is None:
+                continue
+
+            # Projeta do último lag até o máximo
+            sin_proj = sin_atual
+            for lag in range(ultimo_lag, max_lag):
+                f = fatores.get(lag, None)
+                if f is not None:
+                    sin_proj *= f
+
+            ja_completa = ultimo_lag >= max_lag
+            fator_total  = sin_proj / sin_atual if sin_atual > 0 else 1.0
+
+            rows_proj.append({
+                'Safra':               av,
+                'Sin. Atual':          sin_atual,
+                'Sin. Projetada':      sin_proj,
+                'Fator Desenvolvimento': fator_total,
+                'Último Lag':          ultimo_lag,
+                'Status':              'Completa' if ja_completa else f'Em dev. (lag {ultimo_lag}/{max_lag})'
+            })
+
+        df_proj = pd.DataFrame(rows_proj).sort_values('Safra', ascending=False)
+
+        if not df_proj.empty:
+            col_cl1, col_cl2 = st.columns(2)
+
+            with col_cl1:
+                st.markdown("**Tabela de Projeção por Safra**")
+                df_proj_view = df_proj.copy()
+                df_proj_view['Sin. Atual']     = df_proj_view['Sin. Atual'].map(lambda x: f"{x:.1%}")
+                df_proj_view['Sin. Projetada'] = df_proj_view['Sin. Projetada'].map(lambda x: f"{x:.1%}")
+                df_proj_view['Fator Desenvolvimento'] = df_proj_view['Fator Desenvolvimento'].map(lambda x: f"{x:.3f}×")
+                st.dataframe(df_proj_view, hide_index=True, use_container_width=True)
+                st.caption(
+                    "Fator Desenvolvimento = quanto ainda deve crescer a sinistralidade. "
+                    "1.000× = safra completa. 1.400× = ainda deve crescer 40%."
+                )
+
+            with col_cl2:
+                st.markdown("**Comparativo: Sinistralidade Atual × Projetada**")
+                df_inc = df_proj[df_proj['Status'] != 'Completa'].copy()
+                df_comp = df_proj.copy()
+
+                fig_cl = go.Figure()
+                fig_cl.add_trace(go.Bar(
+                    x=df_comp['Safra'].astype(str),
+                    y=df_comp['Sin. Atual'],
+                    name='Sinistralidade Atual',
+                    marker_color='#36A2EB',
+                    text=df_comp['Sin. Atual'].map(lambda x: f"{x:.1%}"),
+                    textposition='outside'
+                ))
+                fig_cl.add_trace(go.Bar(
+                    x=df_comp['Safra'].astype(str),
+                    y=df_comp['Sin. Projetada'] - df_comp['Sin. Atual'],
+                    name='Incremento Projetado',
+                    marker_color='#FCA5A5',
+                    text=(df_comp['Sin. Projetada'] - df_comp['Sin. Atual']).map(
+                        lambda x: f"+{x:.1%}" if x > 0.001 else ""
+                    ),
+                    textposition='outside',
+                    base=df_comp['Sin. Atual']
+                ))
+                fig_cl.update_layout(
+                    barmode='stack',
+                    xaxis=dict(title='Safra'),
+                    yaxis=dict(title='Sinistralidade (%)', tickformat='.0%'),
+                    legend=dict(orientation='h', y=1.15),
+                    margin=dict(t=20, b=20, l=0, r=0), height=380,
+                    hovermode='x unified'
+                )
+                st.plotly_chart(fig_cl, use_container_width=True, config={'displayModeBar': False})
+
+            # Alerta da safra mais recente
+            ultima_safra = df_proj[df_proj['Status'] != 'Completa'].sort_values('Safra', ascending=False)
+            if not ultima_safra.empty:
+                row_ult = ultima_safra.iloc[0]
+                sin_at  = row_ult['Sin. Atual'] if isinstance(row_ult['Sin. Atual'], float) else float(str(row_ult['Sin. Atual']).replace('%',''))/100
+                sin_pj  = row_ult['Sin. Projetada'] if isinstance(row_ult['Sin. Projetada'], float) else float(str(row_ult['Sin. Projetada']).replace('%',''))/100
+                # Recupera numérico do df original
+                sin_at_n  = df_proj[df_proj['Safra'] == row_ult['Safra']]['Sin. Atual'].values[0]
+                sin_pj_n  = df_proj[df_proj['Safra'] == row_ult['Safra']]['Sin. Projetada'].values[0]
+                incremento = sin_pj_n - sin_at_n
+
+                if sin_pj_n > 0.80:
+                    st.error(
+                        f"🔴 **Safra {int(row_ult['Safra'])}: sinistralidade atual de {sin_at_n:.1%} "
+                        f"deve atingir {sin_pj_n:.1%} quando completa** (+{incremento:.1%} ainda a ser avisado). "
+                        f"Risco elevado — avaliar reajuste preventivo nas renovações."
+                    )
+                elif sin_pj_n > 0.60:
+                    st.warning(
+                        f"🟡 **Safra {int(row_ult['Safra'])}: sinistralidade atual de {sin_at_n:.1%} "
+                        f"deve atingir {sin_pj_n:.1%} quando completa** (+{incremento:.1%} ainda a ser avisado). "
+                        f"Monitorar — possível necessidade de reajuste."
+                    )
+                else:
+                    st.success(
+                        f"🟢 **Safra {int(row_ult['Safra'])}: sinistralidade atual de {sin_at_n:.1%} "
+                        f"deve atingir {sin_pj_n:.1%} quando completa** (+{incremento:.1%} ainda a ser avisado). "
+                        f"Dentro de parâmetros aceitáveis."
+                    )
+
+        # Fatores de desenvolvimento históricos
+        with st.expander("📊 Ver fatores de desenvolvimento históricos (Chain-Ladder)"):
+            fat_data = [{'Lag → Lag+1': f"Ano+{lag} → Ano+{lag+1}", 'Fator Médio': f"{v:.4f}×", 'Significado': f"A sinistralidade cresce em média {(v-1)*100:.1f}% entre esses dois períodos"} for lag, v in sorted(fatores.items())]
+            if fat_data:
+                st.dataframe(pd.DataFrame(fat_data), hide_index=True, use_container_width=True)
+                st.caption("Fatores ponderados pelo prêmio de cada safra. Quanto mais próximo de 1.000×, mais estável o desenvolvimento naquele lag.")
+
 else:
     st.info("Nenhum dado disponível para análise de desenvolvimento por safra.")
 
