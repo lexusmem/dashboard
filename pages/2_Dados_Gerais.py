@@ -1675,6 +1675,27 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
 else:
     st.info("Nenhum dado disponível para análise de frequência e severidade.")
 
+st.markdown("---")
+st.markdown("""
+<div style="background:#F8FAFC;border-radius:10px;padding:18px;border:1px solid #E2E8F0;font-size:13px;color:#334155;">
+<b>📖 Como entender esta análise</b><br><br>
+
+<b>O que é:</b> A sinistralidade total pode subir por dois motivos completamente diferentes — porque ocorreram <i>mais sinistros</i> (frequência) ou porque cada sinistro ficou <i>mais caro</i> (severidade). Esta seção separa os dois efeitos para que a decisão de subscrição seja mais precisa.<br><br>
+
+<b>Frequência</b> = Quantidade de sinistros ÷ Quantidade de apólices. Indica quantos sinistros ocorrem em média por apólice a cada ano. Se sobe, significa que mais segurados estão acionando o seguro — pode indicar seleção adversa (carteira com perfil de risco ruim) ou problema no critério de aceitação.<br><br>
+
+<b>Severidade</b> = Total pago em sinistros ÷ Quantidade de sinistros. Indica o valor médio de cada sinistro. Se sobe, significa que os eventos estão ficando mais caros — pode refletir inflação de custos médicos/jurídicos, sinistros mais graves ou ausência de franquia adequada.<br><br>
+
+<b>Como analisar:</b><br>
+🔴 Frequência E Severidade subindo → problema amplo, revisar critérios de aceitação E franquias simultaneamente.<br>
+🟡 Só Frequência subindo → mais sinistros, mas valores controlados. Restringir aceitação ou aplicar franquia por evento.<br>
+🟡 Só Severidade subindo → menos sinistros, mas mais caros. Aumentar franquia mínima ou limite de cobertura.<br>
+🟢 Ambas caindo → carteira saudável.<br><br>
+
+<b>Como foi desenvolvido:</b> Agrupa os dados por Ano de Vigência da Apólice. A frequência usa quantidade de sinistros únicos (nr_sinistro) dividida pela quantidade de apólices únicas. A severidade usa o Total Sinistro (sinistro + despesa + honorário - salvado) dividido pela quantidade de sinistros. A linha tracejada vermelha é uma regressão linear simples sobre os anos disponíveis. Os alertas automáticos comparam o último ano completo com o penúltimo.
+</div>
+""", unsafe_allow_html=True)
+
 
 # ── BLOCO: Desenvolvimento por Safra ─────────────────────────────────────────
 st.write("---")
@@ -1758,6 +1779,29 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
         )
 else:
     st.info("Nenhum dado disponível para análise de desenvolvimento por safra.")
+
+st.markdown("---")
+st.markdown("""
+<div style="background:#F8FAFC;border-radius:10px;padding:18px;border:1px solid #E2E8F0;font-size:13px;color:#334155;">
+<b>📖 Como entender esta análise</b><br><br>
+
+<b>O que é:</b> Uma apólice de 2022 pode gerar sinistros que só serão avisados em 2023, 2024 ou até 2025. Isso significa que olhar apenas a sinistralidade do ano corrente de uma safra recente pode ser enganoso — parte dos sinistros ainda não apareceu. Esta análise mostra como a sinistralidade de cada <i>safra</i> (ano de vigência) evolui ao longo do tempo à medida que novos sinistros são avisados.<br><br>
+
+<b>Como ler a tabela:</b><br>
+• <b>Safra</b> = Ano de vigência da apólice (ex: 2022)<br>
+• <b>Ano+0</b> = Sinistralidade acumulada considerando apenas sinistros avisados no próprio ano da vigência<br>
+• <b>Ano+1</b> = Sinistralidade acumulada incluindo sinistros avisados até 1 ano depois<br>
+• <b>Ano+2</b> = Inclui sinistros avisados até 2 anos depois, e assim por diante<br>
+• <b>—</b> = Dados ainda não disponíveis (safra recente, ainda em desenvolvimento)<br><br>
+
+<b>Como analisar:</b><br>
+Uma safra que mostra 30% em Ano+0 e chega a 66% em Ano+2 significa que dois terços dos sinistros foram avisados com atraso. Isso é normal em RCO — processos judiciais e regulações demoram. O padrão histórico das safras mais antigas (que já estão completas) indica quanto as safras recentes ainda devem crescer.<br><br>
+
+<b>Atenção aos anos recentes:</b> Safras dos últimos 1-2 anos sempre parecem ter sinistralidade baixa, mas é porque ainda estão em desenvolvimento. Compare com o padrão das safras anteriores para estimar o valor final.<br><br>
+
+<b>Como foi desenvolvido:</b> Para cada sinistro, identifica o Ano de Vigência da apólice correspondente e o Ano de Aviso do sinistro. Calcula o lag (diferença em anos). Acumula o Total Sinistro por safra à medida que o lag aumenta e divide pelo prêmio total daquela safra. O gráfico de curvas mostra uma linha por safra — curvas que ainda sobem indicam safras incompletas.
+</div>
+""", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SEÇÃO DE ANÁLISE DE TENDÊNCIA 📈
@@ -1964,6 +2008,29 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
             st.info("Dados insuficientes para calcular indicadores de reajuste.")
 else:
     st.info("Nenhum dado disponível para análise de tendência.")
+
+st.markdown("---")
+st.markdown("""
+<div style="background:#F8FAFC;border-radius:10px;padding:18px;border:1px solid #E2E8F0;font-size:13px;color:#334155;">
+<b>📖 Como entender esta análise</b><br><br>
+
+<b>O que é:</b> Esta seção responde à pergunta: <i>a sinistralidade está melhorando ou piorando ao longo dos anos?</i> São quatro visualizações complementares que mostram a direção e a velocidade da mudança.<br><br>
+
+<b>Sinistralidade % Anual com Tendência Linear:</b> Mostra a sinistralidade real de cada ano de vigência (linha azul) e uma linha de tendência calculada por regressão linear (linha vermelha tracejada). Se a linha vermelha sobe, a tendência é de piora. O alerta automático abaixo do gráfico classifica a velocidade: alta acelerada (acima de 5% ao ano), alta moderada (entre 1% e 5%), estável ou queda.<br><br>
+
+<b>Evolução Mensal — Últimos 24 Meses:</b> Mostra o valor de sinistro mês a mês com duas médias móveis. A Média Móvel 3 meses (linha azul) reage mais rápido às variações recentes. A Média Móvel 6 meses (linha vermelha pontilhada) é mais suavizada. Quando a MM3 cruza acima da MM6, é um sinal de piora recente; quando cruza abaixo, é sinal de melhora.<br><br>
+
+<b>Frequência de Sinistros por Mês:</b> Quantidade de sinistros únicos por mês com média móvel de 3 meses. Permite identificar se um aumento de custo vem de mais eventos ou de eventos maiores (combine com a seção de Frequência × Severidade acima).<br><br>
+
+<b>Painel de Indicadores — Score de Reajuste (0-100):</b> Combina três fatores para gerar um score automático de necessidade de reajuste de prêmio:<br>
+• Sinistralidade média dos últimos 3 anos (peso 40%): acima de 80% adiciona 40 pontos; acima de 60% adiciona 20 pontos<br>
+• Variação ano a ano (peso 30%): acima de 20% adiciona 30 pontos; acima de 10% adiciona 15 pontos<br>
+• Aceleração da tendência em % ao ano (peso 30%): acima de 5% ao ano adiciona 30 pontos; acima de 2% adiciona 15 pontos<br>
+Score 70-100 = Reajuste Urgente | Score 40-69 = Reajuste Recomendado | Score 0-39 = Prêmio Adequado.<br><br>
+
+<b>Como foi desenvolvido:</b> A sinistralidade anual usa a mesma base do Desempenho Consolidado por Ano (Ano de Vigência da Apólice), garantindo consistência. As médias móveis mensais são calculadas sobre a data de aviso dos sinistros, que é o dado mais atual disponível. A regressão linear é calculada com numpy.polyfit sobre os anos disponíveis filtrados.
+</div>
+""", unsafe_allow_html=True)
 
 st.write("---")
 st.caption("Desenvolvido por Alex Sousa.")
