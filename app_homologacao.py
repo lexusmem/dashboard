@@ -588,7 +588,7 @@ def carregar_cobertura(arquivo):
         # e deduplica por apólice + cobertura — franquia vigente
         df = df.sort_values('nr_endosso', ascending=False)
         df = df.drop_duplicates(subset=['N° Apólice', 'Cobertura Apólice'], keep='first')
-        return df[['N° Apólice', 'nr_endosso', 'Cobertura Apólice', 'Franquia Apólice']]
+        return df[['N° Apólice', 'Cobertura Apólice', 'Franquia Apólice']]
     except Exception as e:
         st.error(f"Erro ao carregar coberturas: {e}")
         return pd.DataFrame()
@@ -614,10 +614,6 @@ if dados_ja_carregados:
     dados_calculados = st.session_state['dados_calculados']
     df_sinistros     = st.session_state['df_sinistros']
     df_cobertura     = st.session_state.get('df_cobertura', pd.DataFrame())
-    # Se df_cobertura em cache não tem nr_endosso (versão antiga), força recarregamento
-    if not df_cobertura.empty and 'nr_endosso' not in df_cobertura.columns:
-        del st.session_state['df_cobertura']
-        st.rerun()
 else:
     # Lê os bytes uma única vez para evitar problema de ponteiro consumido
     bytes_apolice  = upload_apolice.read()  if hasattr(upload_apolice,  'read') else None
@@ -854,14 +850,14 @@ st.markdown('</div>', unsafe_allow_html=True)
 st.markdown('<p class="section-label">Dados da Apólice</p>', unsafe_allow_html=True)
 st.dataframe(dados_filtrados_filtro_apolice, hide_index=True)
 
-# Adiciona Franquia por N° Apólice + nr_endosso (chave confiável — nomes de cobertura diferem entre sistemas)
+# Adiciona Franquia por apólice — usa a franquia máxima contratada para aquela apólice
+# (join por nome de cobertura não funciona pois os nomes diferem entre sistemas)
 if not df_cobertura.empty and not df_sinistro_apolice.empty:
+    # Pega a franquia máxima de qualquer cobertura da apólice (valor contratado mais relevante)
     df_franquia_ap = df_cobertura[
         df_cobertura['N° Apólice'] == apolices_selecionadas_filtro_apolice
-    ][['N° Apólice', 'nr_endosso', 'Franquia Apólice']].groupby(
-        ['N° Apólice', 'nr_endosso'], as_index=False
-    )['Franquia Apólice'].max()
-    df_sinistro_apolice = pd.merge(df_sinistro_apolice, df_franquia_ap, on=['N° Apólice', 'nr_endosso'], how='left')
+    ].groupby('N° Apólice', as_index=False)['Franquia Apólice'].max()
+    df_sinistro_apolice = pd.merge(df_sinistro_apolice, df_franquia_ap, on='N° Apólice', how='left')
     df_sinistro_apolice['Franquia Apólice'] = df_sinistro_apolice['Franquia Apólice'].fillna(0)
 else:
     df_sinistro_apolice['Franquia Apólice'] = 0.0
@@ -1562,14 +1558,13 @@ if len(ramos_ativos) >= 2:
 df_segurado_calculo['Soma Prêmio Pago por Apolice'] = (df_segurado_calculo['Soma Prêmio Pago por Apolice'].map(formatar_valor_br))
 df_segurado_calculo['Soma Sinistro Por Apolice'] = (df_segurado_calculo['Soma Sinistro Por Apolice'].map(formatar_valor_br))
 
-# Adiciona Franquia por N° Apólice + nr_endosso (chave confiável — nomes de cobertura diferem entre sistemas)
+# Adiciona Franquia por apólice — usa a franquia máxima contratada por apólice
+# (join por nome de cobertura não funciona pois os nomes diferem entre sistemas)
 if not df_cobertura.empty and not df_sinistro_segurado.empty:
     df_franquia_cob_seg = df_cobertura[
         df_cobertura['N° Apólice'].isin(df_sinistro_segurado['N° Apólice'].unique())
-    ][['N° Apólice', 'nr_endosso', 'Franquia Apólice']].groupby(
-        ['N° Apólice', 'nr_endosso'], as_index=False
-    )['Franquia Apólice'].max()
-    df_sinistro_segurado = pd.merge(df_sinistro_segurado, df_franquia_cob_seg, on=['N° Apólice', 'nr_endosso'], how='left')
+    ].groupby('N° Apólice', as_index=False)['Franquia Apólice'].max()
+    df_sinistro_segurado = pd.merge(df_sinistro_segurado, df_franquia_cob_seg, on='N° Apólice', how='left')
     df_sinistro_segurado['Franquia Apólice'] = df_sinistro_segurado['Franquia Apólice'].fillna(0)
 else:
     df_sinistro_segurado['Franquia Apólice'] = 0.0
