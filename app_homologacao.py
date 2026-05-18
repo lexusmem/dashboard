@@ -593,6 +593,47 @@ def carregar_cobertura(arquivo):
         st.error(f"Erro ao carregar coberturas: {e}")
         return pd.DataFrame()
 
+
+# Função de mapeamento fuzzy entre nomes de cobertura de sistemas diferentes
+def mapear_franquia_por_cobertura(df_sinistro, df_cobertura_filtrado, threshold=0.75):
+    """
+    Faz o join de franquia por similaridade de nome de cobertura.
+    Usa SequenceMatcher para coberturas com nomes ligeiramente diferentes entre sistemas.
+    threshold: similaridade mínima para aceitar o match (0.0 a 1.0)
+    """
+    from difflib import SequenceMatcher
+
+    if df_cobertura_filtrado.empty or df_sinistro.empty:
+        df_sinistro['Franquia Apólice'] = 0.0
+        return df_sinistro
+
+    # Pega franquia mais recente por apólice+cobertura (maior nr_endosso)
+    cob_vigente = df_cobertura_filtrado.sort_values('nr_endosso', ascending=False)        .drop_duplicates(subset=['N° Apólice', 'Cobertura Apólice'])        [['N° Apólice', 'Cobertura Apólice', 'Franquia Apólice']]
+
+    coberturas_cob = cob_vigente['Cobertura Apólice'].unique()
+
+    def melhor_match(nome_sin, apolice):
+        # Filtra apenas coberturas da mesma apólice
+        cobs_ap = cob_vigente[cob_vigente['N° Apólice'] == apolice]['Cobertura Apólice'].tolist()
+        if not cobs_ap:
+            return 0.0
+        scores = [(SequenceMatcher(None, nome_sin.lower(), c.lower()).ratio(), c) for c in cobs_ap]
+        best_score, best_cob = max(scores, key=lambda x: x[0])
+        if best_score >= threshold:
+            franquia = cob_vigente[
+                (cob_vigente['N° Apólice'] == apolice) &
+                (cob_vigente['Cobertura Apólice'] == best_cob)
+            ]['Franquia Apólice'].values
+            return float(franquia[0]) if len(franquia) > 0 else 0.0
+        return 0.0
+
+    df_sinistro = df_sinistro.copy()
+    df_sinistro['Franquia Apólice'] = df_sinistro.apply(
+        lambda row: melhor_match(str(row['Cobertura']), row['N° Apólice']),
+        axis=1
+    )
+    return df_sinistro
+
 # Função de Formatação de Valores para o padrão Brasileiro
 def formatar_valor_br(valor):
     """
@@ -850,15 +891,11 @@ st.markdown('</div>', unsafe_allow_html=True)
 st.markdown('<p class="section-label">Dados da Apólice</p>', unsafe_allow_html=True)
 st.dataframe(dados_filtrados_filtro_apolice, hide_index=True)
 
-# Adiciona Franquia por apólice — usa a franquia máxima contratada para aquela apólice
-# (join por nome de cobertura não funciona pois os nomes diferem entre sistemas)
+# Adiciona Franquia por apólice + cobertura usando fuzzy match de nomes
+# (nomes diferem entre sistemas — usa similaridade de texto com threshold 0.75)
 if not df_cobertura.empty and not df_sinistro_apolice.empty:
-    # Pega a franquia máxima de qualquer cobertura da apólice (valor contratado mais relevante)
-    df_franquia_ap = df_cobertura[
-        df_cobertura['N° Apólice'] == apolices_selecionadas_filtro_apolice
-    ].groupby('N° Apólice', as_index=False)['Franquia Apólice'].max()
-    df_sinistro_apolice = pd.merge(df_sinistro_apolice, df_franquia_ap, on='N° Apólice', how='left')
-    df_sinistro_apolice['Franquia Apólice'] = df_sinistro_apolice['Franquia Apólice'].fillna(0)
+    _cob_ap = df_cobertura[df_cobertura['N° Apólice'] == apolices_selecionadas_filtro_apolice]
+    df_sinistro_apolice = mapear_franquia_por_cobertura(df_sinistro_apolice, _cob_ap)
 else:
     df_sinistro_apolice['Franquia Apólice'] = 0.0
 
@@ -1558,14 +1595,11 @@ if len(ramos_ativos) >= 2:
 df_segurado_calculo['Soma Prêmio Pago por Apolice'] = (df_segurado_calculo['Soma Prêmio Pago por Apolice'].map(formatar_valor_br))
 df_segurado_calculo['Soma Sinistro Por Apolice'] = (df_segurado_calculo['Soma Sinistro Por Apolice'].map(formatar_valor_br))
 
-# Adiciona Franquia por apólice — usa a franquia máxima contratada por apólice
-# (join por nome de cobertura não funciona pois os nomes diferem entre sistemas)
+# Adiciona Franquia por apólice + cobertura usando fuzzy match de nomes
+# (nomes diferem entre sistemas — usa similaridade de texto com threshold 0.75)
 if not df_cobertura.empty and not df_sinistro_segurado.empty:
-    df_franquia_cob_seg = df_cobertura[
-        df_cobertura['N° Apólice'].isin(df_sinistro_segurado['N° Apólice'].unique())
-    ].groupby('N° Apólice', as_index=False)['Franquia Apólice'].max()
-    df_sinistro_segurado = pd.merge(df_sinistro_segurado, df_franquia_cob_seg, on='N° Apólice', how='left')
-    df_sinistro_segurado['Franquia Apólice'] = df_sinistro_segurado['Franquia Apólice'].fillna(0)
+    _cob_seg = df_cobertura[df_cobertura['N° Apólice'].isin(df_sinistro_segurado['N° Apólice'].unique())]
+    df_sinistro_segurado = mapear_franquia_por_cobertura(df_sinistro_segurado, _cob_seg)
 else:
     df_sinistro_segurado['Franquia Apólice'] = 0.0
 
