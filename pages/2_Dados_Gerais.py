@@ -1553,8 +1553,8 @@ st.caption("Entenda SE a sinistralidade piora por mais sinistros (frequência) o
 
 if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
     df_fs = df_sinistro_periodo_atualizado.copy()
-    df_apo_fs = dados_calculados.copy()
-    df_apo_fs['Qtd_Apolices_Num'] = 1  # cada linha é uma apólice única no groupby
+    # usa df_para_soma (filtrado + slider, mesma base do Desempenho Consolidado)
+    df_apo_fs = df_para_soma.copy()
     qtd_apo_ano = df_apo_fs.groupby('Ano Vigência').agg(
         Qtd_Apolices=('N° Apólice','nunique')
     ).reset_index().rename(columns={'Ano Vigência':'Ano'})
@@ -1710,8 +1710,8 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
     df_saf['dt_aviso_dt'] = pd.to_datetime(df_saf['dt_aviso'], dayfirst=True, errors='coerce')
     df_saf['Ano_Aviso']   = df_saf['dt_aviso_dt'].dt.year
 
-    # Junta Ano Vigência da apólice
-    df_apo_saf = dados_calculados[['N° Apólice','Ano Vigência','Soma Prêmio Pago por Apolice']].drop_duplicates('N° Apólice').copy()
+    # Junta Ano Vigência da apólice — usa df_para_soma (filtrado + slider, mesma base do Desempenho Consolidado)
+    df_apo_saf = df_para_soma[['N° Apólice','Ano Vigência','Soma Prêmio Pago por Apolice']].drop_duplicates('N° Apólice').copy()
     df_apo_saf['Premio_Num'] = pd.to_numeric(df_apo_saf['Soma Prêmio Pago por Apolice'], errors='coerce').fillna(0)
     df_premio_saf = df_apo_saf.groupby('Ano Vigência')['Premio_Num'].sum().reset_index()
     df_premio_saf.columns = ['Ano_Vigencia', 'Premio']
@@ -1985,8 +1985,8 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
     df_sin_tend['AnoMes'] = df_sin_tend['dt_aviso'].dt.to_period('M').astype(str)
 
     # ── Sinistralidade anual — MESMA BASE do Desempenho Consolidado ───────────
-    # Usa Ano Vigência da apólice (não data de aviso) para consistência com os outros DFs
-    df_apo_tend = dados_calculados.copy()
+    # Usa df_para_soma (filtrado + slider) para consistência total com os outros DFs
+    df_apo_tend = df_para_soma.copy()
     df_apo_tend['Premio_Num']   = pd.to_numeric(df_apo_tend['Soma Prêmio Pago por Apolice'], errors='coerce').fillna(0)
     df_apo_tend['Sinistro_Num'] = pd.to_numeric(df_apo_tend['Soma Sinistro Por Apolice'],   errors='coerce').fillna(0)
 
