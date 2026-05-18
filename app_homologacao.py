@@ -588,7 +588,7 @@ def carregar_cobertura(arquivo):
         # e deduplica por apólice + cobertura — franquia vigente
         df = df.sort_values('nr_endosso', ascending=False)
         df = df.drop_duplicates(subset=['N° Apólice', 'Cobertura Apólice'], keep='first')
-        return df[['N° Apólice', 'Cobertura Apólice', 'Franquia Apólice']]
+        return df[['N° Apólice', 'nr_endosso', 'Cobertura Apólice', 'Franquia Apólice']]
     except Exception as e:
         st.error(f"Erro ao carregar coberturas: {e}")
         return pd.DataFrame()
