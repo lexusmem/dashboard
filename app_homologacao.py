@@ -614,6 +614,10 @@ if dados_ja_carregados:
     dados_calculados = st.session_state['dados_calculados']
     df_sinistros     = st.session_state['df_sinistros']
     df_cobertura     = st.session_state.get('df_cobertura', pd.DataFrame())
+    # Se df_cobertura não tem nr_endosso (versão antiga em cache), limpa para forçar recarregamento
+    if not df_cobertura.empty and 'nr_endosso' not in df_cobertura.columns:
+        del st.session_state['df_cobertura']
+        st.rerun()
 else:
     # Lê os bytes uma única vez para evitar problema de ponteiro consumido
     bytes_apolice  = upload_apolice.read()  if hasattr(upload_apolice,  'read') else None
@@ -852,12 +856,15 @@ st.dataframe(dados_filtrados_filtro_apolice, hide_index=True)
 
 # Adiciona Franquia por N° Apólice + nr_endosso (chave confiável — não depende do nome da cobertura)
 if not df_cobertura.empty and not df_sinistro_apolice.empty:
-    df_franquia_ap = df_cobertura[
-        df_cobertura['N° Apólice'] == apolices_selecionadas_filtro_apolice
-    ][['N° Apólice', 'nr_endosso', 'Franquia Apólice']].groupby(
-        ['N° Apólice', 'nr_endosso'], as_index=False
-    )['Franquia Apólice'].max()
-    df_sinistro_apolice = pd.merge(df_sinistro_apolice, df_franquia_ap, on=['N° Apólice', 'nr_endosso'], how='left')
+    _cob_ap = df_cobertura[df_cobertura['N° Apólice'] == apolices_selecionadas_filtro_apolice].copy()
+    if 'nr_endosso' in _cob_ap.columns:
+        df_franquia_ap = _cob_ap[['N° Apólice', 'nr_endosso', 'Franquia Apólice']].groupby(
+            ['N° Apólice', 'nr_endosso'], as_index=False
+        )['Franquia Apólice'].max()
+        df_sinistro_apolice = pd.merge(df_sinistro_apolice, df_franquia_ap, on=['N° Apólice', 'nr_endosso'], how='left')
+    else:
+        df_franquia_ap = _cob_ap[['N° Apólice', 'Franquia Apólice']].groupby('N° Apólice', as_index=False)['Franquia Apólice'].max()
+        df_sinistro_apolice = pd.merge(df_sinistro_apolice, df_franquia_ap, on='N° Apólice', how='left')
     df_sinistro_apolice['Franquia Apólice'] = df_sinistro_apolice['Franquia Apólice'].fillna(0)
 else:
     df_sinistro_apolice['Franquia Apólice'] = 0.0
@@ -1560,12 +1567,15 @@ df_segurado_calculo['Soma Sinistro Por Apolice'] = (df_segurado_calculo['Soma Si
 
 # Adiciona Franquia por N° Apólice + nr_endosso (chave confiável — não depende do nome da cobertura)
 if not df_cobertura.empty and not df_sinistro_segurado.empty:
-    df_franquia_cob_seg = df_cobertura[
-        df_cobertura['N° Apólice'].isin(df_sinistro_segurado['N° Apólice'].unique())
-    ][['N° Apólice', 'nr_endosso', 'Franquia Apólice']].groupby(
-        ['N° Apólice', 'nr_endosso'], as_index=False
-    )['Franquia Apólice'].max()
-    df_sinistro_segurado = pd.merge(df_sinistro_segurado, df_franquia_cob_seg, on=['N° Apólice', 'nr_endosso'], how='left')
+    _cob_seg = df_cobertura[df_cobertura['N° Apólice'].isin(df_sinistro_segurado['N° Apólice'].unique())].copy()
+    if 'nr_endosso' in _cob_seg.columns:
+        df_franquia_cob_seg = _cob_seg[['N° Apólice', 'nr_endosso', 'Franquia Apólice']].groupby(
+            ['N° Apólice', 'nr_endosso'], as_index=False
+        )['Franquia Apólice'].max()
+        df_sinistro_segurado = pd.merge(df_sinistro_segurado, df_franquia_cob_seg, on=['N° Apólice', 'nr_endosso'], how='left')
+    else:
+        df_franquia_cob_seg = _cob_seg[['N° Apólice', 'Franquia Apólice']].groupby('N° Apólice', as_index=False)['Franquia Apólice'].max()
+        df_sinistro_segurado = pd.merge(df_sinistro_segurado, df_franquia_cob_seg, on='N° Apólice', how='left')
     df_sinistro_segurado['Franquia Apólice'] = df_sinistro_segurado['Franquia Apólice'].fillna(0)
 else:
     df_sinistro_segurado['Franquia Apólice'] = 0.0
