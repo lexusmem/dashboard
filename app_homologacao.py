@@ -850,12 +850,14 @@ st.markdown('</div>', unsafe_allow_html=True)
 st.markdown('<p class="section-label">Dados da Apólice</p>', unsafe_allow_html=True)
 st.dataframe(dados_filtrados_filtro_apolice, hide_index=True)
 
-# Adiciona Franquia por Cobertura (antes da formatação — dados ainda numéricos)
+# Adiciona Franquia por N° Apólice + nr_endosso (chave confiável — não depende do nome da cobertura)
 if not df_cobertura.empty and not df_sinistro_apolice.empty:
     df_franquia_ap = df_cobertura[
         df_cobertura['N° Apólice'] == apolices_selecionadas_filtro_apolice
-    ][['Cobertura Apólice', 'Franquia Apólice']].rename(columns={'Cobertura Apólice': 'Cobertura'})
-    df_sinistro_apolice = pd.merge(df_sinistro_apolice, df_franquia_ap, on='Cobertura', how='left')
+    ][['N° Apólice', 'nr_endosso', 'Franquia Apólice']].groupby(
+        ['N° Apólice', 'nr_endosso'], as_index=False
+    )['Franquia Apólice'].max()
+    df_sinistro_apolice = pd.merge(df_sinistro_apolice, df_franquia_ap, on=['N° Apólice', 'nr_endosso'], how='left')
     df_sinistro_apolice['Franquia Apólice'] = df_sinistro_apolice['Franquia Apólice'].fillna(0)
 else:
     df_sinistro_apolice['Franquia Apólice'] = 0.0
@@ -1556,14 +1558,14 @@ if len(ramos_ativos) >= 2:
 df_segurado_calculo['Soma Prêmio Pago por Apolice'] = (df_segurado_calculo['Soma Prêmio Pago por Apolice'].map(formatar_valor_br))
 df_segurado_calculo['Soma Sinistro Por Apolice'] = (df_segurado_calculo['Soma Sinistro Por Apolice'].map(formatar_valor_br))
 
-# Adiciona Franquia por Cobertura no df_sinistro_segurado (antes da formatação — dados numéricos)
+# Adiciona Franquia por N° Apólice + nr_endosso (chave confiável — não depende do nome da cobertura)
 if not df_cobertura.empty and not df_sinistro_segurado.empty:
     df_franquia_cob_seg = df_cobertura[
         df_cobertura['N° Apólice'].isin(df_sinistro_segurado['N° Apólice'].unique())
-    ][['Cobertura Apólice', 'Franquia Apólice']].rename(columns={'Cobertura Apólice': 'Cobertura'})
-    # Deduplica por Cobertura mantendo franquia máxima — evita multiplicar linhas no merge
-    df_franquia_cob_seg = df_franquia_cob_seg.groupby('Cobertura', as_index=False)['Franquia Apólice'].max()
-    df_sinistro_segurado = pd.merge(df_sinistro_segurado, df_franquia_cob_seg, on='Cobertura', how='left')
+    ][['N° Apólice', 'nr_endosso', 'Franquia Apólice']].groupby(
+        ['N° Apólice', 'nr_endosso'], as_index=False
+    )['Franquia Apólice'].max()
+    df_sinistro_segurado = pd.merge(df_sinistro_segurado, df_franquia_cob_seg, on=['N° Apólice', 'nr_endosso'], how='left')
     df_sinistro_segurado['Franquia Apólice'] = df_sinistro_segurado['Franquia Apólice'].fillna(0)
 else:
     df_sinistro_segurado['Franquia Apólice'] = 0.0
