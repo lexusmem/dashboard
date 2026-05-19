@@ -305,47 +305,52 @@ footer { display: none !important; }
 st.markdown(ALLSEG_CSS, unsafe_allow_html=True)
 
 
-# Função de mapeamento fuzzy entre nomes de cobertura de sistemas diferentes
+# Mapeamento fuzzy de coberturas — pré-calcula uma vez e faz join eficiente
 def mapear_franquia_por_cobertura(df_sinistro, df_cobertura_filtrado, threshold=0.75):
-    """
-    Faz o join de franquia por similaridade de nome de cobertura.
-    Usa SequenceMatcher para coberturas com nomes ligeiramente diferentes entre sistemas.
-    threshold: similaridade mínima para aceitar o match (0.0 a 1.0)
-    """
     from difflib import SequenceMatcher
 
     if df_cobertura_filtrado.empty or df_sinistro.empty:
+        df_sinistro = df_sinistro.copy()
         df_sinistro['Franquia Apólice'] = 0.0
         return df_sinistro
 
-    # Pega franquia mais recente por apólice+cobertura (maior nr_endosso)
-    # Pega cobertura mais recente por apólice — usa nr_endosso se disponível
+    # Pega cobertura mais recente por apólice+cobertura
     if 'nr_endosso' in df_cobertura_filtrado.columns:
-        cob_vigente = df_cobertura_filtrado.sort_values('nr_endosso', ascending=False)            .drop_duplicates(subset=['N° Apólice', 'Cobertura Apólice'])            [['N° Apólice', 'Cobertura Apólice', 'Franquia Apólice']]
+        cob_vigente = df_cobertura_filtrado.sort_values('nr_endosso', ascending=False)\
+            .drop_duplicates(subset=['N° Apólice', 'Cobertura Apólice'])\
+            [['N° Apólice', 'Cobertura Apólice', 'Franquia Apólice']].copy()
     else:
-        cob_vigente = df_cobertura_filtrado.drop_duplicates(subset=['N° Apólice', 'Cobertura Apólice'])            [['N° Apólice', 'Cobertura Apólice', 'Franquia Apólice']]
+        cob_vigente = df_cobertura_filtrado\
+            .drop_duplicates(subset=['N° Apólice', 'Cobertura Apólice'])\
+            [['N° Apólice', 'Cobertura Apólice', 'Franquia Apólice']].copy()
 
-    coberturas_cob = cob_vigente['Cobertura Apólice'].unique()
-
-    def melhor_match(nome_sin, apolice):
-        # Filtra apenas coberturas da mesma apólice
-        cobs_ap = cob_vigente[cob_vigente['N° Apólice'] == apolice]['Cobertura Apólice'].tolist()
-        if not cobs_ap:
-            return 0.0
-        scores = [(SequenceMatcher(None, nome_sin.lower(), c.lower()).ratio(), c) for c in cobs_ap]
+    # Pré-calcula mapeamento: cobertura_sinistro -> cobertura_apólice (por apólice)
+    # Itera apenas sobre pares únicos de (apólice, cobertura_sinistro) — muito mais eficiente
+    pares_unicos = df_sinistro[['N° Apólice', 'Cobertura']].drop_duplicates()
+    
+    mapa = {}
+    for _, row in pares_unicos.iterrows():
+        apolice   = row['N° Apólice']
+        nome_sin  = str(row['Cobertura'])
+        cobs_ap   = cob_vigente[cob_vigente['N° Apólice'] == apolice]
+        if cobs_ap.empty:
+            mapa[(apolice, nome_sin)] = 0.0
+            continue
+        scores = [
+            (SequenceMatcher(None, nome_sin.lower(), c.lower()).ratio(), c)
+            for c in cobs_ap['Cobertura Apólice'].tolist()
+        ]
         best_score, best_cob = max(scores, key=lambda x: x[0])
         if best_score >= threshold:
-            franquia = cob_vigente[
-                (cob_vigente['N° Apólice'] == apolice) &
-                (cob_vigente['Cobertura Apólice'] == best_cob)
-            ]['Franquia Apólice'].values
-            return float(franquia[0]) if len(franquia) > 0 else 0.0
-        return 0.0
+            franquia = cobs_ap[cobs_ap['Cobertura Apólice'] == best_cob]['Franquia Apólice'].values
+            mapa[(apolice, nome_sin)] = float(franquia[0]) if len(franquia) > 0 else 0.0
+        else:
+            mapa[(apolice, nome_sin)] = 0.0
 
+    # Aplica o mapeamento pré-calculado via lookup — rápido
     df_sinistro = df_sinistro.copy()
     df_sinistro['Franquia Apólice'] = df_sinistro.apply(
-        lambda row: melhor_match(str(row['Cobertura']), row['N° Apólice']),
-        axis=1
+        lambda r: mapa.get((r['N° Apólice'], str(r['Cobertura'])), 0.0), axis=1
     )
     return df_sinistro
 
