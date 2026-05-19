@@ -360,6 +360,10 @@ if 'dados_calculados' not in st.session_state or st.session_state['dados_calcula
 dados_calculados = st.session_state['dados_calculados']
 df_sinistros     = st.session_state['df_sinistros']
 df_cobertura     = st.session_state.get('df_cobertura', pd.DataFrame())
+# Se df_cobertura em cache não tem nr_endosso (versão antiga), força recarregamento
+if not df_cobertura.empty and 'nr_endosso' not in df_cobertura.columns:
+    del st.session_state['df_cobertura']
+    st.rerun()
 
 # Prepara dados_exibicao
 dados_exibicao = dados_calculados.copy()
