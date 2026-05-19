@@ -608,7 +608,11 @@ def mapear_franquia_por_cobertura(df_sinistro, df_cobertura_filtrado, threshold=
         return df_sinistro
 
     # Pega franquia mais recente por apólice+cobertura (maior nr_endosso)
-    cob_vigente = df_cobertura_filtrado.sort_values('nr_endosso', ascending=False)        .drop_duplicates(subset=['N° Apólice', 'Cobertura Apólice'])        [['N° Apólice', 'Cobertura Apólice', 'Franquia Apólice']]
+    # Pega cobertura mais recente por apólice — usa nr_endosso se disponível
+    if 'nr_endosso' in df_cobertura_filtrado.columns:
+        cob_vigente = df_cobertura_filtrado.sort_values('nr_endosso', ascending=False)            .drop_duplicates(subset=['N° Apólice', 'Cobertura Apólice'])            [['N° Apólice', 'Cobertura Apólice', 'Franquia Apólice']]
+    else:
+        cob_vigente = df_cobertura_filtrado.drop_duplicates(subset=['N° Apólice', 'Cobertura Apólice'])            [['N° Apólice', 'Cobertura Apólice', 'Franquia Apólice']]
 
     coberturas_cob = cob_vigente['Cobertura Apólice'].unique()
 
@@ -655,10 +659,6 @@ if dados_ja_carregados:
     dados_calculados = st.session_state['dados_calculados']
     df_sinistros     = st.session_state['df_sinistros']
     df_cobertura     = st.session_state.get('df_cobertura', pd.DataFrame())
-    # Se df_cobertura em cache não tem nr_endosso (versão antiga), força recarregamento
-    if not df_cobertura.empty and 'nr_endosso' not in df_cobertura.columns:
-        del st.session_state['df_cobertura']
-        st.rerun()
 else:
     # Lê os bytes uma única vez para evitar problema de ponteiro consumido
     bytes_apolice  = upload_apolice.read()  if hasattr(upload_apolice,  'read') else None
