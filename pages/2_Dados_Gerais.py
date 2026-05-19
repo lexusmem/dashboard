@@ -305,54 +305,49 @@ footer { display: none !important; }
 st.markdown(ALLSEG_CSS, unsafe_allow_html=True)
 
 
-# Mapeamento fuzzy de coberturas — pré-calcula uma vez e faz join eficiente
-def mapear_franquia_por_cobertura(df_sinistro, df_cobertura_filtrado, threshold=0.75):
+# Mapeamento fuzzy de coberturas — com cache para evitar recálculo
+@st.cache_data
+def _calcular_mapa_franquia(pares_sin, cob_tuples, threshold=0.75):
     from difflib import SequenceMatcher
-
-    if df_cobertura_filtrado.empty or df_sinistro.empty:
-        df_sinistro = df_sinistro.copy()
-        df_sinistro['Franquia Apólice'] = 0.0
-        return df_sinistro
-
-    # Pega cobertura mais recente por apólice+cobertura
-    if 'nr_endosso' in df_cobertura_filtrado.columns:
-        cob_vigente = df_cobertura_filtrado.sort_values('nr_endosso', ascending=False)\
-            .drop_duplicates(subset=['N° Apólice', 'Cobertura Apólice'])\
-            [['N° Apólice', 'Cobertura Apólice', 'Franquia Apólice']].copy()
-    else:
-        cob_vigente = df_cobertura_filtrado\
-            .drop_duplicates(subset=['N° Apólice', 'Cobertura Apólice'])\
-            [['N° Apólice', 'Cobertura Apólice', 'Franquia Apólice']].copy()
-
-    # Pré-calcula mapeamento: cobertura_sinistro -> cobertura_apólice (por apólice)
-    # Itera apenas sobre pares únicos de (apólice, cobertura_sinistro) — muito mais eficiente
-    pares_unicos = df_sinistro[['N° Apólice', 'Cobertura']].drop_duplicates()
-    
+    import pandas as pd
+    cob_df = pd.DataFrame(list(cob_tuples), columns=['N° Apólice','Cobertura Apólice','Franquia Apólice'])
     mapa = {}
-    for _, row in pares_unicos.iterrows():
-        apolice   = row['N° Apólice']
-        nome_sin  = str(row['Cobertura'])
-        cobs_ap   = cob_vigente[cob_vigente['N° Apólice'] == apolice]
+    for apolice, nome_sin in pares_sin:
+        cobs_ap = cob_df[cob_df['N° Apólice'] == apolice]
         if cobs_ap.empty:
             mapa[(apolice, nome_sin)] = 0.0
             continue
-        scores = [
-            (SequenceMatcher(None, nome_sin.lower(), c.lower()).ratio(), c)
-            for c in cobs_ap['Cobertura Apólice'].tolist()
-        ]
+        scores = [(SequenceMatcher(None, nome_sin.lower(), c.lower()).ratio(), c) for c in cobs_ap['Cobertura Apólice'].tolist()]
         best_score, best_cob = max(scores, key=lambda x: x[0])
         if best_score >= threshold:
             franquia = cobs_ap[cobs_ap['Cobertura Apólice'] == best_cob]['Franquia Apólice'].values
             mapa[(apolice, nome_sin)] = float(franquia[0]) if len(franquia) > 0 else 0.0
         else:
             mapa[(apolice, nome_sin)] = 0.0
+    return mapa
 
-    # Aplica o mapeamento pré-calculado via lookup — rápido
+def mapear_franquia_por_cobertura(df_sinistro, df_cobertura_filtrado, threshold=0.75):
+    if df_cobertura_filtrado.empty or df_sinistro.empty:
+        df_sinistro = df_sinistro.copy()
+        df_sinistro['Franquia Apólice'] = 0.0
+        return df_sinistro
+    if 'nr_endosso' in df_cobertura_filtrado.columns:
+        cob_vigente = df_cobertura_filtrado.sort_values('nr_endosso', ascending=False)\
+            .drop_duplicates(subset=['N° Apólice','Cobertura Apólice'])\
+            [['N° Apólice','Cobertura Apólice','Franquia Apólice']].copy()
+    else:
+        cob_vigente = df_cobertura_filtrado\
+            .drop_duplicates(subset=['N° Apólice','Cobertura Apólice'])\
+            [['N° Apólice','Cobertura Apólice','Franquia Apólice']].copy()
+    pares_sin = tuple(df_sinistro[['N° Apólice','Cobertura']].drop_duplicates().itertuples(index=False, name=None))
+    cob_tuples = tuple(cob_vigente.itertuples(index=False, name=None))
+    mapa = _calcular_mapa_franquia(pares_sin, cob_tuples, threshold)
     df_sinistro = df_sinistro.copy()
     df_sinistro['Franquia Apólice'] = df_sinistro.apply(
         lambda r: mapa.get((r['N° Apólice'], str(r['Cobertura'])), 0.0), axis=1
     )
     return df_sinistro
+
 
 # Função de Formatação de Valores para o padrão Brasileiro
 def formatar_valor_br(valor):
