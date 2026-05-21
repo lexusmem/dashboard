@@ -572,12 +572,14 @@ qtd_sinistros_geral = df_sinistro_periodo_atualizado['nr_sinistro'].nunique()
 # Colunas para informações do dados gerias
 st.markdown("<br>", unsafe_allow_html=True) # Espaço antes dos KPIs
 
-# Média de dias para aviso — dados gerais (apólices do período filtrado)
+# Média de dias para aviso — dados gerais (sem outliers acima do P95)
 _sin_geral = df_sinistro_periodo_atualizado.copy()
 _sin_geral['dt_aviso_dt']      = pd.to_datetime(_sin_geral['dt_aviso'],     dayfirst=True, errors='coerce')
 _sin_geral['dt_ocorrencia_dt'] = pd.to_datetime(_sin_geral['dt_ocorrencia'],dayfirst=True, errors='coerce')
 _sin_geral['dias_aviso']       = (_sin_geral['dt_aviso_dt'] - _sin_geral['dt_ocorrencia_dt']).dt.days
-_media_dias_geral = _sin_geral[_sin_geral['dias_aviso'] >= 0]['dias_aviso'].mean()
+_dias_geral = _sin_geral[_sin_geral['dias_aviso'] >= 0]['dias_aviso']
+_p95_geral  = _dias_geral.quantile(0.95) if not _dias_geral.empty else 0
+_media_dias_geral = _dias_geral[_dias_geral <= _p95_geral].mean()
 media_dias_geral_str = f"{_media_dias_geral:.0f} dias" if not pd.isna(_media_dias_geral) else "—"
 
 col1, col2, col3, col4, col5, col6 = st.columns(6)
