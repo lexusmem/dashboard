@@ -848,12 +848,14 @@ else:
 tipo_emissao_apolice = list(dados_filtrados_filtro_apolice['Tipo de Apólice'].unique())
 tipo_emissao_valor = str(tipo_emissao_apolice[0]).title() if tipo_emissao_apolice else "—"
 
-# Média de dias para aviso — apólice
+# Média de dias para aviso — apólice (sem outliers acima do P95)
 _sin_ap = df_sinistros[df_sinistros['N° Apólice'] == apolices_selecionadas_filtro_apolice].copy()
 _sin_ap['dt_aviso_dt']     = pd.to_datetime(_sin_ap['dt_aviso'],     dayfirst=True, errors='coerce')
 _sin_ap['dt_ocorrencia_dt']= pd.to_datetime(_sin_ap['dt_ocorrencia'],dayfirst=True, errors='coerce')
 _sin_ap['dias_aviso']      = (_sin_ap['dt_aviso_dt'] - _sin_ap['dt_ocorrencia_dt']).dt.days
-_media_dias_ap = _sin_ap[_sin_ap['dias_aviso'] >= 0]['dias_aviso'].mean()
+_dias_ap = _sin_ap[_sin_ap['dias_aviso'] >= 0]['dias_aviso']
+_p95_ap  = _dias_ap.quantile(0.95) if not _dias_ap.empty else 0
+_media_dias_ap = _dias_ap[_dias_ap <= _p95_ap].mean()
 media_dias_ap_str = f"{_media_dias_ap:.0f} dias" if not pd.isna(_media_dias_ap) else "—"
 
 col_apl_1, col_apl_2, col_apl_3, col_apl_4, col_apl_5, col_apl_6 = st.columns(6)
@@ -1041,12 +1043,15 @@ sinistralidade_segurado = (total_sinistro_segurado / total_pr_segurado) if total
 qtd_apolice_segurado = df_segurado_calculo['N° Apólice'].nunique()
 qtd_sinistros_segurado = df_sinistro_segurado['nr_sinistro'].nunique()
 
-# Média de dias para aviso — segurado
+# Média de dias para aviso — segurado (sem outliers acima do P95)
 _sin_seg = df_sinistros[df_sinistros['N° Apólice'].isin(df_segurado_calculo['N° Apólice'].unique())].copy()
 _sin_seg['dt_aviso_dt']      = pd.to_datetime(_sin_seg['dt_aviso'],     dayfirst=True, errors='coerce')
 _sin_seg['dt_ocorrencia_dt'] = pd.to_datetime(_sin_seg['dt_ocorrencia'],dayfirst=True, errors='coerce')
 _sin_seg['dias_aviso']       = (_sin_seg['dt_aviso_dt'] - _sin_seg['dt_ocorrencia_dt']).dt.days
-_media_dias_seg = _sin_seg[_sin_seg['dias_aviso'] >= 0]['dias_aviso'].mean()
+_dias_seg = _sin_seg[_sin_seg['dias_aviso'] >= 0]['dias_aviso']
+# Descarta apenas registros que ultrapassam o período total da base (erros de data)
+_periodo_max_seg = (df_sinistros['dt_aviso'].dropna().max() - df_sinistros['dt_ocorrencia'].dropna().min()).days if not df_sinistros.empty else 9999
+_media_dias_seg = _dias_seg[_dias_seg <= _periodo_max_seg].mean()
 media_dias_seg_str = f"{_media_dias_seg:.0f} dias" if not pd.isna(_media_dias_seg) else "—"
 
 seg_apl_1, seg_apl_2, seg_apl_3, seg_apl_4, seg_apl_5, seg_apl_6 = st.columns(6)
