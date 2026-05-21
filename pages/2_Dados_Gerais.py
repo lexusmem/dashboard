@@ -571,7 +571,16 @@ qtd_sinistros_geral = df_sinistro_periodo_atualizado['nr_sinistro'].nunique()
 
 # Colunas para informações do dados gerias
 st.markdown("<br>", unsafe_allow_html=True) # Espaço antes dos KPIs
-col1, col2, col3, col4, col5 = st.columns(5)
+
+# Média de dias para aviso — dados gerais (apólices do período filtrado)
+_sin_geral = df_sinistro_periodo_atualizado.copy()
+_sin_geral['dt_aviso_dt']      = pd.to_datetime(_sin_geral['dt_aviso'],     dayfirst=True, errors='coerce')
+_sin_geral['dt_ocorrencia_dt'] = pd.to_datetime(_sin_geral['dt_ocorrencia'],dayfirst=True, errors='coerce')
+_sin_geral['dias_aviso']       = (_sin_geral['dt_aviso_dt'] - _sin_geral['dt_ocorrencia_dt']).dt.days
+_media_dias_geral = _sin_geral[_sin_geral['dias_aviso'] >= 0]['dias_aviso'].mean()
+media_dias_geral_str = f"{_media_dias_geral:.0f} dias" if not pd.isna(_media_dias_geral) else "—"
+
+col1, col2, col3, col4, col5, col6 = st.columns(6)
 
 with col1:
     st.metric(label="Total Prêmio Pago", value=f"R$ {formatar_valor_br(total_premio)}")
@@ -580,9 +589,11 @@ with col2:
 with col3:
     st.metric(label="% Sinistralidade", value=f"{percentual_sinistro_total:.2%}")
 with col4:
-    st.metric(label="Qtd. Apólices", value=qtd_apolice_geral) # Agora atualiza com o slider!
+    st.metric(label="Qtd. Apólices", value=qtd_apolice_geral)
 with col5:
-    st.metric(label="Qtd. Sinistros", value=qtd_sinistros_geral) # Agora atualiza com o slider!
+    st.metric(label="Qtd. Sinistros", value=qtd_sinistros_geral)
+with col6:
+    st.metric(label="Média Dias p/ Aviso", value=media_dias_geral_str)
 
 # ============= PARTE REFERENTE AO EVOLUÇÃO TEMPORAL - PREMIO X SINISTRO =============
 # Agrupar os dados por ano para o gráfico
