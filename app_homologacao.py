@@ -848,7 +848,15 @@ else:
 tipo_emissao_apolice = list(dados_filtrados_filtro_apolice['Tipo de Apólice'].unique())
 tipo_emissao_valor = str(tipo_emissao_apolice[0]).title() if tipo_emissao_apolice else "—"
 
-col_apl_1, col_apl_2, col_apl_3, col_apl_4, col_apl_5 = st.columns(5)
+# Média de dias para aviso — apólice
+_sin_ap = df_sinistros[df_sinistros['N° Apólice'] == apolices_selecionadas_filtro_apolice].copy()
+_sin_ap['dt_aviso_dt']     = pd.to_datetime(_sin_ap['dt_aviso'],     dayfirst=True, errors='coerce')
+_sin_ap['dt_ocorrencia_dt']= pd.to_datetime(_sin_ap['dt_ocorrencia'],dayfirst=True, errors='coerce')
+_sin_ap['dias_aviso']      = (_sin_ap['dt_aviso_dt'] - _sin_ap['dt_ocorrencia_dt']).dt.days
+_media_dias_ap = _sin_ap[_sin_ap['dias_aviso'] >= 0]['dias_aviso'].mean()
+media_dias_ap_str = f"{_media_dias_ap:.0f} dias" if not pd.isna(_media_dias_ap) else "—"
+
+col_apl_1, col_apl_2, col_apl_3, col_apl_4, col_apl_5, col_apl_6 = st.columns(6)
 
 with col_apl_1:
     st.metric(label="Total Prêmio Pago",
@@ -863,6 +871,8 @@ with col_apl_4:
     st.metric(label='Qtd Sinistro', value=qtd_sinistros_apólice)
 with col_apl_5:
     st.metric(label='Tipo de Emissão', value=tipo_emissao_valor)
+with col_apl_6:
+    st.metric(label='Média Dias p/ Aviso', value=media_dias_ap_str)
 
 
 # st.subheader('Segurado: ')
@@ -1031,7 +1041,15 @@ sinistralidade_segurado = (total_sinistro_segurado / total_pr_segurado) if total
 qtd_apolice_segurado = df_segurado_calculo['N° Apólice'].nunique()
 qtd_sinistros_segurado = df_sinistro_segurado['nr_sinistro'].nunique()
 
-seg_apl_1, seg_apl_2, seg_apl_3, seg_apl_4, seg_apl_5 = st.columns(5)
+# Média de dias para aviso — segurado
+_sin_seg = df_sinistros[df_sinistros['N° Apólice'].isin(df_segurado_calculo['N° Apólice'].unique())].copy()
+_sin_seg['dt_aviso_dt']      = pd.to_datetime(_sin_seg['dt_aviso'],     dayfirst=True, errors='coerce')
+_sin_seg['dt_ocorrencia_dt'] = pd.to_datetime(_sin_seg['dt_ocorrencia'],dayfirst=True, errors='coerce')
+_sin_seg['dias_aviso']       = (_sin_seg['dt_aviso_dt'] - _sin_seg['dt_ocorrencia_dt']).dt.days
+_media_dias_seg = _sin_seg[_sin_seg['dias_aviso'] >= 0]['dias_aviso'].mean()
+media_dias_seg_str = f"{_media_dias_seg:.0f} dias" if not pd.isna(_media_dias_seg) else "—"
+
+seg_apl_1, seg_apl_2, seg_apl_3, seg_apl_4, seg_apl_5, seg_apl_6 = st.columns(6)
 with seg_apl_1:
     st.metric(label="Total Prêmio Pago", value=f"R$ {formatar_valor_br(total_pr_segurado)}")
 with seg_apl_2:
@@ -1042,6 +1060,8 @@ with seg_apl_4:
     st.metric(label='Qtd. Apolices', value=qtd_apolice_segurado)
 with seg_apl_5:
     st.metric(label='Qtd Sinistros', value=qtd_sinistros_segurado)
+with seg_apl_6:
+    st.metric(label='Média Dias p/ Aviso', value=media_dias_seg_str)
 
 # --- NOVO: Prêmio x Sinistro / Desempenho Consolidado por Ano ---
 col_graf_seg_1, col_graf_seg_2 = st.columns(2)
