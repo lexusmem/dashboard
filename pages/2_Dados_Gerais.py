@@ -578,8 +578,9 @@ _sin_geral['dt_aviso_dt']      = pd.to_datetime(_sin_geral['dt_aviso'],     dayf
 _sin_geral['dt_ocorrencia_dt'] = pd.to_datetime(_sin_geral['dt_ocorrencia'],dayfirst=True, errors='coerce')
 _sin_geral['dias_aviso']       = (_sin_geral['dt_aviso_dt'] - _sin_geral['dt_ocorrencia_dt']).dt.days
 _dias_geral = _sin_geral[_sin_geral['dias_aviso'] >= 0]['dias_aviso']
-_p95_geral  = _dias_geral.quantile(0.95) if not _dias_geral.empty else 0
-_media_dias_geral = _dias_geral[_dias_geral <= _p95_geral].mean()
+# Descarta apenas registros que ultrapassam o período total da base (erros de data)
+_periodo_max_geral = (df_sinistros['dt_aviso'].dropna().max() - df_sinistros['dt_ocorrencia'].dropna().min()).days if not df_sinistros.empty else 9999
+_media_dias_geral = _dias_geral[_dias_geral <= _periodo_max_geral].mean()
 media_dias_geral_str = f"{_media_dias_geral:.0f} dias" if not pd.isna(_media_dias_geral) else "—"
 
 col1, col2, col3, col4, col5, col6 = st.columns(6)
