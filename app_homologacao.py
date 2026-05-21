@@ -1050,7 +1050,7 @@ _sin_seg['dt_ocorrencia_dt'] = pd.to_datetime(_sin_seg['dt_ocorrencia'],dayfirst
 _sin_seg['dias_aviso']       = (_sin_seg['dt_aviso_dt'] - _sin_seg['dt_ocorrencia_dt']).dt.days
 _dias_seg = _sin_seg[_sin_seg['dias_aviso'] >= 0]['dias_aviso']
 # Descarta apenas registros que ultrapassam o período total da base (erros de data)
-_periodo_max_seg = (df_sinistros['dt_aviso'].dropna().max() - df_sinistros['dt_ocorrencia'].dropna().min()).days if not df_sinistros.empty else 9999
+_periodo_max_seg = int((pd.to_datetime(df_sinistros['dt_aviso'], dayfirst=True, errors='coerce').dropna().max() - pd.to_datetime(df_sinistros['dt_ocorrencia'], dayfirst=True, errors='coerce').dropna().min()).days) if not df_sinistros.empty else 9999
 _media_dias_seg = _dias_seg[_dias_seg <= _periodo_max_seg].mean()
 media_dias_seg_str = f"{_media_dias_seg:.0f} dias" if not pd.isna(_media_dias_seg) else "—"
 
