@@ -304,6 +304,51 @@ footer { display: none !important; }
 """
 st.markdown(ALLSEG_CSS, unsafe_allow_html=True)
 
+
+# Mapeamento fuzzy de coberturas — com cache para evitar recálculo
+@st.cache_data
+def _calcular_mapa_franquia(pares_sin, cob_tuples, threshold=0.75):
+    from difflib import SequenceMatcher
+    import pandas as pd
+    cob_df = pd.DataFrame(list(cob_tuples), columns=['N° Apólice','Cobertura Apólice','Franquia Apólice'])
+    mapa = {}
+    for apolice, nome_sin in pares_sin:
+        cobs_ap = cob_df[cob_df['N° Apólice'] == apolice]
+        if cobs_ap.empty:
+            mapa[(apolice, nome_sin)] = 0.0
+            continue
+        scores = [(SequenceMatcher(None, nome_sin.lower(), c.lower()).ratio(), c) for c in cobs_ap['Cobertura Apólice'].tolist()]
+        best_score, best_cob = max(scores, key=lambda x: x[0])
+        if best_score >= threshold:
+            franquia = cobs_ap[cobs_ap['Cobertura Apólice'] == best_cob]['Franquia Apólice'].values
+            mapa[(apolice, nome_sin)] = float(franquia[0]) if len(franquia) > 0 else 0.0
+        else:
+            mapa[(apolice, nome_sin)] = 0.0
+    return mapa
+
+def mapear_franquia_por_cobertura(df_sinistro, df_cobertura_filtrado, threshold=0.75):
+    if df_cobertura_filtrado.empty or df_sinistro.empty:
+        df_sinistro = df_sinistro.copy()
+        df_sinistro['Franquia Apólice'] = 0.0
+        return df_sinistro
+    if 'nr_endosso' in df_cobertura_filtrado.columns:
+        cob_vigente = df_cobertura_filtrado.sort_values('nr_endosso', ascending=False)\
+            .drop_duplicates(subset=['N° Apólice','Cobertura Apólice'])\
+            [['N° Apólice','Cobertura Apólice','Franquia Apólice']].copy()
+    else:
+        cob_vigente = df_cobertura_filtrado\
+            .drop_duplicates(subset=['N° Apólice','Cobertura Apólice'])\
+            [['N° Apólice','Cobertura Apólice','Franquia Apólice']].copy()
+    pares_sin = tuple(df_sinistro[['N° Apólice','Cobertura']].drop_duplicates().itertuples(index=False, name=None))
+    cob_tuples = tuple(cob_vigente.itertuples(index=False, name=None))
+    mapa = _calcular_mapa_franquia(pares_sin, cob_tuples, threshold)
+    df_sinistro = df_sinistro.copy()
+    df_sinistro['Franquia Apólice'] = df_sinistro.apply(
+        lambda r: mapa.get((r['N° Apólice'], str(r['Cobertura'])), 0.0), axis=1
+    )
+    return df_sinistro
+
+
 # Função de Formatação de Valores para o padrão Brasileiro
 def formatar_valor_br(valor):
     if pd.isna(valor):
@@ -718,12 +763,9 @@ with col_final_1:
     if not df_sinistro_final_exibicao.empty:
         # Adiciona Franquia Apólice por Cobertura — deduplica para evitar duplicatas no merge
         if not df_cobertura.empty:
-            df_franquia_geral = df_cobertura[
-                df_cobertura['N° Apólice'].isin(df_sinistro_final_exibicao['N° Apólice'].unique())
-            ][['Cobertura Apólice', 'Franquia Apólice']].rename(columns={'Cobertura Apólice': 'Cobertura'})
-            df_franquia_geral = df_franquia_geral.groupby('Cobertura', as_index=False)['Franquia Apólice'].max()
-            df_sinistro_final_exibicao = pd.merge(df_sinistro_final_exibicao, df_franquia_geral, on='Cobertura', how='left')
-            df_sinistro_final_exibicao['Franquia Apólice'] = df_sinistro_final_exibicao['Franquia Apólice'].fillna(0)
+            # Franquia por apólice + cobertura usando fuzzy match de nomes
+            _cob_geral = df_cobertura[df_cobertura['N° Apólice'].isin(df_sinistro_final_exibicao['N° Apólice'].unique())]
+            df_sinistro_final_exibicao = mapear_franquia_por_cobertura(df_sinistro_final_exibicao, _cob_geral)
         else:
             df_sinistro_final_exibicao['Franquia Apólice'] = 0.0
         # Formata para exibição
@@ -1544,6 +1586,666 @@ with tab_p_rep:
     else:
         st.warning("Sem dados de produção.")
 
+
+
+# ── BLOCO: Frequência × Severidade por Ano ───────────────────────────────────
+st.write("---")
+st.subheader("🔬 Decomposição: Frequência × Severidade por Ano")
+st.caption("Entenda SE a sinistralidade piora por mais sinistros (frequência) ou por sinistros maiores (severidade).")
+
+if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
+    df_fs = df_sinistro_periodo_atualizado.copy()
+    # usa df_para_soma (filtrado + slider, mesma base do Desempenho Consolidado)
+    df_apo_fs = df_para_soma.copy()
+    qtd_apo_ano = df_apo_fs.groupby('Ano Vigência').agg(
+        Qtd_Apolices=('N° Apólice','nunique')
+    ).reset_index().rename(columns={'Ano Vigência':'Ano'})
+
+    df_fs_ano = df_fs.groupby('Ano Vigência').agg(
+        Qtd_Sinistros=('nr_sinistro','nunique'),
+        Total_Sinistro=('Total Sinistro','sum')
+    ).reset_index().rename(columns={'Ano Vigência':'Ano'}) if 'Ano Vigência' in df_fs.columns else pd.DataFrame()
+
+    if df_fs_ano.empty:
+        df_fs['dt_aviso_dt'] = pd.to_datetime(df_fs['dt_aviso'], dayfirst=True, errors='coerce')
+        df_fs_merged = pd.merge(df_fs, df_apo_fs[['N° Apólice','Ano Vigência']].drop_duplicates(), on='N° Apólice', how='left')
+        df_fs_ano = df_fs_merged.groupby('Ano Vigência').agg(
+            Qtd_Sinistros=('nr_sinistro','nunique'),
+            Total_Sinistro=('Total Sinistro','sum')
+        ).reset_index().rename(columns={'Ano Vigência':'Ano'})
+
+    df_fs_ano = pd.merge(df_fs_ano, qtd_apo_ano, on='Ano', how='inner')
+    df_fs_ano = df_fs_ano[df_fs_ano['Qtd_Apolices'] > 0].copy()
+    df_fs_ano['Frequencia']  = df_fs_ano['Qtd_Sinistros'] / df_fs_ano['Qtd_Apolices']
+    df_fs_ano['Severidade']  = df_fs_ano.apply(
+        lambda r: r['Total_Sinistro'] / r['Qtd_Sinistros'] if r['Qtd_Sinistros'] > 0 else 0, axis=1
+    )
+    df_fs_ano = df_fs_ano.sort_values('Ano')
+
+    if not df_fs_ano.empty:
+        col_fs1, col_fs2 = st.columns(2)
+
+        with col_fs1:
+            st.markdown("**Frequência de Sinistros por Apólice (sinistros/apólice/ano)**")
+            import numpy as np
+            fig_freq_ano = go.Figure()
+            fig_freq_ano.add_trace(go.Scatter(
+                x=df_fs_ano['Ano'], y=df_fs_ano['Frequencia'],
+                mode='lines+markers+text',
+                text=df_fs_ano['Frequencia'].map(lambda x: f"{x:.2f}"),
+                textposition='top center', textfont=dict(size=10),
+                marker=dict(size=8, color='#1A56A0'), line=dict(width=2.5, color='#1A56A0'),
+                name='Frequência'
+            ))
+            # Linha de tendência
+            if len(df_fs_ano) >= 3:
+                coef_f = np.polyfit(df_fs_ano['Ano'].values, df_fs_ano['Frequencia'].values, 1)
+                tend_f = np.polyval(coef_f, df_fs_ano['Ano'].values)
+                fig_freq_ano.add_trace(go.Scatter(
+                    x=df_fs_ano['Ano'], y=tend_f,
+                    mode='lines', name='Tendência',
+                    line=dict(color='red', width=2, dash='dash')
+                ))
+            fig_freq_ano.update_layout(
+                xaxis=dict(title='Ano', tickmode='linear', dtick=1),
+                yaxis=dict(title='Sinistros por Apólice'),
+                legend=dict(orientation='h', y=1.15),
+                margin=dict(t=20, b=20, l=0, r=0), height=340,
+                hovermode='x unified'
+            )
+            st.plotly_chart(fig_freq_ano, use_container_width=True, config={'displayModeBar': False})
+
+            if len(df_fs_ano) >= 2:
+                var_freq = (df_fs_ano['Frequencia'].iloc[-1] - df_fs_ano['Frequencia'].iloc[-2]) / df_fs_ano['Frequencia'].iloc[-2] * 100
+                if var_freq > 10:
+                    st.error(f"📈 Frequência subindo {var_freq:+.1f}% — mais sinistros por apólice. Risco de seleção adversa.")
+                elif var_freq < -10:
+                    st.success(f"📉 Frequência caindo {var_freq:+.1f}% — menos sinistros por apólice.")
+                else:
+                    st.info(f"➡ Frequência estável ({var_freq:+.1f}% vs ano anterior).")
+
+        with col_fs2:
+            st.markdown("**Severidade Média por Sinistro (R$ médio por evento)**")
+            fig_sev_ano = go.Figure()
+            fig_sev_ano.add_trace(go.Scatter(
+                x=df_fs_ano['Ano'], y=df_fs_ano['Severidade'],
+                mode='lines+markers+text',
+                text=df_fs_ano['Severidade'].map(lambda x: f"R${x/1000:.1f}k"),
+                textposition='top center', textfont=dict(size=10),
+                marker=dict(size=8, color='#F59E0B'), line=dict(width=2.5, color='#F59E0B'),
+                name='Severidade'
+            ))
+            if len(df_fs_ano) >= 3:
+                coef_s = np.polyfit(df_fs_ano['Ano'].values, df_fs_ano['Severidade'].values, 1)
+                tend_s = np.polyval(coef_s, df_fs_ano['Ano'].values)
+                fig_sev_ano.add_trace(go.Scatter(
+                    x=df_fs_ano['Ano'], y=tend_s,
+                    mode='lines', name='Tendência',
+                    line=dict(color='red', width=2, dash='dash')
+                ))
+            fig_sev_ano.update_layout(
+                xaxis=dict(title='Ano', tickmode='linear', dtick=1),
+                yaxis=dict(title='R$ por Sinistro'),
+                legend=dict(orientation='h', y=1.15),
+                margin=dict(t=20, b=20, l=0, r=0), height=340,
+                hovermode='x unified'
+            )
+            st.plotly_chart(fig_sev_ano, use_container_width=True, config={'displayModeBar': False})
+
+            if len(df_fs_ano) >= 2:
+                var_sev = (df_fs_ano['Severidade'].iloc[-1] - df_fs_ano['Severidade'].iloc[-2]) / df_fs_ano['Severidade'].iloc[-2] * 100
+                if var_sev > 10:
+                    st.error(f"📈 Severidade subindo {var_sev:+.1f}% — sinistros mais caros. Avaliar aumento de franquia.")
+                elif var_sev < -10:
+                    st.success(f"📉 Severidade caindo {var_sev:+.1f}% — sinistros menores.")
+                else:
+                    st.info(f"➡ Severidade estável ({var_sev:+.1f}% vs ano anterior).")
+
+        # Diagnóstico combinado
+        st.markdown("**📋 Diagnóstico Combinado**")
+        if len(df_fs_ano) >= 2:
+            subiu_freq = df_fs_ano['Frequencia'].iloc[-1] > df_fs_ano['Frequencia'].iloc[-2]
+            subiu_sev  = df_fs_ano['Severidade'].iloc[-1]  > df_fs_ano['Severidade'].iloc[-2]
+            if subiu_freq and subiu_sev:
+                st.error("🔴 **Frequência E Severidade subindo** — deterioração ampla. Revisar critérios de aceitação e franquias.")
+            elif subiu_freq and not subiu_sev:
+                st.warning("🟡 **Mais sinistros, mas valores menores** — problema de seleção. Avaliar restrições de aceitação ou franquia por evento.")
+            elif not subiu_freq and subiu_sev:
+                st.warning("🟡 **Menos sinistros, mas mais caros** — eventos mais graves. Avaliar aumento de franquia mínima.")
+            else:
+                st.success("🟢 **Frequência e Severidade caindo** — melhora consistente da carteira.")
+else:
+    st.info("Nenhum dado disponível para análise de frequência e severidade.")
+
+st.markdown("""
+<div style="background:#F8FAFC;border-radius:10px;padding:18px;border:1px solid #E2E8F0;font-size:13px;color:#334155;">
+<b>📖 Como entender esta análise</b><br><br>
+
+<b>O que é:</b> A sinistralidade total pode subir por dois motivos completamente diferentes — porque ocorreram <i>mais sinistros</i> (frequência) ou porque cada sinistro ficou <i>mais caro</i> (severidade). Esta seção separa os dois efeitos para que a decisão de subscrição seja mais precisa.<br><br>
+
+<b>Frequência</b> = Quantidade de sinistros ÷ Quantidade de apólices. Indica quantos sinistros ocorrem em média por apólice a cada ano. Se sobe, significa que mais segurados estão acionando o seguro — pode indicar seleção adversa (carteira com perfil de risco ruim) ou problema no critério de aceitação.<br><br>
+
+<b>Severidade</b> = Total pago em sinistros ÷ Quantidade de sinistros. Indica o valor médio de cada sinistro. Se sobe, significa que os eventos estão ficando mais caros — pode refletir inflação de custos médicos/jurídicos, sinistros mais graves ou ausência de franquia adequada.<br><br>
+
+<b>Como analisar:</b><br>
+🔴 Frequência E Severidade subindo → problema amplo, revisar critérios de aceitação E franquias simultaneamente.<br>
+🟡 Só Frequência subindo → mais sinistros, mas valores controlados. Restringir aceitação ou aplicar franquia por evento.<br>
+🟡 Só Severidade subindo → menos sinistros, mas mais caros. Aumentar franquia mínima ou limite de cobertura.<br>
+🟢 Ambas caindo → carteira saudável.<br><br>
+
+<b>Como foi desenvolvido:</b> Agrupa os dados por Ano de Vigência da Apólice. A frequência usa quantidade de sinistros únicos (nr_sinistro) dividida pela quantidade de apólices únicas. A severidade usa o Total Sinistro (sinistro + despesa + honorário - salvado) dividido pela quantidade de sinistros. A linha tracejada vermelha é uma regressão linear simples sobre os anos disponíveis. Os alertas automáticos comparam o último ano completo com o penúltimo.
+</div>
+""", unsafe_allow_html=True)
+
+
+# ── BLOCO: Desenvolvimento por Safra ─────────────────────────────────────────
+st.write("---")
+st.subheader("📊 Desenvolvimento da Sinistralidade por Safra")
+st.caption(
+    "Mostra como a sinistralidade de cada ano de vigência evolui à medida que novos sinistros são avisados. "
+    "Anos recentes com sinistralidade baixa podem estar incompletos — observe o padrão de maturação."
+)
+
+if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
+    df_saf = df_sinistro_periodo_atualizado.copy()
+    df_saf['dt_aviso_dt'] = pd.to_datetime(df_saf['dt_aviso'], dayfirst=True, errors='coerce')
+    df_saf['Ano_Aviso']   = df_saf['dt_aviso_dt'].dt.year
+
+    # Junta Ano Vigência da apólice — usa df_para_soma (filtrado + slider, mesma base do Desempenho Consolidado)
+    df_apo_saf = df_para_soma[['N° Apólice','Ano Vigência','Soma Prêmio Pago por Apolice']].drop_duplicates('N° Apólice').copy()
+    df_apo_saf['Premio_Num'] = pd.to_numeric(df_apo_saf['Soma Prêmio Pago por Apolice'], errors='coerce').fillna(0)
+    df_premio_saf = df_apo_saf.groupby('Ano Vigência')['Premio_Num'].sum().reset_index()
+    df_premio_saf.columns = ['Ano_Vigencia', 'Premio']
+
+    df_saf = pd.merge(df_saf, df_apo_saf[['N° Apólice','Ano Vigência']], on='N° Apólice', how='left')
+    df_saf.rename(columns={'Ano Vigência': 'Ano_Vigencia'}, inplace=True)
+
+    df_saf_grp = df_saf.groupby(['Ano_Vigencia','Ano_Aviso'])['Total Sinistro'].sum().reset_index()
+    df_saf_grp = pd.merge(df_saf_grp, df_premio_saf, on='Ano_Vigencia', how='left')
+    df_saf_grp = df_saf_grp[df_saf_grp['Premio'] > 0].copy()
+    df_saf_grp['Sin_Acum'] = df_saf_grp.groupby('Ano_Vigencia')['Total Sinistro'].cumsum()
+    df_saf_grp['Sin_Rate_Acum'] = df_saf_grp['Sin_Acum'] / df_saf_grp['Premio']
+    df_saf_grp['Lag'] = df_saf_grp['Ano_Aviso'] - df_saf_grp['Ano_Vigencia']
+
+    # Tabela pivot: safra vs lag
+    anos_vigencia = sorted(df_saf_grp['Ano_Vigencia'].dropna().unique())
+    anos_vigencia = [a for a in anos_vigencia if a >= max(anos_vigencia) - 8]
+    max_lag = int(df_saf_grp['Lag'].max()) if not df_saf_grp.empty else 5
+
+    pivot_data = []
+    for av in anos_vigencia:
+        row = {'Safra': int(av)}
+        df_v = df_saf_grp[df_saf_grp['Ano_Vigencia'] == av].copy()
+        for lag in range(0, min(max_lag+1, 8)):
+            df_lag = df_v[df_v['Lag'] == lag]
+            row[f'Ano+{lag}'] = f"{df_lag['Sin_Rate_Acum'].values[0]:.1%}" if not df_lag.empty else "—"
+        pivot_data.append(row)
+
+    df_pivot = pd.DataFrame(pivot_data)
+
+    col_saf1, col_saf2 = st.columns([1, 1])
+
+    with col_saf1:
+        st.markdown("**Tabela de Desenvolvimento — Sinistralidade Acumulada por Safra**")
+        st.dataframe(df_pivot, hide_index=True, use_container_width=True)
+        st.caption("Ano+0 = sinistros avisados no próprio ano da vigência. Ano+1 = avisados 1 ano depois. '—' = ainda sem dados.")
+
+    with col_saf2:
+        st.markdown("**Curvas de Maturação por Safra**")
+        fig_saf = go.Figure()
+        cores = ['#1A56A0','#36A2EB','#F59E0B','#16A34A','#DC2626','#9333EA','#0891B2','#EA580C','#BE185D']
+        for i, av in enumerate(anos_vigencia):
+            df_v = df_saf_grp[df_saf_grp['Ano_Vigencia'] == av].sort_values('Lag')
+            if df_v.empty: continue
+            fig_saf.add_trace(go.Scatter(
+                x=df_v['Lag'],
+                y=df_v['Sin_Rate_Acum'],
+                mode='lines+markers',
+                name=str(int(av)),
+                line=dict(width=2, color=cores[i % len(cores)]),
+                marker=dict(size=6),
+                hovertemplate=f"Safra {int(av)}<br>Lag: %{{x}} anos<br>Sin. Acum: %{{y:.1%}}<extra></extra>"
+            ))
+        fig_saf.update_layout(
+            xaxis=dict(title='Anos após vigência (Lag)', tickmode='linear', dtick=1),
+            yaxis=dict(title='Sinistralidade Acumulada (%)', tickformat='.0%'),
+            legend=dict(title='Safra', orientation='v', x=1.01),
+            margin=dict(t=20, b=20, l=0, r=60), height=380,
+            hovermode='x unified'
+        )
+        st.plotly_chart(fig_saf, use_container_width=True, config={'displayModeBar': False})
+        st.caption(
+            "Curvas que ainda sobem indicam safras em desenvolvimento — sinistros ainda estão sendo avisados. "
+            "Safras recentes (direita com poucos pontos) tendem a ter sinistralidade subestimada."
+        )
+
+
+    # ── Chain-Ladder: Projeção da sinistralidade final por safra ─────────
+    st.write("---")
+    st.subheader("🔮 Projeção Chain-Ladder — Sinistralidade Final Estimada")
+    st.caption(
+        "Usa o padrão histórico de desenvolvimento das safras completas para projetar "
+        "a sinistralidade final das safras recentes ainda em desenvolvimento."
+    )
+
+    import numpy as np
+
+    # Monta matriz de sinistralidade acumulada: linhas=safra, colunas=lag
+    lags_disponiveis = sorted(df_saf_grp['Lag'].unique())
+    safras_disponiveis = sorted(df_saf_grp['Ano_Vigencia'].dropna().unique())
+
+    # Matriz numérica de sinistralidade acumulada
+    matriz = {}
+    for av in safras_disponiveis:
+        df_v = df_saf_grp[df_saf_grp['Ano_Vigencia'] == av].sort_values('Lag')
+        for _, row in df_v.iterrows():
+            matriz[(av, int(row['Lag']))] = row['Sin_Rate_Acum']
+
+    max_lag = int(max(lags_disponiveis))
+
+    # Calcula fatores de desenvolvimento (link ratios) por lag
+    # Fator lag→lag+1 = média ponderada de (Acum_lag+1 / Acum_lag) nas safras que têm ambos
+    fatores = {}
+    for lag in range(0, max_lag):
+        numerador   = 0.0
+        denominador = 0.0
+        for av in safras_disponiveis:
+            v0 = matriz.get((av, lag),   None)
+            v1 = matriz.get((av, lag+1), None)
+            if v0 is not None and v1 is not None and v0 > 0:
+                # Pondera pelo prêmio da safra para dar mais peso às safras maiores
+                premio_saf = df_premio_saf[df_premio_saf['Ano_Vigencia'] == av]['Premio'].values
+                peso = float(premio_saf[0]) if len(premio_saf) > 0 else 1.0
+                numerador   += v1 * peso
+                denominador += v0 * peso
+        if denominador > 0:
+            fatores[lag] = numerador / denominador
+
+    # Projeta cada safra incompleta até o lag máximo observado
+    ano_atual = int(df_saf_grp['Ano_Vigencia'].max())
+    rows_proj = []
+
+    for av in safras_disponiveis:
+        av = int(av)
+        # Encontra último lag disponível para esta safra
+        lags_saf = [lag for lag in lags_disponiveis if (av, int(lag)) in matriz]
+        if not lags_saf:
+            continue
+        ultimo_lag = int(max(lags_saf))
+        sin_atual  = matriz.get((av, ultimo_lag), None)
+        if sin_atual is None:
+            continue
+
+        # Projeta do último lag até o máximo
+        sin_proj = sin_atual
+        for lag in range(ultimo_lag, max_lag):
+            f = fatores.get(lag, None)
+            if f is not None:
+                sin_proj *= f
+
+        ja_completa = ultimo_lag >= max_lag
+        fator_total  = sin_proj / sin_atual if sin_atual > 0 else 1.0
+
+        rows_proj.append({
+            'Safra':               av,
+            'Sin. Atual':          sin_atual,
+            'Sin. Projetada':      sin_proj,
+            'Fator Desenvolvimento': fator_total,
+            'Último Lag':          ultimo_lag,
+            'Status':              'Completa' if ja_completa else f'Em dev. (lag {ultimo_lag}/{max_lag})'
+        })
+
+    df_proj = pd.DataFrame(rows_proj).sort_values('Safra', ascending=False)
+
+    if not df_proj.empty:
+        col_cl1, col_cl2 = st.columns(2)
+
+        with col_cl1:
+            st.markdown("**Tabela de Projeção por Safra**")
+            df_proj_view = df_proj.copy()
+            df_proj_view['Sin. Atual']     = df_proj_view['Sin. Atual'].map(lambda x: f"{x:.1%}")
+            df_proj_view['Sin. Projetada'] = df_proj_view['Sin. Projetada'].map(lambda x: f"{x:.1%}")
+            df_proj_view['Fator Desenvolvimento'] = df_proj_view['Fator Desenvolvimento'].map(lambda x: f"{x:.3f}×")
+            st.dataframe(df_proj_view, hide_index=True, use_container_width=True)
+            st.caption(
+                "Fator Desenvolvimento = quanto ainda deve crescer a sinistralidade. "
+                "1.000× = safra completa. 1.400× = ainda deve crescer 40%."
+            )
+
+        with col_cl2:
+            st.markdown("**Comparativo: Sinistralidade Atual × Projetada**")
+            df_inc = df_proj[df_proj['Status'] != 'Completa'].copy()
+            df_comp = df_proj.copy()
+
+            fig_cl = go.Figure()
+            fig_cl.add_trace(go.Bar(
+                x=df_comp['Safra'].astype(str),
+                y=df_comp['Sin. Atual'],
+                name='Sinistralidade Atual',
+                marker_color='#36A2EB',
+                text=df_comp['Sin. Atual'].map(lambda x: f"{x:.1%}"),
+                textposition='outside'
+            ))
+            fig_cl.add_trace(go.Bar(
+                x=df_comp['Safra'].astype(str),
+                y=df_comp['Sin. Projetada'] - df_comp['Sin. Atual'],
+                name='Incremento Projetado',
+                marker_color='#FCA5A5',
+                text=(df_comp['Sin. Projetada'] - df_comp['Sin. Atual']).map(
+                    lambda x: f"+{x:.1%}" if x > 0.001 else ""
+                ),
+                textposition='outside',
+                base=df_comp['Sin. Atual']
+            ))
+            fig_cl.update_layout(
+                barmode='stack',
+                xaxis=dict(title='Safra'),
+                yaxis=dict(title='Sinistralidade (%)', tickformat='.0%'),
+                legend=dict(orientation='h', y=1.15),
+                margin=dict(t=20, b=20, l=0, r=0), height=380,
+                hovermode='x unified'
+            )
+            st.plotly_chart(fig_cl, use_container_width=True, config={'displayModeBar': False})
+
+        # Alerta da safra mais recente
+        ultima_safra = df_proj[df_proj['Status'] != 'Completa'].sort_values('Safra', ascending=False)
+        if not ultima_safra.empty:
+            row_ult = ultima_safra.iloc[0]
+            sin_at  = row_ult['Sin. Atual'] if isinstance(row_ult['Sin. Atual'], float) else float(str(row_ult['Sin. Atual']).replace('%',''))/100
+            sin_pj  = row_ult['Sin. Projetada'] if isinstance(row_ult['Sin. Projetada'], float) else float(str(row_ult['Sin. Projetada']).replace('%',''))/100
+            # Recupera numérico do df original
+            sin_at_n  = df_proj[df_proj['Safra'] == row_ult['Safra']]['Sin. Atual'].values[0]
+            sin_pj_n  = df_proj[df_proj['Safra'] == row_ult['Safra']]['Sin. Projetada'].values[0]
+            incremento = sin_pj_n - sin_at_n
+
+            if sin_pj_n > 0.80:
+                st.error(
+                    f"🔴 **Safra {int(row_ult['Safra'])}: sinistralidade atual de {sin_at_n:.1%} "
+                    f"deve atingir {sin_pj_n:.1%} quando completa** (+{incremento:.1%} ainda a ser avisado). "
+                    f"Risco elevado — avaliar reajuste preventivo nas renovações."
+                )
+            elif sin_pj_n > 0.60:
+                st.warning(
+                    f"🟡 **Safra {int(row_ult['Safra'])}: sinistralidade atual de {sin_at_n:.1%} "
+                    f"deve atingir {sin_pj_n:.1%} quando completa** (+{incremento:.1%} ainda a ser avisado). "
+                    f"Monitorar — possível necessidade de reajuste."
+                )
+            else:
+                st.success(
+                    f"🟢 **Safra {int(row_ult['Safra'])}: sinistralidade atual de {sin_at_n:.1%} "
+                    f"deve atingir {sin_pj_n:.1%} quando completa** (+{incremento:.1%} ainda a ser avisado). "
+                    f"Dentro de parâmetros aceitáveis."
+                )
+
+    # Fatores de desenvolvimento históricos
+    with st.expander("📊 Ver fatores de desenvolvimento históricos (Chain-Ladder)"):
+        fat_data = [{'Lag → Lag+1': f"Ano+{lag} → Ano+{lag+1}", 'Fator Médio': f"{v:.4f}×", 'Significado': f"A sinistralidade cresce em média {(v-1)*100:.1f}% entre esses dois períodos"} for lag, v in sorted(fatores.items())]
+        if fat_data:
+            st.dataframe(pd.DataFrame(fat_data), hide_index=True, use_container_width=True)
+            st.caption("Fatores ponderados pelo prêmio de cada safra. Quanto mais próximo de 1.000×, mais estável o desenvolvimento naquele lag.")
+
+
+else:
+    st.info("Nenhum dado disponível para análise de desenvolvimento por safra.")
+
+st.markdown("""
+<div style="background:#F8FAFC;border-radius:10px;padding:18px;border:1px solid #E2E8F0;font-size:13px;color:#334155;">
+<b>📖 Como entender esta análise</b><br><br>
+
+<b>O que é:</b> Uma apólice de 2022 pode gerar sinistros que só serão avisados em 2023, 2024 ou até 2025. Isso significa que olhar apenas a sinistralidade do ano corrente de uma safra recente pode ser enganoso — parte dos sinistros ainda não apareceu. Esta análise mostra como a sinistralidade de cada <i>safra</i> (ano de vigência) evolui ao longo do tempo à medida que novos sinistros são avisados.<br><br>
+
+<b>Como ler a tabela:</b><br>
+• <b>Safra</b> = Ano de vigência da apólice (ex: 2022)<br>
+• <b>Ano+0</b> = Sinistralidade acumulada considerando apenas sinistros avisados no próprio ano da vigência<br>
+• <b>Ano+1</b> = Sinistralidade acumulada incluindo sinistros avisados até 1 ano depois<br>
+• <b>Ano+2</b> = Inclui sinistros avisados até 2 anos depois, e assim por diante<br>
+• <b>—</b> = Dados ainda não disponíveis (safra recente, ainda em desenvolvimento)<br><br>
+
+<b>Como analisar:</b><br>
+Uma safra que mostra 30% em Ano+0 e chega a 66% em Ano+2 significa que dois terços dos sinistros foram avisados com atraso. Isso é normal em RCO — processos judiciais e regulações demoram. O padrão histórico das safras mais antigas (que já estão completas) indica quanto as safras recentes ainda devem crescer.<br><br>
+
+<b>Atenção aos anos recentes:</b> Safras dos últimos 1-2 anos sempre parecem ter sinistralidade baixa, mas é porque ainda estão em desenvolvimento. Compare com o padrão das safras anteriores para estimar o valor final.<br><br>
+
+<b>Como foi desenvolvido:</b> Para cada sinistro, identifica o Ano de Vigência da apólice correspondente e o Ano de Aviso do sinistro. Calcula o lag (diferença em anos). Acumula o Total Sinistro por safra à medida que o lag aumenta e divide pelo prêmio total daquela safra. O gráfico de curvas mostra uma linha por safra — curvas que ainda sobem indicam safras incompletas.
+</div>
+""", unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SEÇÃO DE ANÁLISE DE TENDÊNCIA 📈
+# ══════════════════════════════════════════════════════════════════════════════
+st.write("---")
+st.subheader("📈 Análise de Tendência da Sinistralidade")
+st.caption("Sinistralidade por Ano de Vigência da Apólice — mesma base do Desempenho Consolidado.")
+
+if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
+
+    # ── Prepara base de sinistros com datas (para gráficos mensais) ─────────
+    df_sin_tend = df_sinistro_periodo_atualizado.copy()
+    df_sin_tend['dt_aviso'] = pd.to_datetime(df_sin_tend['dt_aviso'], dayfirst=True, errors='coerce')
+    df_sin_tend['AnoMes'] = df_sin_tend['dt_aviso'].dt.to_period('M').astype(str)
+
+    # ── Sinistralidade anual — MESMA BASE do Desempenho Consolidado ───────────
+    # Usa df_para_soma (filtrado + slider) para consistência total com os outros DFs
+    df_apo_tend = df_para_soma.copy()
+    df_apo_tend['Premio_Num']   = pd.to_numeric(df_apo_tend['Soma Prêmio Pago por Apolice'], errors='coerce').fillna(0)
+    df_apo_tend['Sinistro_Num'] = pd.to_numeric(df_apo_tend['Soma Sinistro Por Apolice'],   errors='coerce').fillna(0)
+
+    df_tend_ano = df_apo_tend.groupby('Ano Vigência').agg(
+        Premio=('Premio_Num',   'sum'),
+        Total_Sinistro=('Sinistro_Num', 'sum')
+    ).reset_index()
+    df_tend_ano.rename(columns={'Ano Vigência': 'Ano'}, inplace=True)
+    df_tend_ano = df_tend_ano[df_tend_ano['Premio'] > 0].copy()
+    df_tend_ano['Sinistralidade'] = df_tend_ano['Total_Sinistro'] / df_tend_ano['Premio']
+    df_tend_ano = df_tend_ano[df_tend_ano['Ano'] >= df_tend_ano['Ano'].max() - 9]  # últimos 10 anos
+
+    # Sinistro por mês (últimos 24 meses)
+    df_sin_mes = df_sin_tend.groupby('AnoMes').agg(
+        Total_Sinistro=('Total Sinistro', 'sum'),
+        Qtd_Sinistros=('nr_sinistro', 'nunique')
+    ).reset_index().sort_values('AnoMes')
+    df_sin_mes = df_sin_mes.tail(24).copy()
+    df_sin_mes['MM3'] = df_sin_mes['Total_Sinistro'].rolling(3).mean()
+    df_sin_mes['MM6'] = df_sin_mes['Total_Sinistro'].rolling(6).mean()
+
+    # ── Linha 1: Sinistralidade anual + linha de tendência ───────────────────
+    col_t1, col_t2 = st.columns(2)
+
+    with col_t1:
+        st.markdown("**Sinistralidade % Anual com Tendência Linear**")
+        if len(df_tend_ano) >= 3:
+            import numpy as np
+            anos_num = df_tend_ano['Ano'].values
+            sin_vals  = df_tend_ano['Sinistralidade'].values
+            coef = np.polyfit(anos_num, sin_vals, 1)
+            tendencia_vals = np.polyval(coef, anos_num)
+            direcao = "📈 Subindo" if coef[0] > 0.01 else ("📉 Caindo" if coef[0] < -0.01 else "➡ Estável")
+            variacao_pct = (tendencia_vals[-1] - tendencia_vals[0]) / abs(tendencia_vals[0]) * 100 if tendencia_vals[0] != 0 else 0
+
+            fig_tend = go.Figure()
+            fig_tend.add_trace(go.Scatter(
+                x=df_tend_ano['Ano'], y=df_tend_ano['Sinistralidade'],
+                mode='lines+markers+text',
+                name='Sinistralidade Real',
+                text=df_tend_ano['Sinistralidade'].map(lambda x: f"{x:.1%}"),
+                textposition='top center', textfont=dict(size=10),
+                marker=dict(size=8, color='#1A56A0'), line=dict(width=2.5, color='#1A56A0')
+            ))
+            fig_tend.add_trace(go.Scatter(
+                x=df_tend_ano['Ano'], y=tendencia_vals,
+                mode='lines', name=f'Tendência ({direcao})',
+                line=dict(color='red', width=2, dash='dash'),
+            ))
+            fig_tend.update_layout(
+                xaxis=dict(title='Ano', tickmode='linear', dtick=1),
+                yaxis=dict(title='Sinistralidade (%)', tickformat='.0%'),
+                legend=dict(orientation='h', y=1.15),
+                margin=dict(t=20, b=20, l=0, r=0), height=360,
+                hovermode='x unified'
+            )
+            st.plotly_chart(fig_tend, use_container_width=True, config={'displayModeBar': False})
+
+            # Alerta de tendência
+            if coef[0] > 0.05:
+                st.error(f"⚠️ **Tendência de alta acelerada** — sinistralidade cresceu ~{variacao_pct:.1f}% no período. Avaliar aumento de prêmio.")
+            elif coef[0] > 0.01:
+                st.warning(f"⚠️ **Tendência de alta moderada** — sinistralidade cresceu ~{variacao_pct:.1f}% no período. Monitorar.")
+            elif coef[0] < -0.01:
+                st.success(f"✅ **Tendência de queda** — sinistralidade caiu ~{abs(variacao_pct):.1f}% no período. Bom resultado.")
+            else:
+                st.info("➡️ **Sinistralidade estável** no período analisado.")
+        else:
+            st.info("Dados insuficientes para calcular tendência (mínimo 3 anos).")
+
+    with col_t2:
+        st.markdown("**Evolução Mensal do Sinistro — Últimos 24 Meses**")
+        fig_mes = go.Figure()
+        fig_mes.add_trace(go.Bar(
+            x=df_sin_mes['AnoMes'], y=df_sin_mes['Total_Sinistro'],
+            name='Sinistro Mensal', marker_color='#CBD5E1', opacity=0.7
+        ))
+        fig_mes.add_trace(go.Scatter(
+            x=df_sin_mes['AnoMes'], y=df_sin_mes['MM3'],
+            mode='lines', name='Média Móvel 3M',
+            line=dict(color='#1A56A0', width=2.5)
+        ))
+        fig_mes.add_trace(go.Scatter(
+            x=df_sin_mes['AnoMes'], y=df_sin_mes['MM6'],
+            mode='lines', name='Média Móvel 6M',
+            line=dict(color='red', width=2, dash='dot')
+        ))
+        fig_mes.update_layout(
+            xaxis=dict(title='', tickangle=-45, tickfont=dict(size=9)),
+            yaxis=dict(title='R$ Sinistro'),
+            legend=dict(orientation='h', y=1.15),
+            margin=dict(t=20, b=60, l=0, r=0), height=360,
+            hovermode='x unified', barmode='overlay'
+        )
+        st.plotly_chart(fig_mes, use_container_width=True, config={'displayModeBar': False})
+
+    # ── Linha 2: Frequência mensal + Indicador de necessidade de reajuste ────
+    col_t3, col_t4 = st.columns(2)
+
+    with col_t3:
+        st.markdown("**Frequência de Sinistros por Mês — Últimos 24 Meses**")
+        df_sin_mes['MM3_Qtd'] = df_sin_mes['Qtd_Sinistros'].rolling(3).mean()
+        fig_freq = go.Figure()
+        fig_freq.add_trace(go.Bar(
+            x=df_sin_mes['AnoMes'], y=df_sin_mes['Qtd_Sinistros'],
+            name='Qtd Sinistros', marker_color='#FCA5A5', opacity=0.75
+        ))
+        fig_freq.add_trace(go.Scatter(
+            x=df_sin_mes['AnoMes'], y=df_sin_mes['MM3_Qtd'],
+            mode='lines', name='Média Móvel 3M',
+            line=dict(color='#DC2626', width=2.5)
+        ))
+        fig_freq.update_layout(
+            xaxis=dict(title='', tickangle=-45, tickfont=dict(size=9)),
+            yaxis=dict(title='Qtd Sinistros'),
+            legend=dict(orientation='h', y=1.15),
+            margin=dict(t=20, b=60, l=0, r=0), height=340,
+            hovermode='x unified'
+        )
+        st.plotly_chart(fig_freq, use_container_width=True, config={'displayModeBar': False})
+
+    with col_t4:
+        st.markdown("**Painel de Indicadores — Necessidade de Reajuste de Prêmio**")
+        if len(df_tend_ano) >= 2:
+            import numpy as np
+            # Indicadores calculados
+            # Exclui o ano atual se estiver incompleto (ano corrente com poucos meses)
+            import datetime
+            ano_atual = datetime.datetime.now().year
+            df_tend_completo = df_tend_ano[df_tend_ano['Ano'] < ano_atual].copy()
+            # Se não houver dados suficientes sem o ano atual, usa tudo
+            if len(df_tend_completo) < 3:
+                df_tend_completo = df_tend_ano.copy()
+
+            anos_rec = df_tend_completo.tail(3)
+            sin_media_3a = anos_rec['Sinistralidade'].mean()
+            sin_ultimo   = df_tend_completo.iloc[-1]['Sinistralidade']
+            sin_anterior = df_tend_completo.iloc[-2]['Sinistralidade']
+            variacao_yoy = (sin_ultimo - sin_anterior) / sin_anterior * 100 if sin_anterior != 0 else 0
+
+            coef2 = np.polyfit(df_tend_ano['Ano'].values, df_tend_ano['Sinistralidade'].values, 1)
+            aceleracao = coef2[0] * 100  # % ao ano
+
+            # Ticket médio por sinistro (últimos 12 meses)
+            df_12m = df_sin_tend[df_sin_tend['dt_aviso'] >= df_sin_tend['dt_aviso'].max() - pd.DateOffset(months=12)]
+            ticket_medio = df_12m['Total Sinistro'].sum() / max(df_12m['nr_sinistro'].nunique(), 1)
+
+            # Score de reajuste (0 = sem necessidade, 100 = urgente)
+            score = 0
+            if sin_media_3a > 0.80: score += 40
+            elif sin_media_3a > 0.60: score += 20
+            elif sin_media_3a > 0.40: score += 10
+
+            if variacao_yoy > 20: score += 30
+            elif variacao_yoy > 10: score += 15
+            elif variacao_yoy > 0: score += 5
+
+            if aceleracao > 0.05: score += 30
+            elif aceleracao > 0.02: score += 15
+
+            score = min(score, 100)
+
+            # Cor do score
+            if score >= 70:
+                cor_score = "#DC2626"
+                veredicto = "🔴 REAJUSTE URGENTE"
+                desc = "Sinistralidade elevada com tendência de alta. Necessário reajuste imediato de prêmio."
+            elif score >= 40:
+                cor_score = "#F59E0B"
+                veredicto = "🟡 REAJUSTE RECOMENDADO"
+                desc = "Tendência de deterioração identificada. Avaliar reajuste preventivo."
+            else:
+                cor_score = "#16A34A"
+                veredicto = "🟢 PRÊMIO ADEQUADO"
+                desc = "Sinistralidade dentro de parâmetros aceitáveis."
+
+            st.markdown(f"""
+            <div style="background:#F8FAFC;border-radius:10px;padding:18px;border:1px solid #E2E8F0;">
+                <div style="text-align:center;font-size:52px;font-weight:bold;color:{cor_score};">{score}</div>
+                <div style="text-align:center;font-size:13px;color:#64748B;margin-bottom:8px;">Score de Necessidade de Reajuste (0-100)</div>
+                <div style="text-align:center;font-size:15px;font-weight:bold;color:{cor_score};margin-bottom:14px;">{veredicto}</div>
+                <hr style="border:1px solid #E2E8F0;margin:10px 0;">
+                <table style="width:100%;font-size:12px;color:#334155;">
+                    <tr><td>📊 Sinistralidade média 3 anos</td><td style="text-align:right;font-weight:bold;">{sin_media_3a:.1%}</td></tr>
+                    <tr><td>📅 Variação ano a ano</td><td style="text-align:right;font-weight:bold;">{variacao_yoy:+.1f}%</td></tr>
+                    <tr><td>📈 Aceleração anual</td><td style="text-align:right;font-weight:bold;">{aceleracao:+.2f}% a.a.</td></tr>
+                    <tr><td>💰 Ticket médio sinistro (12m)</td><td style="text-align:right;font-weight:bold;">R$ {ticket_medio:,.2f}</td></tr>
+                </table>
+                <hr style="border:1px solid #E2E8F0;margin:10px 0;">
+                <div style="font-size:11px;color:#64748B;">{desc}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.info("Dados insuficientes para calcular indicadores de reajuste.")
+else:
+    st.info("Nenhum dado disponível para análise de tendência.")
+
+st.markdown("")
+st.markdown("""
+<div style="background:#F8FAFC;border-radius:10px;padding:18px;border:1px solid #E2E8F0;font-size:13px;color:#334155;">
+<b>📖 Como entender esta análise</b><br><br>
+
+<b>O que é:</b> Esta seção responde à pergunta: <i>a sinistralidade está melhorando ou piorando ao longo dos anos?</i> São quatro visualizações complementares que mostram a direção e a velocidade da mudança.<br><br>
+
+<b>Sinistralidade % Anual com Tendência Linear:</b> Mostra a sinistralidade real de cada ano de vigência (linha azul) e uma linha de tendência calculada por regressão linear (linha vermelha tracejada). Se a linha vermelha sobe, a tendência é de piora. O alerta automático abaixo do gráfico classifica a velocidade: alta acelerada (acima de 5% ao ano), alta moderada (entre 1% e 5%), estável ou queda.<br><br>
+
+<b>Evolução Mensal — Últimos 24 Meses:</b> Mostra o valor de sinistro mês a mês com duas médias móveis. A Média Móvel 3 meses (linha azul) reage mais rápido às variações recentes. A Média Móvel 6 meses (linha vermelha pontilhada) é mais suavizada. Quando a MM3 cruza acima da MM6, é um sinal de piora recente; quando cruza abaixo, é sinal de melhora.<br><br>
+
+<b>Frequência de Sinistros por Mês:</b> Quantidade de sinistros únicos por mês com média móvel de 3 meses. Permite identificar se um aumento de custo vem de mais eventos ou de eventos maiores (combine com a seção de Frequência × Severidade acima).<br><br>
+
+<b>Painel de Indicadores — Score de Reajuste (0-100):</b> Combina três fatores para gerar um score automático de necessidade de reajuste de prêmio:<br>
+• Sinistralidade média dos últimos 3 anos (peso 40%): acima de 80% adiciona 40 pontos; acima de 60% adiciona 20 pontos<br>
+• Variação ano a ano (peso 30%): acima de 20% adiciona 30 pontos; acima de 10% adiciona 15 pontos<br>
+• Aceleração da tendência em % ao ano (peso 30%): acima de 5% ao ano adiciona 30 pontos; acima de 2% adiciona 15 pontos<br>
+Score 70-100 = Reajuste Urgente | Score 40-69 = Reajuste Recomendado | Score 0-39 = Prêmio Adequado.<br><br>
+
+<b>Como foi desenvolvido:</b> A sinistralidade anual usa a mesma base do Desempenho Consolidado por Ano (Ano de Vigência da Apólice), garantindo consistência. As médias móveis mensais são calculadas sobre a data de aviso dos sinistros, que é o dado mais atual disponível. A regressão linear é calculada com numpy.polyfit sobre os anos disponíveis filtrados.
+</div>
+""", unsafe_allow_html=True)
 
 st.write("---")
 st.caption("Desenvolvido por Alex Sousa.")
