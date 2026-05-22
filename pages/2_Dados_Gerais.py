@@ -571,18 +571,7 @@ qtd_sinistros_geral = df_sinistro_periodo_atualizado['nr_sinistro'].nunique()
 
 # Colunas para informações do dados gerias
 st.markdown("<br>", unsafe_allow_html=True) # Espaço antes dos KPIs
-
-# Média de dias para aviso — dados gerais (sem outliers: descarta dias > período total da base)
-_sin_geral = df_sinistro_periodo_atualizado.copy()
-_sin_geral['dt_aviso_dt']      = pd.to_datetime(_sin_geral['dt_aviso'],     dayfirst=True, errors='coerce')
-_sin_geral['dt_ocorrencia_dt'] = pd.to_datetime(_sin_geral['dt_ocorrencia'],dayfirst=True, errors='coerce')
-_sin_geral['dias_aviso']       = (_sin_geral['dt_aviso_dt'] - _sin_geral['dt_ocorrencia_dt']).dt.days
-_dias_geral = _sin_geral[_sin_geral['dias_aviso'] >= 0]['dias_aviso']
-_periodo_max_geral = int((pd.to_datetime(df_sinistros['dt_aviso'], dayfirst=True, errors='coerce').dropna().max() - pd.to_datetime(df_sinistros['dt_ocorrencia'], dayfirst=True, errors='coerce').dropna().min()).days) if not df_sinistros.empty else 9999
-_media_dias_geral = _dias_geral[_dias_geral <= _periodo_max_geral].mean()
-media_dias_geral_str = f"{_media_dias_geral:.0f} dias" if not pd.isna(_media_dias_geral) else "—"
-
-col1, col2, col3, col4, col5, col6 = st.columns(6)
+col1, col2, col3, col4, col5 = st.columns(5)
 
 with col1:
     st.metric(label="Total Prêmio Pago", value=f"R$ {formatar_valor_br(total_premio)}")
@@ -591,11 +580,9 @@ with col2:
 with col3:
     st.metric(label="% Sinistralidade", value=f"{percentual_sinistro_total:.2%}")
 with col4:
-    st.metric(label="Qtd. Apólices", value=qtd_apolice_geral)
+    st.metric(label="Qtd. Apólices", value=qtd_apolice_geral) # Agora atualiza com o slider!
 with col5:
-    st.metric(label="Qtd. Sinistros", value=qtd_sinistros_geral)
-with col6:
-    st.metric(label="Média Dias p/ Aviso", value=media_dias_geral_str)
+    st.metric(label="Qtd. Sinistros", value=qtd_sinistros_geral) # Agora atualiza com o slider!
 
 # ============= PARTE REFERENTE AO EVOLUÇÃO TEMPORAL - PREMIO X SINISTRO =============
 # Agrupar os dados por ano para o gráfico
