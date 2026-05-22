@@ -588,10 +588,55 @@ def carregar_cobertura(arquivo):
         # e deduplica por apólice + cobertura — franquia vigente
         df = df.sort_values('nr_endosso', ascending=False)
         df = df.drop_duplicates(subset=['N° Apólice', 'Cobertura Apólice'], keep='first')
-        return df[['N° Apólice', 'Cobertura Apólice', 'Franquia Apólice']]
+        return df[['N° Apólice', 'nr_endosso', 'Cobertura Apólice', 'Franquia Apólice']]
     except Exception as e:
         st.error(f"Erro ao carregar coberturas: {e}")
         return pd.DataFrame()
+
+
+# Mapeamento fuzzy de coberturas — com cache para evitar recálculo
+@st.cache_data
+def _calcular_mapa_franquia(pares_sin, cob_tuples, threshold=0.75):
+    from difflib import SequenceMatcher
+    import pandas as pd
+    cob_df = pd.DataFrame(list(cob_tuples), columns=['N° Apólice','Cobertura Apólice','Franquia Apólice'])
+    mapa = {}
+    for apolice, nome_sin in pares_sin:
+        cobs_ap = cob_df[cob_df['N° Apólice'] == apolice]
+        if cobs_ap.empty:
+            mapa[(apolice, nome_sin)] = 0.0
+            continue
+        scores = [(SequenceMatcher(None, nome_sin.lower(), c.lower()).ratio(), c) for c in cobs_ap['Cobertura Apólice'].tolist()]
+        best_score, best_cob = max(scores, key=lambda x: x[0])
+        if best_score >= threshold:
+            franquia = cobs_ap[cobs_ap['Cobertura Apólice'] == best_cob]['Franquia Apólice'].values
+            mapa[(apolice, nome_sin)] = float(franquia[0]) if len(franquia) > 0 else 0.0
+        else:
+            mapa[(apolice, nome_sin)] = 0.0
+    return mapa
+
+def mapear_franquia_por_cobertura(df_sinistro, df_cobertura_filtrado, threshold=0.75):
+    if df_cobertura_filtrado.empty or df_sinistro.empty:
+        df_sinistro = df_sinistro.copy()
+        df_sinistro['Franquia Apólice'] = 0.0
+        return df_sinistro
+    if 'nr_endosso' in df_cobertura_filtrado.columns:
+        cob_vigente = df_cobertura_filtrado.sort_values('nr_endosso', ascending=False)\
+            .drop_duplicates(subset=['N° Apólice','Cobertura Apólice'])\
+            [['N° Apólice','Cobertura Apólice','Franquia Apólice']].copy()
+    else:
+        cob_vigente = df_cobertura_filtrado\
+            .drop_duplicates(subset=['N° Apólice','Cobertura Apólice'])\
+            [['N° Apólice','Cobertura Apólice','Franquia Apólice']].copy()
+    pares_sin = tuple(df_sinistro[['N° Apólice','Cobertura']].drop_duplicates().itertuples(index=False, name=None))
+    cob_tuples = tuple(cob_vigente.itertuples(index=False, name=None))
+    mapa = _calcular_mapa_franquia(pares_sin, cob_tuples, threshold)
+    df_sinistro = df_sinistro.copy()
+    df_sinistro['Franquia Apólice'] = df_sinistro.apply(
+        lambda r: mapa.get((r['N° Apólice'], str(r['Cobertura'])), 0.0), axis=1
+    )
+    return df_sinistro
+
 
 # Função de Formatação de Valores para o padrão Brasileiro
 def formatar_valor_br(valor):
@@ -803,7 +848,17 @@ else:
 tipo_emissao_apolice = list(dados_filtrados_filtro_apolice['Tipo de Apólice'].unique())
 tipo_emissao_valor = str(tipo_emissao_apolice[0]).title() if tipo_emissao_apolice else "—"
 
-col_apl_1, col_apl_2, col_apl_3, col_apl_4, col_apl_5 = st.columns(5)
+# Média de dias para aviso — apólice (sem outliers acima do P95)
+_sin_ap = df_sinistros[df_sinistros['N° Apólice'] == apolices_selecionadas_filtro_apolice].copy()
+_sin_ap['dt_aviso_dt']     = pd.to_datetime(_sin_ap['dt_aviso'],     dayfirst=True, errors='coerce')
+_sin_ap['dt_ocorrencia_dt']= pd.to_datetime(_sin_ap['dt_ocorrencia'],dayfirst=True, errors='coerce')
+_sin_ap['dias_aviso']      = (_sin_ap['dt_aviso_dt'] - _sin_ap['dt_ocorrencia_dt']).dt.days
+_dias_ap = _sin_ap[_sin_ap['dias_aviso'] >= 0]['dias_aviso']
+_p95_ap  = _dias_ap.quantile(0.95) if not _dias_ap.empty else 0
+_media_dias_ap = _dias_ap[_dias_ap <= _p95_ap].mean()
+media_dias_ap_str = f"{_media_dias_ap:.0f} dias" if not pd.isna(_media_dias_ap) else "—"
+
+col_apl_1, col_apl_2, col_apl_3, col_apl_4, col_apl_5, col_apl_6 = st.columns(6)
 
 with col_apl_1:
     st.metric(label="Total Prêmio Pago",
@@ -818,6 +873,8 @@ with col_apl_4:
     st.metric(label='Qtd Sinistro', value=qtd_sinistros_apólice)
 with col_apl_5:
     st.metric(label='Tipo de Emissão', value=tipo_emissao_valor)
+with col_apl_6:
+    st.metric(label='Média Dias p/ Aviso', value=media_dias_ap_str)
 
 
 # st.subheader('Segurado: ')
@@ -850,13 +907,11 @@ st.markdown('</div>', unsafe_allow_html=True)
 st.markdown('<p class="section-label">Dados da Apólice</p>', unsafe_allow_html=True)
 st.dataframe(dados_filtrados_filtro_apolice, hide_index=True)
 
-# Adiciona Franquia por Cobertura (antes da formatação — dados ainda numéricos)
+# Adiciona Franquia por apólice + cobertura usando fuzzy match de nomes
+# (nomes diferem entre sistemas — usa similaridade de texto com threshold 0.75)
 if not df_cobertura.empty and not df_sinistro_apolice.empty:
-    df_franquia_ap = df_cobertura[
-        df_cobertura['N° Apólice'] == apolices_selecionadas_filtro_apolice
-    ][['Cobertura Apólice', 'Franquia Apólice']].rename(columns={'Cobertura Apólice': 'Cobertura'})
-    df_sinistro_apolice = pd.merge(df_sinistro_apolice, df_franquia_ap, on='Cobertura', how='left')
-    df_sinistro_apolice['Franquia Apólice'] = df_sinistro_apolice['Franquia Apólice'].fillna(0)
+    _cob_ap = df_cobertura[df_cobertura['N° Apólice'] == apolices_selecionadas_filtro_apolice]
+    df_sinistro_apolice = mapear_franquia_por_cobertura(df_sinistro_apolice, _cob_ap)
 else:
     df_sinistro_apolice['Franquia Apólice'] = 0.0
 
@@ -988,7 +1043,18 @@ sinistralidade_segurado = (total_sinistro_segurado / total_pr_segurado) if total
 qtd_apolice_segurado = df_segurado_calculo['N° Apólice'].nunique()
 qtd_sinistros_segurado = df_sinistro_segurado['nr_sinistro'].nunique()
 
-seg_apl_1, seg_apl_2, seg_apl_3, seg_apl_4, seg_apl_5 = st.columns(5)
+# Média de dias para aviso — segurado (sem outliers acima do P95)
+_sin_seg = df_sinistros[df_sinistros['N° Apólice'].isin(df_segurado_calculo['N° Apólice'].unique())].copy()
+_sin_seg['dt_aviso_dt']      = pd.to_datetime(_sin_seg['dt_aviso'],     dayfirst=True, errors='coerce')
+_sin_seg['dt_ocorrencia_dt'] = pd.to_datetime(_sin_seg['dt_ocorrencia'],dayfirst=True, errors='coerce')
+_sin_seg['dias_aviso']       = (_sin_seg['dt_aviso_dt'] - _sin_seg['dt_ocorrencia_dt']).dt.days
+_dias_seg = _sin_seg[_sin_seg['dias_aviso'] >= 0]['dias_aviso']
+# Descarta apenas registros que ultrapassam o período total da base (erros de data)
+_periodo_max_seg = int((pd.to_datetime(df_sinistros['dt_aviso'], dayfirst=True, errors='coerce').dropna().max() - pd.to_datetime(df_sinistros['dt_ocorrencia'], dayfirst=True, errors='coerce').dropna().min()).days) if not df_sinistros.empty else 9999
+_media_dias_seg = _dias_seg[_dias_seg <= _periodo_max_seg].mean()
+media_dias_seg_str = f"{_media_dias_seg:.0f} dias" if not pd.isna(_media_dias_seg) else "—"
+
+seg_apl_1, seg_apl_2, seg_apl_3, seg_apl_4, seg_apl_5, seg_apl_6 = st.columns(6)
 with seg_apl_1:
     st.metric(label="Total Prêmio Pago", value=f"R$ {formatar_valor_br(total_pr_segurado)}")
 with seg_apl_2:
@@ -999,6 +1065,8 @@ with seg_apl_4:
     st.metric(label='Qtd. Apolices', value=qtd_apolice_segurado)
 with seg_apl_5:
     st.metric(label='Qtd Sinistros', value=qtd_sinistros_segurado)
+with seg_apl_6:
+    st.metric(label='Média Dias p/ Aviso', value=media_dias_seg_str)
 
 # --- NOVO: Prêmio x Sinistro / Desempenho Consolidado por Ano ---
 col_graf_seg_1, col_graf_seg_2 = st.columns(2)
@@ -1556,15 +1624,11 @@ if len(ramos_ativos) >= 2:
 df_segurado_calculo['Soma Prêmio Pago por Apolice'] = (df_segurado_calculo['Soma Prêmio Pago por Apolice'].map(formatar_valor_br))
 df_segurado_calculo['Soma Sinistro Por Apolice'] = (df_segurado_calculo['Soma Sinistro Por Apolice'].map(formatar_valor_br))
 
-# Adiciona Franquia por Cobertura no df_sinistro_segurado (antes da formatação — dados numéricos)
+# Adiciona Franquia por apólice + cobertura usando fuzzy match de nomes
+# (nomes diferem entre sistemas — usa similaridade de texto com threshold 0.75)
 if not df_cobertura.empty and not df_sinistro_segurado.empty:
-    df_franquia_cob_seg = df_cobertura[
-        df_cobertura['N° Apólice'].isin(df_sinistro_segurado['N° Apólice'].unique())
-    ][['Cobertura Apólice', 'Franquia Apólice']].rename(columns={'Cobertura Apólice': 'Cobertura'})
-    # Deduplica por Cobertura mantendo franquia máxima — evita multiplicar linhas no merge
-    df_franquia_cob_seg = df_franquia_cob_seg.groupby('Cobertura', as_index=False)['Franquia Apólice'].max()
-    df_sinistro_segurado = pd.merge(df_sinistro_segurado, df_franquia_cob_seg, on='Cobertura', how='left')
-    df_sinistro_segurado['Franquia Apólice'] = df_sinistro_segurado['Franquia Apólice'].fillna(0)
+    _cob_seg = df_cobertura[df_cobertura['N° Apólice'].isin(df_sinistro_segurado['N° Apólice'].unique())]
+    df_sinistro_segurado = mapear_franquia_por_cobertura(df_sinistro_segurado, _cob_seg)
 else:
     df_sinistro_segurado['Franquia Apólice'] = 0.0
 
