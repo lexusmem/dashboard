@@ -804,53 +804,35 @@ st.markdown('<div id="topo-pagina" style="margin-top:-60px;padding-top:60px;"></
 # ── Botões de exportação ──────────────────────────────────────────────────────
 _col_btn1, _col_btn2, _col_spacer = st.columns([1, 1, 6])
 with _col_btn1:
-    _gerar_pdf = st.button("📄 Gerar PDF", use_container_width=True)
+    if st.button("📄 Gerar PDF", use_container_width=True):
+        st.session_state['export_tipo'] = 'pdf'
+        st.session_state['export_modo'] = 'selecionar'
+        st.rerun()
 with _col_btn2:
-    _copiar_dados = st.button("📋 Copiar Dados", use_container_width=True)
+    if st.button("📋 Copiar Dados", use_container_width=True):
+        st.session_state['export_tipo'] = 'copiar'
+        st.session_state['export_modo'] = 'selecionar'
+        st.rerun()
 
-# Modal de seleção — Gerar PDF
-if _gerar_pdf:
-    @st.dialog("📄 Gerar PDF — Selecione o conteúdo")
-    def dialog_pdf():
-        st.markdown("Escolha qual parte deseja exportar para PDF:")
-        _opcao_pdf = st.radio(
-            "Conteúdo:",
-            options=["Tela completa (Apólice + Segurado)", "Apenas Dados da Apólice", "Apenas Dados do Segurado"],
-            index=0
-        )
-        col_ok, col_cancel = st.columns(2)
-        with col_ok:
-            if st.button("✅ Gerar", use_container_width=True):
-                st.session_state['pdf_opcao'] = _opcao_pdf
-                st.session_state['pdf_acao']  = True
+# Painel de seleção inline
+if st.session_state.get('export_modo') == 'selecionar':
+    _tipo = st.session_state.get('export_tipo', 'pdf')
+    _titulo = "📄 Gerar PDF" if _tipo == 'pdf' else "📋 Copiar Dados"
+    with st.container(border=True):
+        st.markdown(f"**{_titulo} — Selecione o conteúdo:**")
+        _opc = st.radio("", ["Tela completa (Apólice + Segurado)", "Apenas Dados da Apólice", "Apenas Dados do Segurado"],
+            horizontal=True, label_visibility="collapsed", key="export_opc_radio")
+        _c1, _c2, _ = st.columns([1, 1, 6])
+        with _c1:
+            if st.button("✅ Confirmar", use_container_width=True, key="export_confirmar"):
+                st.session_state['export_modo']  = 'executar'
+                st.session_state['export_opcao'] = _opc
                 st.rerun()
-        with col_cancel:
-            if st.button("❌ Cancelar", use_container_width=True):
+        with _c2:
+            if st.button("❌ Cancelar", use_container_width=True, key="export_cancelar"):
+                st.session_state['export_modo'] = None
                 st.rerun()
-    dialog_pdf()
 
-# Modal de seleção — Copiar Dados
-if _copiar_dados:
-    @st.dialog("📋 Copiar Dados — Selecione o conteúdo")
-    def dialog_copiar():
-        st.markdown("Escolha qual parte deseja copiar:")
-        _opcao_cop = st.radio(
-            "Conteúdo:",
-            options=["Tela completa (Apólice + Segurado)", "Apenas Dados da Apólice", "Apenas Dados do Segurado"],
-            index=0
-        )
-        col_ok, col_cancel = st.columns(2)
-        with col_ok:
-            if st.button("✅ Copiar", use_container_width=True):
-                st.session_state['copiar_opcao'] = _opcao_cop
-                st.session_state['copiar_acao']  = True
-                st.rerun()
-        with col_cancel:
-            if st.button("❌ Cancelar", use_container_width=True):
-                st.rerun()
-    dialog_copiar()
-
-st.markdown('<div id="secao-apolice"></div>', unsafe_allow_html=True)
 st.subheader(f'Dados Apólice - {apolices_selecionadas_filtro_apolice}')
 dados_filtrados_filtro_apolice = dados_exibicao.copy()
 if apolices_selecionadas_filtro_apolice:
@@ -1045,7 +1027,6 @@ with col_cob_sin_2:
 #
 #
 
-st.markdown('<div id="secao-segurado"></div>', unsafe_allow_html=True)
 st.subheader(f'Dados do Segurado - {str(segurado[0]).title()}')
 
 # 1. Preparação dos Dados do Segurado (Numéricos para cálculos)
@@ -1756,77 +1737,89 @@ st.dataframe(df_tp_emissao_seg, hide_index=True, use_container_width=True)
 #
 #
 #
+# ── Execução exportação (PDF via Python / Copiar via texto estruturado) ────
+if st.session_state.get('export_modo') == 'executar':
+    _tipo  = st.session_state.get('export_tipo',  'pdf')
+    _opcao = st.session_state.get('export_opcao', 'Tela completa (Apólice + Segurado)')
+    _inc_ap  = _opcao in ["Tela completa (Apólice + Segurado)", "Apenas Dados da Apólice"]
+    _inc_seg = _opcao in ["Tela completa (Apólice + Segurado)", "Apenas Dados do Segurado"]
+    st.session_state['export_modo'] = None
+
+    # ── Monta texto estruturado com os dados ─────────────────────────────────
+    def _fmt(v): return formatar_valor_br(v) if isinstance(v, (int, float)) else str(v)
+    linhas = [f"PAINEL ALLSEG — {_opcao.upper()}", f"Apólice: {apolices_selecionadas_filtro_apolice}", "="*60]
+
+    if _inc_ap:
+        linhas += [
+            "", "── DADOS DA APÓLICE ──",
+            f"Total Prêmio Pago:  R$ {formatar_valor_br(total_premio_filtro_apolice)}",
+            f"Total Sinistro:     R$ {formatar_valor_br(total_sinistro_filtro_apolice)}",
+            f"% Sinistralidade:   {percentual_sinistro_total_filtro_apolice:.2%}",
+            f"Qtd Sinistros:      {qtd_sinistros_apólice}",
+            f"Tipo de Emissão:    {tipo_emissao_valor}",
+            f"Média Dias p/Aviso: {media_dias_ap_str}",
+            f"Segurado:           {str(segurado[0]).title()}",
+            f"Corretor:           {str(corretor[0]).title()}",
+            f"Representante:      {str(representante[0]).title()}",
+            "", "── SINISTROS DA APÓLICE ──",
+        ]
+        if not df_sinistro_apolice.empty:
+            linhas.append(df_sinistro_apolice.to_string(index=False))
+        linhas += ["", "── SINISTROS POR COBERTURA ──"]
+        if not df_sinistro_apolice_cobertura.empty:
+            linhas.append(df_sinistro_apolice_cobertura.to_string(index=False))
+
+    if _inc_seg:
+        linhas += [
+            "", "="*60, "── DADOS DO SEGURADO ──",
+            f"Total Prêmio Pago:  R$ {formatar_valor_br(total_pr_segurado)}",
+            f"Total Sinistro:     R$ {formatar_valor_br(total_sinistro_segurado)}",
+            f"% Sinistralidade:   {sinistralidade_segurado:.2%}",
+            f"Qtd Apólices:       {qtd_apolice_segurado}",
+            f"Qtd Sinistros:      {qtd_sinistros_segurado}",
+            f"Média Dias p/Aviso: {media_dias_seg_str}",
+            "", "── APÓLICES DO SEGURADO ──",
+        ]
+        if not df_segurado_exibicao.empty:
+            linhas.append(df_segurado_exibicao.to_string(index=False))
+        linhas += ["", "── SINISTROS DO SEGURADO ──"]
+        if not df_sinistro_segurado.empty:
+            linhas.append(df_sinistro_segurado.to_string(index=False))
+
+    _texto_final = "\n".join(linhas)
+
+    if _tipo == 'pdf':
+        # Gera PDF via Python com fpdf2
+        try:
+            from fpdf import FPDF
+            pdf = FPDF()
+            pdf.set_auto_page_break(auto=True, margin=15)
+            pdf.add_page()
+            pdf.set_font("Courier", size=8)
+            for linha in linhas:
+                try:
+                    pdf.multi_cell(0, 4, txt=linha.encode('latin-1', 'replace').decode('latin-1'))
+                except Exception:
+                    pdf.multi_cell(0, 4, txt=linha.encode('ascii', 'replace').decode('ascii'))
+            import io as _io
+            pdf_bytes = bytes(pdf.output())
+            st.download_button(
+                label="⬇️ Baixar PDF",
+                data=pdf_bytes,
+                file_name=f"painel_allseg_{_opcao.replace(' ','_').replace('(','').replace(')','')}.pdf",
+                mime="application/pdf",
+                key="download_pdf_btn"
+            )
+            st.success("✅ PDF pronto! Clique em **Baixar PDF** acima.")
+        except Exception as e:
+            st.error(f"Erro ao gerar PDF: {e}")
+
+    else:
+        # Copiar — exibe numa área de código para o usuário copiar com um clique
+        st.success("✅ Dados prontos! Selecione tudo e copie (Ctrl+A, Ctrl+C):")
+        st.code(_texto_final, language=None)
+
 # FIM DADOS DE SINISTRO
-
-# ── Execução das ações de exportação ─────────────────────────────────────────
-if st.session_state.get('pdf_acao', False):
-    st.session_state['pdf_acao'] = False
-    opcao = st.session_state.get('pdf_opcao', 'Tela completa (Apólice + Segurado)')
-    if opcao == 'Tela completa (Apólice + Segurado)':
-        _secs = 'apolice,segurado'
-    elif opcao == 'Apenas Dados da Apólice':
-        _secs = 'apolice'
-    else:
-        _secs = 'segurado'
-    st.components.v1.html(f"""
-    <script>
-    (async () => {{
-        const {{ jsPDF }} = window.jspdf;
-        const html2canvas = window.html2canvas;
-        const secs = '{_secs}'.split(',');
-        const doc = new jsPDF('p','mm','a4');
-        let first = true;
-        for (const sec of secs) {{
-            const el = window.parent.document.getElementById('secao-' + sec);
-            if (!el) continue;
-            let end = el.nextElementSibling;
-            // captura do marcador até o próximo marcador ou fim
-            const range = document.createRange ? null : null;
-            const canvas = await html2canvas(el.parentElement, {{
-                scale: 1.5,
-                useCORS: true,
-                ignoreElements: (e) => e.tagName === 'SECTION' && e.getAttribute('data-testid') === 'stSidebar'
-            }});
-            const img = canvas.toDataURL('image/jpeg', 0.85);
-            if (!first) doc.addPage();
-            const pw = doc.internal.pageSize.getWidth() - 20;
-            const ph = pw * canvas.height / canvas.width;
-            doc.addImage(img, 'JPEG', 10, 10, pw, ph);
-            first = false;
-        }}
-        doc.save('painel_allseg_{opcao.replace(" ","_")}.pdf');
-    }})();
-    </script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    """, height=0)
-    st.toast(f"✅ PDF '{opcao}' sendo gerado — verifique seus downloads.", icon="📄")
-
-if st.session_state.get('copiar_acao', False):
-    st.session_state['copiar_acao'] = False
-    opcao_c = st.session_state.get('copiar_opcao', 'Tela completa (Apólice + Segurado)')
-    if opcao_c == 'Tela completa (Apólice + Segurado)':
-        _secs_c = 'apolice,segurado'
-    elif opcao_c == 'Apenas Dados da Apólice':
-        _secs_c = 'apolice'
-    else:
-        _secs_c = 'segurado'
-    st.components.v1.html(f"""
-    <script>
-    (async () => {{
-        const secs = '{_secs_c}'.split(',');
-        let textos = [];
-        for (const sec of secs) {{
-            const el = window.parent.document.getElementById('secao-' + sec);
-            if (!el) continue;
-            textos.push(el.parentElement.innerText);
-        }}
-        await navigator.clipboard.writeText(textos.join('\n\n---\n\n'));
-        alert('✅ Dados copiados para a área de transferência!');
-    }})();
-    </script>
-    """, height=0)
-    st.toast(f"✅ Dados '{opcao_c}' copiados para a área de transferência.", icon="📋")
 #
 #
 #
