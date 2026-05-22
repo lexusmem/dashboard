@@ -801,38 +801,6 @@ apolices_selecionadas_filtro_apolice = st.sidebar.selectbox(
 
 st.markdown('<div id="topo-pagina" style="margin-top:-60px;padding-top:60px;"></div>', unsafe_allow_html=True)
 
-# ── Botões de exportação ──────────────────────────────────────────────────────
-_col_btn1, _col_btn2, _col_spacer = st.columns([1, 1, 6])
-with _col_btn1:
-    if st.button("📄 Gerar PDF", use_container_width=True):
-        st.session_state['export_tipo'] = 'pdf'
-        st.session_state['export_modo'] = 'selecionar'
-        st.rerun()
-with _col_btn2:
-    if st.button("📋 Copiar Dados", use_container_width=True):
-        st.session_state['export_tipo'] = 'copiar'
-        st.session_state['export_modo'] = 'selecionar'
-        st.rerun()
-
-# Painel de seleção inline
-if st.session_state.get('export_modo') == 'selecionar':
-    _tipo = st.session_state.get('export_tipo', 'pdf')
-    _titulo = "📄 Gerar PDF" if _tipo == 'pdf' else "📋 Copiar Dados"
-    with st.container(border=True):
-        st.markdown(f"**{_titulo} — Selecione o conteúdo:**")
-        _opc = st.radio("", ["Tela completa (Apólice + Segurado)", "Apenas Dados da Apólice", "Apenas Dados do Segurado"],
-            horizontal=True, label_visibility="collapsed", key="export_opc_radio")
-        _c1, _c2, _ = st.columns([1, 1, 6])
-        with _c1:
-            if st.button("✅ Confirmar", use_container_width=True, key="export_confirmar"):
-                st.session_state['export_modo']  = 'executar'
-                st.session_state['export_opcao'] = _opc
-                st.rerun()
-        with _c2:
-            if st.button("❌ Cancelar", use_container_width=True, key="export_cancelar"):
-                st.session_state['export_modo'] = None
-                st.rerun()
-
 st.subheader(f'Dados Apólice - {apolices_selecionadas_filtro_apolice}')
 dados_filtrados_filtro_apolice = dados_exibicao.copy()
 if apolices_selecionadas_filtro_apolice:
@@ -1737,88 +1705,6 @@ st.dataframe(df_tp_emissao_seg, hide_index=True, use_container_width=True)
 #
 #
 #
-# ── Execução exportação (PDF via Python / Copiar via texto estruturado) ────
-if st.session_state.get('export_modo') == 'executar':
-    _tipo  = st.session_state.get('export_tipo',  'pdf')
-    _opcao = st.session_state.get('export_opcao', 'Tela completa (Apólice + Segurado)')
-    _inc_ap  = _opcao in ["Tela completa (Apólice + Segurado)", "Apenas Dados da Apólice"]
-    _inc_seg = _opcao in ["Tela completa (Apólice + Segurado)", "Apenas Dados do Segurado"]
-    st.session_state['export_modo'] = None
-
-    # ── Monta texto estruturado com os dados ─────────────────────────────────
-    def _fmt(v): return formatar_valor_br(v) if isinstance(v, (int, float)) else str(v)
-    linhas = [f"PAINEL ALLSEG — {_opcao.upper()}", f"Apólice: {apolices_selecionadas_filtro_apolice}", "="*60]
-
-    if _inc_ap:
-        linhas += [
-            "", "── DADOS DA APÓLICE ──",
-            f"Total Prêmio Pago:  R$ {formatar_valor_br(total_premio_filtro_apolice)}",
-            f"Total Sinistro:     R$ {formatar_valor_br(total_sinistro_filtro_apolice)}",
-            f"% Sinistralidade:   {percentual_sinistro_total_filtro_apolice:.2%}",
-            f"Qtd Sinistros:      {qtd_sinistros_apólice}",
-            f"Tipo de Emissão:    {tipo_emissao_valor}",
-            f"Média Dias p/Aviso: {media_dias_ap_str}",
-            f"Segurado:           {str(segurado[0]).title()}",
-            f"Corretor:           {str(corretor[0]).title()}",
-            f"Representante:      {str(representante[0]).title()}",
-            "", "── SINISTROS DA APÓLICE ──",
-        ]
-        if not df_sinistro_apolice.empty:
-            linhas.append(df_sinistro_apolice.to_string(index=False))
-        linhas += ["", "── SINISTROS POR COBERTURA ──"]
-        if not df_sinistro_apolice_cobertura.empty:
-            linhas.append(df_sinistro_apolice_cobertura.to_string(index=False))
-
-    if _inc_seg:
-        linhas += [
-            "", "="*60, "── DADOS DO SEGURADO ──",
-            f"Total Prêmio Pago:  R$ {formatar_valor_br(total_pr_segurado)}",
-            f"Total Sinistro:     R$ {formatar_valor_br(total_sinistro_segurado)}",
-            f"% Sinistralidade:   {sinistralidade_segurado:.2%}",
-            f"Qtd Apólices:       {qtd_apolice_segurado}",
-            f"Qtd Sinistros:      {qtd_sinistros_segurado}",
-            f"Média Dias p/Aviso: {media_dias_seg_str}",
-            "", "── APÓLICES DO SEGURADO ──",
-        ]
-        if not df_segurado_exibicao.empty:
-            linhas.append(df_segurado_exibicao.to_string(index=False))
-        linhas += ["", "── SINISTROS DO SEGURADO ──"]
-        if not df_sinistro_segurado.empty:
-            linhas.append(df_sinistro_segurado.to_string(index=False))
-
-    _texto_final = "\n".join(linhas)
-
-    if _tipo == 'pdf':
-        # Gera PDF via Python com fpdf2
-        try:
-            from fpdf import FPDF
-            pdf = FPDF()
-            pdf.set_auto_page_break(auto=True, margin=15)
-            pdf.add_page()
-            pdf.set_font("Courier", size=8)
-            for linha in linhas:
-                try:
-                    pdf.multi_cell(0, 4, txt=linha.encode('latin-1', 'replace').decode('latin-1'))
-                except Exception:
-                    pdf.multi_cell(0, 4, txt=linha.encode('ascii', 'replace').decode('ascii'))
-            import io as _io
-            pdf_bytes = bytes(pdf.output())
-            st.download_button(
-                label="⬇️ Baixar PDF",
-                data=pdf_bytes,
-                file_name=f"painel_allseg_{_opcao.replace(' ','_').replace('(','').replace(')','')}.pdf",
-                mime="application/pdf",
-                key="download_pdf_btn"
-            )
-            st.success("✅ PDF pronto! Clique em **Baixar PDF** acima.")
-        except Exception as e:
-            st.error(f"Erro ao gerar PDF: {e}")
-
-    else:
-        # Copiar — exibe numa área de código para o usuário copiar com um clique
-        st.success("✅ Dados prontos! Selecione tudo e copie (Ctrl+A, Ctrl+C):")
-        st.code(_texto_final, language=None)
-
 # FIM DADOS DE SINISTRO
 #
 #
