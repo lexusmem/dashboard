@@ -1717,6 +1717,7 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
 else:
     st.info("Nenhum dado disponível para análise de frequência e severidade.")
 
+st.markdown("---")
 st.markdown("""
 <div style="background:#F8FAFC;border-radius:10px;padding:18px;border:1px solid #E2E8F0;font-size:13px;color:#334155;">
 <b>📖 Como entender esta análise</b><br><br>
@@ -1988,6 +1989,7 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
 else:
     st.info("Nenhum dado disponível para análise de desenvolvimento por safra.")
 
+st.markdown("---")
 st.markdown("""
 <div style="background:#F8FAFC;border-radius:10px;padding:18px;border:1px solid #E2E8F0;font-size:13px;color:#334155;">
 <b>📖 Como entender esta análise</b><br><br>
@@ -2202,7 +2204,7 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
                 cor_score = "#16A34A"
                 veredicto = "🟢 PRÊMIO ADEQUADO"
                 desc = "Sinistralidade dentro de parâmetros aceitáveis."
-            
+
             st.markdown(f"""
             <div style="background:#F8FAFC;border-radius:10px;padding:18px;border:1px solid #E2E8F0;">
                 <div style="text-align:center;font-size:52px;font-weight:bold;color:{cor_score};">{score}</div>
@@ -2224,8 +2226,7 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
 else:
     st.info("Nenhum dado disponível para análise de tendência.")
 
-st.write("")
-
+st.markdown("---")
 st.markdown("""
 <div style="background:#F8FAFC;border-radius:10px;padding:18px;border:1px solid #E2E8F0;font-size:13px;color:#334155;">
 <b>📖 Como entender esta análise</b><br><br>
