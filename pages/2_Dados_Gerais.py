@@ -349,6 +349,35 @@ def mapear_franquia_por_cobertura(df_sinistro, df_cobertura_filtrado, threshold=
     return df_sinistro
 
 
+
+@st.cache_data
+def _filtrar_sinistros_por_apolices(df_sin_tuple, apolices_tuple):
+    """Filtra sinistros pelas apólices — cacheado para não refiltrar a cada rerun."""
+    import pandas as pd
+    df = pd.DataFrame(list(df_sin_tuple[1]), columns=df_sin_tuple[0])
+    apolices = set(apolices_tuple)
+    return df[df['N° Apólice'].isin(apolices)].copy()
+
+@st.cache_data
+def _calcular_periodo_max_aviso(dt_aviso_series_tuple, dt_ocorrencia_series_tuple):
+    """Calcula o período máximo da base — executa uma única vez."""
+    import pandas as pd
+    dt_av  = pd.to_datetime(pd.Series(list(dt_aviso_series_tuple)),     dayfirst=True, errors='coerce')
+    dt_oc  = pd.to_datetime(pd.Series(list(dt_ocorrencia_series_tuple)),dayfirst=True, errors='coerce')
+    return int((dt_av.dropna().max() - dt_oc.dropna().min()).days)
+
+@st.cache_data
+def _calcular_media_dias_aviso(apolices_tuple, dt_aviso_tuple, dt_ocorrencia_tuple, periodo_max):
+    """Calcula média de dias para aviso — cacheado por conjunto de apólices."""
+    import pandas as pd
+    import numpy as np
+    dt_av = pd.to_datetime(pd.Series(list(dt_aviso_tuple)),     dayfirst=True, errors='coerce')
+    dt_oc = pd.to_datetime(pd.Series(list(dt_ocorrencia_tuple)),dayfirst=True, errors='coerce')
+    dias  = (dt_av - dt_oc).dt.days
+    dias_validos = dias[(dias >= 0) & (dias <= periodo_max)]
+    media = dias_validos.mean()
+    return f"{media:.0f} dias" if not pd.isna(media) else "—"
+
 # Função de Formatação de Valores para o padrão Brasileiro
 def formatar_valor_br(valor):
     if pd.isna(valor):
@@ -565,7 +594,13 @@ qtd_apolice_geral = df_geral_periodo['N° Apólice'].nunique()
 
 # 2. Qtd. Sinistros: Filtrar a base de sinistros para as apólices do período do slider
 lista_apos_periodo = df_geral_periodo['N° Apólice'].unique()
-df_sinistro_periodo_atualizado = df_sinistro_geral_filtrado[df_sinistro_geral_filtrado['N° Apólice'].isin(lista_apos_periodo)]
+df_sinistro_periodo_atualizado = df_sinistro_geral_filtrado[df_sinistro_geral_filtrado['N° Apólice'].isin(lista_apos_periodo)].copy()
+# Pré-processa datas uma única vez — evita pd.to_datetime repetido nas seções de análise
+if not df_sinistro_periodo_atualizado.empty:
+    df_sinistro_periodo_atualizado['dt_aviso_dt']      = pd.to_datetime(df_sinistro_periodo_atualizado['dt_aviso'],      dayfirst=True, errors='coerce')
+    df_sinistro_periodo_atualizado['dt_ocorrencia_dt'] = pd.to_datetime(df_sinistro_periodo_atualizado['dt_ocorrencia'], dayfirst=True, errors='coerce')
+    df_sinistro_periodo_atualizado['Ano_Aviso']        = df_sinistro_periodo_atualizado['dt_aviso_dt'].dt.year
+    df_sinistro_periodo_atualizado['AnoMes']           = df_sinistro_periodo_atualizado['dt_aviso_dt'].dt.to_period('M').astype(str)
 qtd_sinistros_geral = df_sinistro_periodo_atualizado['nr_sinistro'].nunique()
 # --------------------------------
 
@@ -573,14 +608,19 @@ qtd_sinistros_geral = df_sinistro_periodo_atualizado['nr_sinistro'].nunique()
 st.markdown("<br>", unsafe_allow_html=True) # Espaço antes dos KPIs
 
 # Média de dias para aviso — dados gerais (sem outliers: descarta dias > período total da base)
-_sin_geral = df_sinistro_periodo_atualizado.copy()
-_sin_geral['dt_aviso_dt']      = pd.to_datetime(_sin_geral['dt_aviso'],     dayfirst=True, errors='coerce')
-_sin_geral['dt_ocorrencia_dt'] = pd.to_datetime(_sin_geral['dt_ocorrencia'],dayfirst=True, errors='coerce')
-_sin_geral['dias_aviso']       = (_sin_geral['dt_aviso_dt'] - _sin_geral['dt_ocorrencia_dt']).dt.days
-_dias_geral = _sin_geral[_sin_geral['dias_aviso'] >= 0]['dias_aviso']
-_periodo_max_geral = int((pd.to_datetime(df_sinistros['dt_aviso'], dayfirst=True, errors='coerce').dropna().max() - pd.to_datetime(df_sinistros['dt_ocorrencia'], dayfirst=True, errors='coerce').dropna().min()).days) if not df_sinistros.empty else 9999
-_media_dias_geral = _dias_geral[_dias_geral <= _periodo_max_geral].mean()
-media_dias_geral_str = f"{_media_dias_geral:.0f} dias" if not pd.isna(_media_dias_geral) else "—"
+# Período max cacheado — calcula uma única vez para toda a base
+_periodo_max_geral = _calcular_periodo_max_aviso(
+    tuple(df_sinistros['dt_aviso'].tolist()),
+    tuple(df_sinistros['dt_ocorrencia'].tolist())
+) if not df_sinistros.empty else 9999
+
+# Média de dias cacheada por conjunto de apólices do período filtrado
+media_dias_geral_str = _calcular_media_dias_aviso(
+    tuple(df_sinistro_periodo_atualizado['N° Apólice'].tolist()),
+    tuple(df_sinistro_periodo_atualizado['dt_aviso'].tolist()),
+    tuple(df_sinistro_periodo_atualizado['dt_ocorrencia'].tolist()),
+    _periodo_max_geral
+) if not df_sinistro_periodo_atualizado.empty else "—"
 
 col1, col2, col3, col4, col5, col6 = st.columns(6)
 
@@ -705,7 +745,10 @@ lista_apos_ano = df_para_soma['N° Apólice'].unique()
 df_sin_filtrado_ano = df_sinistros[df_sinistros['N° Apólice'].isin(lista_apos_ano)].copy()
 
 # Extraímos o ano da data de ocorrência para contagem correta
-df_sin_filtrado_ano['Ano_Ocorrencia'] = pd.to_datetime(df_sin_filtrado_ano['dt_ocorrencia'], dayfirst=True).dt.year
+if 'dt_ocorrencia_dt' in df_sin_filtrado_ano.columns:
+    df_sin_filtrado_ano['Ano_Ocorrencia'] = df_sin_filtrado_ano['dt_ocorrencia_dt'].dt.year
+else:
+    df_sin_filtrado_ano['Ano_Ocorrencia'] = pd.to_datetime(df_sin_filtrado_ano['dt_ocorrencia'], dayfirst=True, errors='coerce').dt.year
 
 qtd_sin_por_ano = df_sin_filtrado_ano.groupby('Ano_Ocorrencia')['nr_sinistro'].nunique().reset_index()
 qtd_sin_por_ano.rename(columns={'Ano_Ocorrencia': 'Ano Vigência', 'nr_sinistro': 'Qtd_Sinistros'}, inplace=True)
@@ -1620,7 +1663,8 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
     ).reset_index().rename(columns={'Ano Vigência':'Ano'}) if 'Ano Vigência' in df_fs.columns else pd.DataFrame()
 
     if df_fs_ano.empty:
-        df_fs['dt_aviso_dt'] = pd.to_datetime(df_fs['dt_aviso'], dayfirst=True, errors='coerce')
+        if 'dt_aviso_dt' not in df_fs.columns:
+            df_fs['dt_aviso_dt'] = pd.to_datetime(df_fs['dt_aviso'], dayfirst=True, errors='coerce')
         df_fs_merged = pd.merge(df_fs, df_apo_fs[['N° Apólice','Ano Vigência']].drop_duplicates(), on='N° Apólice', how='left')
         df_fs_ano = df_fs_merged.groupby('Ano Vigência').agg(
             Qtd_Sinistros=('nr_sinistro','nunique'),
@@ -1761,8 +1805,11 @@ st.caption(
 
 if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
     df_saf = df_sinistro_periodo_atualizado.copy()
-    df_saf['dt_aviso_dt'] = pd.to_datetime(df_saf['dt_aviso'], dayfirst=True, errors='coerce')
-    df_saf['Ano_Aviso']   = df_saf['dt_aviso_dt'].dt.year
+    # Usa colunas de data pré-calculadas — evita pd.to_datetime repetido
+    if 'dt_aviso_dt' not in df_saf.columns:
+        df_saf['dt_aviso_dt'] = pd.to_datetime(df_saf['dt_aviso'], dayfirst=True, errors='coerce')
+    if 'Ano_Aviso' not in df_saf.columns:
+        df_saf['Ano_Aviso'] = df_saf['dt_aviso_dt'].dt.year
 
     # Junta Ano Vigência da apólice — usa df_para_soma (filtrado + slider, mesma base do Desempenho Consolidado)
     df_apo_saf = df_para_soma[['N° Apólice','Ano Vigência','Soma Prêmio Pago por Apolice']].drop_duplicates('N° Apólice').copy()
@@ -2034,8 +2081,13 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
 
     # ── Prepara base de sinistros com datas (para gráficos mensais) ─────────
     df_sin_tend = df_sinistro_periodo_atualizado.copy()
-    df_sin_tend['dt_aviso'] = pd.to_datetime(df_sin_tend['dt_aviso'], dayfirst=True, errors='coerce')
-    df_sin_tend['AnoMes'] = df_sin_tend['dt_aviso'].dt.to_period('M').astype(str)
+    # Usa colunas de data pré-calculadas — evita pd.to_datetime repetido
+    if 'dt_aviso_dt' not in df_sin_tend.columns:
+        df_sin_tend['dt_aviso_dt'] = pd.to_datetime(df_sin_tend['dt_aviso'], dayfirst=True, errors='coerce')
+    if 'AnoMes' not in df_sin_tend.columns:
+        df_sin_tend['AnoMes'] = df_sin_tend['dt_aviso_dt'].dt.to_period('M').astype(str)
+    # Renomeia para compatibilidade com o restante do bloco
+    df_sin_tend['dt_aviso'] = df_sin_tend['dt_aviso_dt']
 
     # ── Sinistralidade anual — MESMA BASE do Desempenho Consolidado ───────────
     # Usa df_para_soma (filtrado + slider) para consistência total com os outros DFs
