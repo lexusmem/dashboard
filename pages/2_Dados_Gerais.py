@@ -573,6 +573,7 @@ with col_esq:
     # Criar o Slider de Intervalo (Range Slider)
     if ano_min_absoluto < ano_max_absoluto:
         # Título customizado com espaçamento para não colar no slider
+        st.write("")
         st.markdown('<p class="section-label">Selecione o Intervalo de Anos (Início de Vigência Apólice)</p>', unsafe_allow_html=True)
         # Flag: se botão limpar foi clicado, força visualmente o valor padrão
         if st.session_state.get('resetar_slider', False):
