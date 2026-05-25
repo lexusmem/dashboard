@@ -553,7 +553,7 @@ if _filtros_com_valor:
     _partes = []
     for k, v in _filtros_com_valor.items():
         _vals = ', '.join(str(x) for x in v)
-        _partes.append(f"**{k}:** {_vals}")
+        _partes.append(f'<b>{k}:</b> {_vals}')
     _texto = '&nbsp;&nbsp;|&nbsp;&nbsp;'.join(_partes)
     st.markdown(
         f'<div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;'
