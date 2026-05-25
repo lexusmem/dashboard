@@ -398,10 +398,7 @@ df_cobertura     = st.session_state.get('df_cobertura', pd.DataFrame())
 dados_exibicao = dados_calculados.copy()
 dados_exibicao['Soma Prêmio Pago por Apolice'] = dados_exibicao['Soma Prêmio Pago por Apolice'].astype(object)
 dados_exibicao['Soma Sinistro Por Apolice']     = dados_exibicao['Soma Sinistro Por Apolice'].astype(object)
-dados_exibicao['% Sin'] = dados_exibicao.apply(
-    lambda row: '{:.2%}'.format(row['Soma Sinistro Por Apolice'] / row['Soma Prêmio Pago por Apolice'])
-    if row['Soma Prêmio Pago por Apolice'] != 0 else '0.00%', axis=1
-)
+dados_exibicao['% Sin'] = (dados_exibicao['Soma Sinistro Por Apolice'] / dados_exibicao['Soma Prêmio Pago por Apolice'].replace(0, float('nan'))).fillna(0).map(lambda x: f"{x:.2%}")
 dados_exibicao['Soma Prêmio Pago por Apolice'] = dados_exibicao['Soma Prêmio Pago por Apolice'].map(formatar_valor_br)
 dados_exibicao['Soma Sinistro Por Apolice']     = dados_exibicao['Soma Sinistro Por Apolice'].map(formatar_valor_br)
 colunas = list(dados_exibicao.columns)
