@@ -1170,35 +1170,43 @@ col_graf_seg_3, col_graf_seg_4 = st.columns(2)
 with col_graf_seg_3:
     # --- TABELA: DESEMPENHO CONSOLIDADO POR ANO (SEGURADO) ---
     # 1. Agrupamento dos dados por Ano de Vigência
-    df_consolidado_ano_seg = df_segurado_calculo.groupby('Ano Vigência').agg({
-        'Soma Prêmio Pago por Apolice': 'sum',
-        'Soma Sinistro Por Apolice': 'sum'
-    }).reset_index()
+    df_consolidado_ano_seg = df_segurado_calculo.groupby('Ano Vigência').agg(
+        Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
+        Total_Sinistro=('Soma Sinistro Por Apolice', 'sum'),
+        Qtd_Apolices=('N° Apólice', 'nunique')
+    ).reset_index()
 
-    # 2. Cálculos de Sinistralidade
-    df_consolidado_ano_seg['% Sinistralidade'] = df_consolidado_ano_seg.apply(
-        lambda row: row['Soma Sinistro Por Apolice'] / row['Soma Prêmio Pago por Apolice'] 
-        if row['Soma Prêmio Pago por Apolice'] != 0 else 0, axis=1
-    )
+    # Qtd Sinistros — cruza com df_sinistros pelo ano de ocorrência
+    _sin_seg_anos = df_sinistros[df_sinistros['N° Apólice'].isin(df_segurado_calculo['N° Apólice'].unique())].copy()
+    if 'dt_ocorrencia_dt' not in _sin_seg_anos.columns:
+        _sin_seg_anos['dt_ocorrencia_dt'] = pd.to_datetime(_sin_seg_anos['dt_ocorrencia'], dayfirst=True, errors='coerce')
+    _sin_seg_anos['Ano Vigência'] = _sin_seg_anos['dt_ocorrencia_dt'].dt.year
+    _qtd_sin_seg = _sin_seg_anos.groupby('Ano Vigência')['nr_sinistro'].nunique().reset_index()
+    _qtd_sin_seg.rename(columns={'nr_sinistro': 'Qtd_Sinistros'}, inplace=True)
+    df_consolidado_ano_seg = pd.merge(df_consolidado_ano_seg, _qtd_sin_seg, on='Ano Vigência', how='left').fillna(0)
+    df_consolidado_ano_seg['Qtd_Sinistros'] = df_consolidado_ano_seg['Qtd_Sinistros'].astype(int)
 
-    # 3. Criação de um DF para exibição com formatação brasileira
+    # Sinistralidade — vetorizado (sem .apply)
+    df_consolidado_ano_seg['% Sinistralidade'] = (
+        df_consolidado_ano_seg['Total_Sinistro'] / df_consolidado_ano_seg['Total_Premio'].replace(0, float('nan'))
+    ).fillna(0)
+
+    # Formata para exibição
     df_consolidado_view = df_consolidado_ano_seg.copy()
-
-    # Aplicando as formatações
-    df_consolidado_view['Soma Prêmio Pago por Apolice'] = df_consolidado_view['Soma Prêmio Pago por Apolice'].map(formatar_valor_br)
-    df_consolidado_view['Soma Sinistro Por Apolice'] = df_consolidado_view['Soma Sinistro Por Apolice'].map(formatar_valor_br)
+    df_consolidado_view['Total_Premio']     = df_consolidado_view['Total_Premio'].map(formatar_valor_br)
+    df_consolidado_view['Total_Sinistro']   = df_consolidado_view['Total_Sinistro'].map(formatar_valor_br)
     df_consolidado_view['% Sinistralidade'] = df_consolidado_view['% Sinistralidade'].map(lambda x: f"{x:.2%}")
-
-    # Ajuste de nomes de colunas para a visualização
     df_consolidado_view.rename(columns={
-        'Ano Vigência': 'Ano',
-        'Soma Prêmio Pago por Apolice': 'Total Prêmio',
-        'Soma Sinistro Por Apolice': 'Total Sinistro'
+        'Ano Vigência': 'Ano Vigência',
+        'Total_Premio': 'Total_Premio',
+        'Total_Sinistro': 'Total_Sinistro'
     }, inplace=True)
-  
+
     st.markdown(f'<p class="section-label">Desempenho Consolidado por Ano - Segurado</p>', unsafe_allow_html=True)
-    # 4. Exibição da Tabela
-    st.dataframe(df_consolidado_view, hide_index=True, use_container_width=True)
+    st.dataframe(
+        df_consolidado_view[['Ano Vigência','Total_Premio','Total_Sinistro','% Sinistralidade','Qtd_Apolices','Qtd_Sinistros']],
+        hide_index=True, use_container_width=True
+    )
 
 with col_graf_seg_4:
     st.markdown('<p class="section-label">Evolução da Sinistralidade (%)  - Segurado</p>', unsafe_allow_html=True)
