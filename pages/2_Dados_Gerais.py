@@ -535,6 +535,33 @@ st.markdown(
 
 st.subheader("Dados Gerais")
 
+# ── Resumo dos filtros ativos (só exibe se houver algum filtro selecionado) ───
+_filtros_ativos = {
+    'Representante':        representantes_selecionados,
+    'Corretor':             corretores_selecionados,
+    'Segurado':             segurados_selecionados,
+    'Ramo':                 ramos_selecionados,
+    'Utilização':           utilizacoes_selecionadas,
+    'Tipo de Emissão':      tipos_emissao_selecionados,
+    'Região de Circulação': regioes_selecionadas,
+    'UF':                   ufs_selecionadas,
+    'Apólice':              apolices_selecionadas,
+}
+_filtros_com_valor = {k: v for k, v in _filtros_ativos.items() if v}
+
+if _filtros_com_valor:
+    _partes = []
+    for k, v in _filtros_com_valor.items():
+        _vals = ', '.join(str(x) for x in v)
+        _partes.append(f"**{k}:** {_vals}")
+    _texto = '&nbsp;&nbsp;|&nbsp;&nbsp;'.join(_partes)
+    st.markdown(
+        f'<div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;'
+        f'padding:8px 14px;margin-bottom:8px;font-size:13px;color:#1E40AF;">'
+        f'🔍 <b>Filtros ativos:</b>&nbsp;&nbsp;{_texto}</div>',
+        unsafe_allow_html=True
+    )
+
 # ============= PARTE REFERENTE AO SLIDER PARA SELECIONAR ANO =============
 col_esq, col_meio, col_dir = st.columns([4,1,1])
 
