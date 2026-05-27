@@ -368,7 +368,7 @@ a.btn-topo:hover {
 }
 
 /* ── Oculta header e footer fixos do Streamlit ───────────────── */
-[data-testid="stHeader"] { display: none !important; }
+/* [data-testid="stHeader"] oculto removido — escondia o botão toggle da sidebar */
 [data-testid="stToolbar"] { display: none !important; }
 footer { display: none !important; }
 </style>
