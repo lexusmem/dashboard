@@ -368,6 +368,8 @@ a.btn-topo:hover {
 }
 
 /* ── Oculta header e footer fixos do Streamlit ───────────────── */
+/* Esconde botão de colapsar sidebar — sidebar sempre visível */
+[data-testid="stSidebarCollapseButton"] { display: none !important; }
 [data-testid="stHeader"] { display: none !important; }
 [data-testid="stToolbar"] { display: none !important; }
 footer { display: none !important; }
