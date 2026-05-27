@@ -367,17 +367,20 @@ a.btn-topo:hover {
     line-height: 1 !important;
 }
 
-/* ── Oculta header e footer fixos do Streamlit ───────────────── */
-/* Header transparente — botão toggle da sidebar preservado */
-[data-testid="stHeader"] { background: transparent !important; }
-[data-testid="stToolbar"] { display: none !important; }
+/* ── Oculta apenas elementos internos do header, preserva o toggle da sidebar ── */
+/* NÃO ocultar stHeader nem stToolbar — contêm o botão de reabrir a sidebar */
+[data-testid="stToolbar"] { visibility: hidden !important; }
+[data-testid="stDecoration"] { display: none !important; }
+[data-testid="stStatusWidget"] { display: none !important; }
+footer { display: none !important; }
+/* Garante que o botão de reabrir sidebar sempre seja clicável */
 [data-testid="stSidebarCollapsedControl"] {
     display: flex !important;
     visibility: visible !important;
-    z-index: 99999 !important;
+    z-index: 999999 !important;
     opacity: 1 !important;
+    pointer-events: all !important;
 }
-footer { display: none !important; }
 </style>
 """
 
