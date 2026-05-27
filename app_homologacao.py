@@ -399,17 +399,11 @@ a.btn-sidebar:hover {
 """
 
 st.markdown(ALLSEG_CSS, unsafe_allow_html=True)
-# Botão fixo ☰ no canto superior esquerdo — abre/fecha sidebar via CSS class toggle
+# Botão ☰ fixo — ao clicar faz rerun que reabre sidebar (initial_sidebar_state='expanded')
 st.markdown(
-    '<style>'
-    '[data-testid="stSidebar"] { transition: margin 0.3s ease; }'
-    '</style>'
-    '<a href="#" class="btn-sidebar" '
-    'onclick="var d=window.parent.document;'
-    'var sb=d.querySelector(\'.st-emotion-cache-1mi2ry5,.st-emotion-cache-6qob1r,[data-testid=stSidebar]\');'
-    'var btn=d.querySelector(\'[data-testid=stSidebarCollapseButton]\') || d.querySelector(\'[data-testid=collapsedControl]\');'
-    'if(btn)btn.click();return false;" '
-    'title="Abrir/Fechar menu">&#9776;</a>',
+    '<a href="javascript:void(0)" onclick="'
+    "window.parent.location.reload();"
+    '" class="btn-sidebar" title="Reabrir menu lateral">&#9776;</a>',
     unsafe_allow_html=True
 )
 
