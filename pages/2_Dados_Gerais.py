@@ -8,7 +8,7 @@ import plotly.express as px
 import streamlit_antd_components as sac
 from datetime import datetime
 
-st.set_page_config(layout='wide', page_title='Dados Gerais — Allseg', page_icon='📊', initial_sidebar_state='expanded')
+st.set_page_config(layout='wide', page_title='Dados Gerais — Allseg', page_icon='📊')
 
 ALLSEG_CSS = """
 <style>
@@ -297,15 +297,10 @@ a.btn-topo:hover {
 }
 
 /* ── Oculta header e footer fixos do Streamlit ───────────────── */
-/* Header transparente — botão toggle da sidebar preservado */
-[data-testid="stHeader"] { background: transparent !important; }
+/* Esconde botão de colapsar sidebar — sidebar sempre visível */
+[data-testid="stSidebarCollapseButton"] { display: none !important; }
+[data-testid="stHeader"] { display: none !important; }
 [data-testid="stToolbar"] { display: none !important; }
-[data-testid="stSidebarCollapsedControl"] {
-    display: flex !important;
-    visibility: visible !important;
-    z-index: 99999 !important;
-    opacity: 1 !important;
-}
 footer { display: none !important; }
 </style>
 """
