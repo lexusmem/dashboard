@@ -8,7 +8,7 @@ import plotly.express as px
 import streamlit_antd_components as sac
 
 # Configura a página para layout amplo
-st.set_page_config(layout='wide', page_title='Painel Allseg', page_icon='📊', initial_sidebar_state='expanded')
+st.set_page_config(layout='wide', page_title='Painel Allseg', page_icon='📊')
 
 ALLSEG_CSS = """
 <style>
@@ -371,42 +371,10 @@ a.btn-topo:hover {
 [data-testid="stHeader"] { display: none !important; }
 [data-testid="stToolbar"] { display: none !important; }
 footer { display: none !important; }
-/* Botão fixo customizado para reabrir sidebar — sempre visível */
-a.btn-sidebar, a.btn-sidebar:link, a.btn-sidebar:visited {
-    position: fixed;
-    top: 0.5rem;
-    left: 0.5rem;
-    z-index: 999999;
-    background-color: #D1D5DB;
-    color: #374151 !important;
-    border-radius: 6px;
-    width: 28px;
-    height: 28px;
-    font-size: 15px;
-    cursor: pointer;
-    text-align: center;
-    line-height: 28px;
-    text-decoration: none !important;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.15);
-    display: block;
-}
-a.btn-sidebar:hover {
-    background-color: #9CA3AF;
-    color: #111827 !important;
-    text-decoration: none !important;
-}
 </style>
 """
 
 st.markdown(ALLSEG_CSS, unsafe_allow_html=True)
-# Botão ☰ fixo — ao clicar faz rerun que reabre sidebar (initial_sidebar_state='expanded')
-st.markdown(
-    '<a href="javascript:void(0)" onclick="'
-    "window.parent.location.reload();"
-    '" class="btn-sidebar" title="Reabrir menu lateral">&#9776;</a>',
-    unsafe_allow_html=True
-)
-
 
 st.markdown(
     '<a href="#topo-pagina" class="btn-topo" title="Voltar ao topo">&#8679;</a>',
