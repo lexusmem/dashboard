@@ -1378,7 +1378,7 @@ df_ramo_segurado_view['Sinistralidade'] = df_ramo_segurado_view['Sinistralidade'
 df_ramo_segurado_view['Qtd_Sinistros'] = df_ramo_segurado_view['Qtd_Sinistros'].astype(int)
 
 # Reordenar colunas para a tabela
-colunas_view = ['Ramo', 'Qtd_Apolices', 'Qtd_Sinistros', 'Total_Premio', 'Total_Sinistro', 'Sinistralidade']
+colunas_view = ['Ramo', 'Total_Premio', 'Total_Sinistro', 'Sinistralidade', 'Qtd_Apolices', 'Qtd_Sinistros']
 df_ramo_segurado_view = df_ramo_segurado_view[colunas_view]
 
 
