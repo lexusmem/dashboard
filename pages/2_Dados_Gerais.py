@@ -8,7 +8,7 @@ import plotly.express as px
 import streamlit_antd_components as sac
 from datetime import datetime
 
-st.set_page_config(layout='wide', page_title='Dados Gerais — Allseg', page_icon='📊')
+st.set_page_config(layout='wide', page_title='Dados Gerais — Allseg', page_icon='📊', initial_sidebar_state='expanded')
 
 ALLSEG_CSS = """
 <style>
