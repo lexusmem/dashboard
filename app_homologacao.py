@@ -367,24 +367,52 @@ a.btn-topo:hover {
     line-height: 1 !important;
 }
 
-/* ── Oculta apenas elementos internos do header, preserva o toggle da sidebar ── */
-/* NÃO ocultar stHeader nem stToolbar — contêm o botão de reabrir a sidebar */
-[data-testid="stToolbar"] { visibility: hidden !important; }
-[data-testid="stDecoration"] { display: none !important; }
-[data-testid="stStatusWidget"] { display: none !important; }
+/* ── Oculta header e footer fixos do Streamlit ───────────────── */
+[data-testid="stHeader"] { display: none !important; }
+[data-testid="stToolbar"] { display: none !important; }
 footer { display: none !important; }
-/* Garante que o botão de reabrir sidebar sempre seja clicável */
-[data-testid="stSidebarCollapsedControl"] {
-    display: flex !important;
-    visibility: visible !important;
-    z-index: 999999 !important;
-    opacity: 1 !important;
-    pointer-events: all !important;
+/* Botão fixo customizado para reabrir sidebar — sempre visível */
+a.btn-sidebar, a.btn-sidebar:link, a.btn-sidebar:visited {
+    position: fixed;
+    top: 0.5rem;
+    left: 0.5rem;
+    z-index: 999999;
+    background-color: #D1D5DB;
+    color: #374151 !important;
+    border-radius: 6px;
+    width: 28px;
+    height: 28px;
+    font-size: 15px;
+    cursor: pointer;
+    text-align: center;
+    line-height: 28px;
+    text-decoration: none !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+    display: block;
+}
+a.btn-sidebar:hover {
+    background-color: #9CA3AF;
+    color: #111827 !important;
+    text-decoration: none !important;
 }
 </style>
 """
 
 st.markdown(ALLSEG_CSS, unsafe_allow_html=True)
+# Botão fixo ☰ no canto superior esquerdo — abre/fecha sidebar via CSS class toggle
+st.markdown(
+    '<style>'
+    '[data-testid="stSidebar"] { transition: margin 0.3s ease; }'
+    '</style>'
+    '<a href="#" class="btn-sidebar" '
+    'onclick="var d=window.parent.document;'
+    'var sb=d.querySelector(\'.st-emotion-cache-1mi2ry5,.st-emotion-cache-6qob1r,[data-testid=stSidebar]\');'
+    'var btn=d.querySelector(\'[data-testid=stSidebarCollapseButton]\') || d.querySelector(\'[data-testid=collapsedControl]\');'
+    'if(btn)btn.click();return false;" '
+    'title="Abrir/Fechar menu">&#9776;</a>',
+    unsafe_allow_html=True
+)
+
 
 st.markdown(
     '<a href="#topo-pagina" class="btn-topo" title="Voltar ao topo">&#8679;</a>',
