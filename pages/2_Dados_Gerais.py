@@ -1666,7 +1666,7 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
 
     # Peso de cada grupo no prêmio total para calcular contribuição
     _peso_total = _comp['Premio_Total_Grp'].sum()
-    _comp['Peso'] = _comp['Premio_Total_Grp'] / _peso_total.replace(0, float('nan'))
+    _comp['Peso'] = _comp['Premio_Total_Grp'] / (_peso_total if _peso_total != 0 else float('nan'))
     _comp['Contribuicao_pp'] = _comp['Variacao_pp'] * _comp['Peso']
     _comp = _comp.sort_values('Contribuicao_pp', ascending=False)
 
