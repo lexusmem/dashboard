@@ -1172,18 +1172,18 @@ col_graf_seg_3, col_graf_seg_4 = st.columns(2)
 with col_graf_seg_3:
     # --- TABELA: DESEMPENHO CONSOLIDADO POR ANO (SEGURADO) ---
     # 1. Agrupamento dos dados por Ano de Vigência
+    # Underwriting Year: prêmio, sinistro e qtd sinistros todos pelo Ano Vigência da apólice
     df_consolidado_ano_seg = df_segurado_calculo.groupby('Ano Vigência').agg(
         Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
         Total_Sinistro=('Soma Sinistro Por Apolice', 'sum'),
         Qtd_Apolices=('N° Apólice', 'nunique')
     ).reset_index()
 
-    # Qtd Sinistros — cruza com df_sinistros pelo ano de ocorrência
-    _sin_seg_anos = df_sinistros[df_sinistros['N° Apólice'].isin(df_segurado_calculo['N° Apólice'].unique())].copy()
-    if 'dt_ocorrencia_dt' not in _sin_seg_anos.columns:
-        _sin_seg_anos['dt_ocorrencia_dt'] = pd.to_datetime(_sin_seg_anos['dt_ocorrencia'], dayfirst=True, errors='coerce')
-    _sin_seg_anos['Ano Vigência'] = _sin_seg_anos['dt_ocorrencia_dt'].dt.year
-    _qtd_sin_seg = _sin_seg_anos.groupby('Ano Vigência')['nr_sinistro'].nunique().reset_index()
+    # Qtd Sinistros por Underwriting Year — via merge sinistro → apólice → Ano Vigência
+    _sin_uw = df_sinistros[df_sinistros['N° Apólice'].isin(df_segurado_calculo['N° Apólice'].unique())].copy()
+    _apo_uw = df_segurado_calculo[['N° Apólice', 'Ano Vigência']].drop_duplicates('N° Apólice')
+    _sin_uw = pd.merge(_sin_uw, _apo_uw, on='N° Apólice', how='left')
+    _qtd_sin_seg = _sin_uw.groupby('Ano Vigência')['nr_sinistro'].nunique().reset_index()
     _qtd_sin_seg.rename(columns={'nr_sinistro': 'Qtd_Sinistros'}, inplace=True)
     df_consolidado_ano_seg = pd.merge(df_consolidado_ano_seg, _qtd_sin_seg, on='Ano Vigência', how='left').fillna(0)
     df_consolidado_ano_seg['Qtd_Sinistros'] = df_consolidado_ano_seg['Qtd_Sinistros'].astype(int)
