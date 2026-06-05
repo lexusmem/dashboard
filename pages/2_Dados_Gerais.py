@@ -760,37 +760,84 @@ with col_linha_barra_2:
 # ============= ANÁLISE CONSOLIDADA POR ANO (DADOS GERAIS) =============
 # 1. Agrupamento por Ano (Prêmio, Sinistro e Qtd Apólices)
 # Utilizamos o df_para_soma que já contém os dados filtrados
-df_ano_geral = df_para_soma.groupby('Ano Vigência').agg(
-    Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
-    Total_Sinistro=('Soma Sinistro Por Apolice', 'sum'),
-    Qtd_Apolices=('N° Apólice', 'nunique')
-).reset_index()
+# ── Seletor de visão: Underwriting Year × Accident Year ──────────────────────
+_visao_ano = st.radio(
+    "**Visão de alocação de sinistros:**",
+    options=["Underwriting Year", "Accident Year"],
+    horizontal=True,
+    key="radio_visao_ano",
+    help=(
+        "**Underwriting Year:** prêmio, sinistro e quantidade de sinistros alocados "
+        "ao ano de vigência da apólice. Ideal para análise de subscrição — mostra o "
+        "resultado técnico de cada safra de apólices.\n\n"
+        "**Accident Year:** sinistros alocados ao ano em que o evento ocorreu, "
+        "independente da vigência da apólice. Ideal para análise de exposição a "
+        "risco e eventos climáticos/judiciais por período."
+    )
+)
 
-# 2. Busca a quantidade de sinistros por ano
-# Filtramos a base de sinistros para as apólices que pertencem ao período selecionado
+# Descrição visual da visão selecionada
+if _visao_ano == "Underwriting Year":
+    st.caption(
+        "📋 **Underwriting Year (UWY):** prêmio e sinistros agrupados pelo **ano de vigência da apólice**. "
+        "Permite avaliar o resultado técnico de cada coorte de contratos subscritos."
+    )
+else:
+    st.caption(
+        "📋 **Accident Year (AY):** sinistros agrupados pelo **ano em que o evento ocorreu**. "
+        "Prêmio mantido por ano de vigência. Permite analisar a concentração de eventos por período."
+    )
+
+# ── Base de sinistros filtrada pelas apólices do período ─────────────────────
 lista_apos_ano = df_para_soma['N° Apólice'].unique()
 df_sin_filtrado_ano = df_sinistros[df_sinistros['N° Apólice'].isin(lista_apos_ano)].copy()
 
-# Extraímos o ano da data de ocorrência para contagem correta
-if 'dt_ocorrencia_dt' in df_sin_filtrado_ano.columns:
-    df_sin_filtrado_ano['Ano_Ocorrencia'] = df_sin_filtrado_ano['dt_ocorrencia_dt'].dt.year
+# ── Cálculo conforme visão selecionada ───────────────────────────────────────
+if _visao_ano == "Underwriting Year":
+    # Underwriting Year: qtd sinistros pelo Ano Vigência da apólice
+    _apo_uw = df_para_soma[['N° Apólice', 'Ano Vigência']].drop_duplicates('N° Apólice')
+    _sin_uw = pd.merge(df_sin_filtrado_ano, _apo_uw, on='N° Apólice', how='left')
+    qtd_sin_por_ano = _sin_uw.groupby('Ano Vigência')['nr_sinistro'].nunique().reset_index()
+    qtd_sin_por_ano.rename(columns={'nr_sinistro': 'Qtd_Sinistros'}, inplace=True)
+    df_ano_geral = df_para_soma.groupby('Ano Vigência').agg(
+        Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
+        Total_Sinistro=('Soma Sinistro Por Apolice', 'sum'),
+        Qtd_Apolices=('N° Apólice', 'nunique')
+    ).reset_index()
+    df_final_ano = pd.merge(df_ano_geral, qtd_sin_por_ano, on='Ano Vigência', how='left').fillna(0)
 else:
-    df_sin_filtrado_ano['Ano_Ocorrencia'] = pd.to_datetime(df_sin_filtrado_ano['dt_ocorrencia'], dayfirst=True, errors='coerce').dt.year
+    # Accident Year: sinistros alocados ao ano de ocorrência
+    if 'dt_ocorrencia_dt' in df_sin_filtrado_ano.columns:
+        df_sin_filtrado_ano['Ano_Ocorrencia'] = df_sin_filtrado_ano['dt_ocorrencia_dt'].dt.year
+    else:
+        df_sin_filtrado_ano['Ano_Ocorrencia'] = pd.to_datetime(
+            df_sin_filtrado_ano['dt_ocorrencia'], dayfirst=True, errors='coerce').dt.year
+    # Sinistro por ano de ocorrência
+    _sin_oc = df_sin_filtrado_ano.copy()
+    _sin_oc['Total Sinistro'] = (_sin_oc['vl_sinistro_total'].fillna(0) + _sin_oc['vl_despesa_total'].fillna(0)
+                                  + _sin_oc['vl_honorario_total'].fillna(0) - _sin_oc['vl_salvado_total'].fillna(0))
+    _sin_oc_ano = _sin_oc.groupby('Ano_Ocorrencia').agg(
+        Total_Sinistro_AY=('Total Sinistro', 'sum'),
+        Qtd_Sinistros=('nr_sinistro', 'nunique')
+    ).reset_index().rename(columns={'Ano_Ocorrencia': 'Ano Vigência'})
+    df_ano_geral = df_para_soma.groupby('Ano Vigência').agg(
+        Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
+        Qtd_Apolices=('N° Apólice', 'nunique')
+    ).reset_index()
+    df_final_ano = pd.merge(df_ano_geral, _sin_oc_ano, on='Ano Vigência', how='outer').fillna(0)
+    df_final_ano.rename(columns={'Total_Sinistro_AY': 'Total_Sinistro'}, inplace=True)
+    df_final_ano = df_final_ano.sort_values('Ano Vigência')
 
-qtd_sin_por_ano = df_sin_filtrado_ano.groupby('Ano_Ocorrencia')['nr_sinistro'].nunique().reset_index()
-qtd_sin_por_ano.rename(columns={'Ano_Ocorrencia': 'Ano Vigência', 'nr_sinistro': 'Qtd_Sinistros'}, inplace=True)
-
-# 3. Cruzamento dos dados de Prêmio e Sinistro
-df_final_ano = pd.merge(df_ano_geral, qtd_sin_por_ano, on='Ano Vigência', how='left').fillna(0)
+df_final_ano['Qtd_Sinistros'] = df_final_ano['Qtd_Sinistros'].astype(int)
 
 # 4. Cálculo da Sinistralidade (numérico para o gráfico)
-df_final_ano['Sinistralidade_Num'] = df_final_ano.apply(
-    lambda row: (row['Total_Sinistro'] / row['Total_Premio']) if row['Total_Premio'] != 0 else 0, axis=1
-)
+df_final_ano['Sinistralidade_Num'] = (
+    df_final_ano['Total_Sinistro'] / df_final_ano['Total_Premio'].replace(0, float('nan'))
+).fillna(0)
 
 # 5. Formatação para a Tabela de Exibição
 df_ano_view = df_final_ano.copy()
-df_ano_view['Total_Premio'] = df_ano_view['Total_Premio'].map(formatar_valor_br) # Usa sua função de formatação
+df_ano_view['Total_Premio'] = df_ano_view['Total_Premio'].map(formatar_valor_br)
 df_ano_view['Total_Sinistro'] = df_ano_view['Total_Sinistro'].map(formatar_valor_br)
 df_ano_view['% Sinistralidade'] = df_ano_view['Sinistralidade_Num'].map(lambda x: f"{x:.2%}")
 df_ano_view['Qtd_Sinistros'] = df_ano_view['Qtd_Sinistros'].astype(int)
