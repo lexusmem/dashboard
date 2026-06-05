@@ -2452,21 +2452,35 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
     _res = {j: _calcular_janela(j) for j in _janelas}
 
     # ── KPIs — um por janela ─────────────────────────────────────────────────
-    st.markdown("**Sinistralidade geral por janela**")
+    st.markdown("**Sinistralidade por janela — período recente vs anterior**")
     _kcols = st.columns(3)
     for i, j in enumerate(_janelas):
         _, _srg, _sag, _ini_rec, _ini_ant = _res[j]
         _var = (_srg - _sag) * 100
         with _kcols[i]:
-            st.metric(
-                f"Últimos {j} dias",
-                f"{_srg:.1%}",
-                delta=f"{_var:+.1f}pp vs {j}d anteriores",
-                delta_color="inverse"
-            )
-            st.caption(
-                "Recente: " + _ini_rec.strftime('%d/%m/%y') + " a " + _data_max.strftime('%d/%m/%y') +
-                "  |  Anterior: " + _ini_ant.strftime('%d/%m/%y') + " a " + _ini_rec.strftime('%d/%m/%y')
+            st.markdown(
+                f'<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:14px 18px;">'
+                f'<div style="font-size:11px;color:#64748B;text-transform:uppercase;letter-spacing:.05em;">Últimos {j} dias</div>'
+                f'<div style="display:flex;align-items:baseline;gap:16px;margin:6px 0;">'
+                f'  <div>'
+                f'    <div style="font-size:11px;color:#64748B;">Recente</div>'
+                f'    <div style="font-size:26px;font-weight:700;color:#1E293B;">{_srg:.1%}</div>'
+                f'  </div>'
+                f'  <div style="color:#CBD5E1;font-size:20px;">→</div>'
+                f'  <div>'
+                f'    <div style="font-size:11px;color:#64748B;">Anterior</div>'
+                f'    <div style="font-size:26px;font-weight:700;color:#94A3B8;">{_sag:.1%}</div>'
+                f'  </div>'
+                f'</div>'
+                f'<div style="font-size:12px;font-weight:600;color:{"#DC2626" if _var > 0 else "#16A34A"};">'
+                f'  {"▲" if _var > 0 else "▼"} {abs(_var):.1f}pp {"piora" if _var > 0 else "melhora"}'
+                f'</div>'
+                f'<div style="font-size:10px;color:#94A3B8;margin-top:6px;">'
+                f'  Rec: {_ini_rec.strftime("%d/%m/%y")} a {_data_max.strftime("%d/%m/%y")}<br>'
+                f'  Ant: {_ini_ant.strftime("%d/%m/%y")} a {_ini_rec.strftime("%d/%m/%y")}'
+                f'</div>'
+                f'</div>',
+                unsafe_allow_html=True
             )
 
     st.write("")
