@@ -1571,207 +1571,6 @@ if not df_geral_periodo.empty:
 else:
     st.info("Nenhum dado disponível para agrupar por Região de Circulação.")
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# PAINEL DE DIAGNÓSTICO DE VARIAÇÃO DA SINISTRALIDADE
-# ══════════════════════════════════════════════════════════════════════════════
-st.write("---")
-st.subheader("🔎 Diagnóstico de Variação da Sinistralidade")
-st.caption(
-    "Identifica quais Ramos e Utilizações contribuíram para a variação recente da sinistralidade. "
-    "Compara um período recente com o período anterior equivalente, usando a data de aviso dos sinistros."
-)
-
-if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
-
-    # ── Seletor de janela de comparação ──────────────────────────────────────
-    _col_d1, _col_d2, _col_d3 = st.columns([1, 1, 4])
-    with _col_d1:
-        _janela = st.selectbox(
-            "Janela de comparação",
-            options=[30, 60, 90, 180],
-            format_func=lambda x: f"Últimos {x} dias vs {x} anteriores",
-            index=1,
-            key="diag_janela"
-        )
-    with _col_d2:
-        _agrupar = st.selectbox(
-            "Agrupar por",
-            options=["Ramo", "Utilização", "Ramo e Utilização"],
-            key="diag_agrupar"
-        )
-
-    # ── Prepara base com datas ────────────────────────────────────────────────
-    _df_sin = df_sinistro_periodo_atualizado.copy()
-    if 'dt_aviso_dt' not in _df_sin.columns:
-        _df_sin['dt_aviso_dt'] = pd.to_datetime(_df_sin['dt_aviso'], dayfirst=True, errors='coerce')
-
-    _data_max  = _df_sin['dt_aviso_dt'].max()
-    _data_ini_rec  = _data_max - pd.Timedelta(days=_janela)
-    _data_ini_ant  = _data_ini_rec - pd.Timedelta(days=_janela)
-
-    _df_rec = _df_sin[_df_sin['dt_aviso_dt'] > _data_ini_rec].copy()
-    _df_ant = _df_sin[(_df_sin['dt_aviso_dt'] > _data_ini_ant) & (_df_sin['dt_aviso_dt'] <= _data_ini_rec)].copy()
-
-    # Prêmio — usa df_geral_periodo para ter o total disponível
-    # Divide proporcionalmente pela janela em relação ao ano
-    _premio_total = df_para_soma['Soma Prêmio Pago por Apolice'].sum()
-    _anos_base    = df_para_soma['Ano Vigência'].nunique() if df_para_soma['Ano Vigência'].nunique() > 0 else 1
-    _premio_janela = _premio_total * (_janela / 365) / _anos_base * _anos_base  # prêmio proporcional à janela
-
-    # Junta Ramo e Utilização ao df de sinistros (via merge com df_geral_periodo)
-    _mapa_apo = df_geral_periodo[['N° Apólice', 'Ramo', 'Utilização']].drop_duplicates('N° Apólice')
-    _df_rec = pd.merge(_df_rec, _mapa_apo, on='N° Apólice', how='left')
-    _df_ant = pd.merge(_df_ant, _mapa_apo, on='N° Apólice', how='left')
-
-    # Prêmio por Ramo/Utilização (proporcional à janela)
-    if _agrupar == "Ramo e Utilização":
-        _cols_grp = ['Ramo', 'Utilização']
-    else:
-        _cols_grp = [_agrupar]
-
-    _premio_grp = df_para_soma.groupby(_cols_grp, as_index=False).agg(
-        Premio=('Soma Prêmio Pago por Apolice', 'sum')
-    )
-    _premio_grp['Premio_Janela'] = _premio_grp['Premio'] * (_janela / 365)
-
-    # ── Agrega sinistros por grupo ────────────────────────────────────────────
-    def _agregar(df_sin, cols):
-        if df_sin.empty:
-            return pd.DataFrame(columns=cols + ['Total_Sinistro', 'Qtd_Sinistros'])
-        return df_sin.groupby(cols, as_index=False).agg(
-            Total_Sinistro=('Total Sinistro', 'sum'),
-            Qtd_Sinistros=('nr_sinistro', 'nunique')
-        )
-
-    _sin_rec = _agregar(_df_rec, _cols_grp)
-    _sin_ant = _agregar(_df_ant, _cols_grp)
-
-    # Merge com prêmio e calcula sinistralidade
-    _rec = pd.merge(_premio_grp, _sin_rec, on=_cols_grp, how='left').fillna(0)
-    _ant = pd.merge(_premio_grp, _sin_ant, on=_cols_grp, how='left').fillna(0)
-
-    _rec['Sin_Rec'] = (_rec['Total_Sinistro'] / _rec['Premio_Janela'].replace(0, float('nan'))).fillna(0)
-    _ant['Sin_Ant'] = (_ant['Total_Sinistro'] / _ant['Premio_Janela'].replace(0, float('nan'))).fillna(0)
-
-    # Junta períodos
-    _comp = pd.merge(
-        _rec[_cols_grp + ['Premio_Janela', 'Total_Sinistro', 'Qtd_Sinistros', 'Sin_Rec']],
-        _ant[_cols_grp + ['Total_Sinistro', 'Qtd_Sinistros', 'Sin_Ant']],
-        on=_cols_grp, how='outer', suffixes=('_Rec', '_Ant')
-    ).fillna(0)
-
-    _comp['Variacao_pp'] = (_comp['Sin_Rec'] - _comp['Sin_Ant']) * 100
-    _comp['Premio_Total_Grp'] = _comp['Premio_Janela']
-
-    # Peso de cada grupo no prêmio total para calcular contribuição
-    _peso_total = _comp['Premio_Total_Grp'].sum()
-    _comp['Peso'] = _comp['Premio_Total_Grp'] / (_peso_total if _peso_total != 0 else float('nan'))
-    _comp['Contribuicao_pp'] = _comp['Variacao_pp'] * _comp['Peso']
-    _comp = _comp.sort_values('Contribuicao_pp', ascending=False)
-
-    # ── KPIs resumo ───────────────────────────────────────────────────────────
-    _sin_geral_rec = _df_rec['Total Sinistro'].sum() / (_premio_total * _janela / 365) if _premio_total > 0 else 0
-    _sin_geral_ant = _df_ant['Total Sinistro'].sum() / (_premio_total * _janela / 365) if _premio_total > 0 else 0
-    _var_geral     = (_sin_geral_rec - _sin_geral_ant) * 100
-
-    _k1, _k2, _k3, _k4 = st.columns(4)
-    with _k1:
-        st.metric(
-            f"Sin. Recente ({_janela}d)",
-            f"{_sin_geral_rec:.1%}",
-            delta=f"{_var_geral:+.1f}pp vs período anterior",
-            delta_color="inverse"
-        )
-    with _k2:
-        st.metric(f"Sin. Anterior ({_janela}d)", f"{_sin_geral_ant:.1%}")
-    with _k3:
-        _contrib_piores = _comp[_comp['Contribuicao_pp'] > 0]['Contribuicao_pp'].sum()
-        _label_piores = _comp[_comp['Contribuicao_pp'] > 0][_cols_grp[0]].nunique()
-        st.metric(f"Grupos piorando", f"{_label_piores}", delta=f"+{_contrib_piores:.1f}pp no total", delta_color="inverse")
-    with _k4:
-        _contrib_melhores = _comp[_comp['Contribuicao_pp'] < 0]['Contribuicao_pp'].sum()
-        _label_melhores = _comp[_comp['Contribuicao_pp'] < 0][_cols_grp[0]].nunique()
-        st.metric(f"Grupos melhorando", f"{_label_melhores}", delta=f"{_contrib_melhores:.1f}pp no total", delta_color="normal")
-
-    # ── Gráfico de contribuição ───────────────────────────────────────────────
-    st.markdown(f"**Contribuição de cada {_agrupar} para a variação da sinistralidade**")
-    st.caption(
-        f"Período recente: {_data_ini_rec.strftime('%d/%m/%Y')} a {_data_max.strftime('%d/%m/%Y')}  |  "
-        f"Período anterior: {_data_ini_ant.strftime('%d/%m/%Y')} a {_data_ini_rec.strftime('%d/%m/%Y')}"
-    )
-
-    _comp_plot = _comp[_comp['Premio_Total_Grp'] > 0].copy()
-    if _agrupar == "Ramo e Utilização":
-        _comp_plot['_label'] = _comp_plot['Ramo'].astype(str) + " / " + _comp_plot['Utilização'].astype(str)
-    else:
-        _comp_plot['_label'] = _comp_plot[_cols_grp[0]].astype(str)
-
-    _comp_plot = _comp_plot.sort_values('Contribuicao_pp')
-
-    if not _comp_plot.empty:
-        _cores = ['#DC2626' if v > 0 else '#16A34A' for v in _comp_plot['Contribuicao_pp']]
-        _fig_var = go.Figure(go.Bar(
-            x=_comp_plot['Contribuicao_pp'],
-            y=_comp_plot['_label'],
-            orientation='h',
-            marker_color=_cores,
-            text=_comp_plot['Contribuicao_pp'].map(lambda x: f"{x:+.1f}pp"),
-            textposition='outside',
-        ))
-        _fig_var.add_vline(x=0, line_width=1.5, line_color='#374151')
-        _fig_var.update_layout(
-            xaxis=dict(title='Contribuição (pp)', ticksuffix='pp'),
-            yaxis=dict(title='', tickfont=dict(size=10)),
-            margin=dict(t=20, b=20, l=0, r=60),
-            height=max(300, len(_comp_plot) * 32),
-            hovermode='y unified',
-            plot_bgcolor='white'
-        )
-        _fig_var.update_traces(
-            hovertemplate='%{y}<br>Contribuição: %{x:+.1f}pp<extra></extra>'
-        )
-        st.plotly_chart(_fig_var, use_container_width=True, config={'displayModeBar': False})
-
-    # ── Tabela detalhada ──────────────────────────────────────────────────────
-    with st.expander("📋 Ver tabela detalhada de comparação"):
-        _tbl = _comp_plot[['_label', 'Sin_Ant', 'Sin_Rec', 'Variacao_pp', 'Contribuicao_pp',
-                            'Qtd_Sinistros_Rec', 'Qtd_Sinistros_Ant']].copy()
-        _tbl.rename(columns={
-            '_label': _agrupar,
-            'Sin_Ant': f'Sin. Anterior ({_janela}d)',
-            'Sin_Rec': f'Sin. Recente ({_janela}d)',
-            'Variacao_pp': 'Variação (pp)',
-            'Contribuicao_pp': 'Contribuição (pp)',
-            'Qtd_Sinistros_Rec': 'Qtd Sin. Recente',
-            'Qtd_Sinistros_Ant': 'Qtd Sin. Anterior'
-        }, inplace=True)
-        _tbl[f'Sin. Anterior ({_janela}d)'] = _tbl[f'Sin. Anterior ({_janela}d)'].map(lambda x: f"{x:.1%}")
-        _tbl[f'Sin. Recente ({_janela}d)']  = _tbl[f'Sin. Recente ({_janela}d)'].map(lambda x: f"{x:.1%}")
-        _tbl['Variação (pp)']      = _tbl['Variação (pp)'].map(lambda x: f"{x:+.1f}pp")
-        _tbl['Contribuição (pp)']  = _tbl['Contribuição (pp)'].map(lambda x: f"{x:+.1f}pp")
-        _tbl['Qtd Sin. Recente']   = _tbl['Qtd Sin. Recente'].astype(int)
-        _tbl['Qtd Sin. Anterior']  = _tbl['Qtd Sin. Anterior'].astype(int)
-        _tbl = _tbl.sort_values('Variação (pp)', ascending=False)
-        st.dataframe(_tbl, hide_index=True, use_container_width=True)
-
-    # ── Top sinistros recentes ────────────────────────────────────────────────
-    with st.expander(f"🔍 Top 20 maiores sinistros avisados nos últimos {_janela} dias"):
-        _top_sin = _df_rec[['nr_sinistro','N° Apólice','nm_cliente','Cobertura',
-                             'dt_aviso','Total Sinistro','status_processo']].copy()
-        _top_sin = pd.merge(_top_sin, _mapa_apo, on='N° Apólice', how='left')
-        _top_sin = _top_sin.sort_values('Total Sinistro', ascending=False).head(20)
-        _top_sin['Total Sinistro'] = _top_sin['Total Sinistro'].map(formatar_valor_br)
-        _top_sin['dt_aviso'] = pd.to_datetime(_top_sin['dt_aviso'], dayfirst=True, errors='coerce').dt.strftime('%d/%m/%Y')
-        st.dataframe(_top_sin.rename(columns={
-            'nr_sinistro': 'Nº Sinistro', 'N° Apólice': 'Apólice',
-            'nm_cliente': 'Segurado', 'dt_aviso': 'Dt. Aviso',
-            'Total Sinistro': 'Total Sinistro', 'status_processo': 'Status'
-        }), hide_index=True, use_container_width=True)
-
-else:
-    st.info("Nenhum dado disponível para análise de variação.")
-
 # --- SEÇÃO DE RANKING DE CRITICIDADE 🚩---
 st.write("---")
 st.subheader("⚠️ Análise de Criticidade (Top 10 Piores Resultados)")
@@ -2586,6 +2385,153 @@ Score 70-100 = Reajuste Urgente | Score 40-69 = Reajuste Recomendado | Score 0-3
 <b>Como foi desenvolvido:</b> A sinistralidade anual usa a mesma base do Desempenho Consolidado por Ano (Ano de Vigência da Apólice), garantindo consistência. As médias móveis mensais são calculadas sobre a data de aviso dos sinistros, que é o dado mais atual disponível. A regressão linear é calculada com numpy.polyfit sobre os anos disponíveis filtrados.
 </div>
 """, unsafe_allow_html=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAINEL DE DIAGNÓSTICO DE VARIAÇÃO DA SINISTRALIDADE — posicionado no final
+# ══════════════════════════════════════════════════════════════════════════════
+st.write("---")
+st.subheader("🔎 Diagnóstico de Variação da Sinistralidade")
+st.caption(
+    "Identifica quais Ramos e Utilizações contribuíram para a variação recente da sinistralidade. "
+    "Mostra as janelas de 60, 90 e 180 dias lado a lado, comparando cada período com o anterior equivalente, "
+    "usando a data de aviso dos sinistros."
+)
+
+if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
+
+    _col_d1, _ = st.columns([1, 3])
+    with _col_d1:
+        _agrupar = st.selectbox(
+            "Agrupar por",
+            options=["Ramo", "Utilização"],
+            key="diag_agrupar"
+        )
+
+    _cols_grp = [_agrupar]
+
+    # Prepara base com datas
+    _df_sin = df_sinistro_periodo_atualizado.copy()
+    if 'dt_aviso_dt' not in _df_sin.columns:
+        _df_sin['dt_aviso_dt'] = pd.to_datetime(_df_sin['dt_aviso'], dayfirst=True, errors='coerce')
+
+    _data_max = _df_sin['dt_aviso_dt'].max()
+    _mapa_apo = df_geral_periodo[['N° Apólice', 'Ramo', 'Utilização']].drop_duplicates('N° Apólice')
+    _df_sin   = pd.merge(_df_sin, _mapa_apo, on='N° Apólice', how='left')
+
+    # Prêmio por grupo (proporcional à janela)
+    _premio_grp = df_para_soma.groupby(_cols_grp, as_index=False).agg(
+        Premio_Total=('Soma Prêmio Pago por Apolice', 'sum')
+    )
+    _premio_total_geral = df_para_soma['Soma Prêmio Pago por Apolice'].sum()
+
+    def _calcular_janela(janela):
+        _ini_rec = _data_max - pd.Timedelta(days=janela)
+        _ini_ant = _ini_rec - pd.Timedelta(days=janela)
+        _rec = _df_sin[_df_sin['dt_aviso_dt'] > _ini_rec]
+        _ant = _df_sin[(_df_sin['dt_aviso_dt'] > _ini_ant) & (_df_sin['dt_aviso_dt'] <= _ini_rec)]
+
+        def _agg(df):
+            if df.empty:
+                return pd.DataFrame(columns=_cols_grp + ['Total_Sinistro'])
+            return df.groupby(_cols_grp, as_index=False).agg(Total_Sinistro=('Total Sinistro', 'sum'))
+
+        _pj = _premio_grp.copy()
+        _pj['Premio_J'] = _pj['Premio_Total'] * (janela / 365)
+        _r = pd.merge(_pj, _agg(_rec), on=_cols_grp, how='left').fillna(0)
+        _a = pd.merge(_pj, _agg(_ant), on=_cols_grp, how='left').fillna(0)
+        _r[f'Sin_Rec'] = (_r['Total_Sinistro'] / _r['Premio_J'].replace(0, float('nan'))).fillna(0)
+        _a[f'Sin_Ant'] = (_a['Total_Sinistro'] / _a['Premio_J'].replace(0, float('nan'))).fillna(0)
+        _c = pd.merge(_r[_cols_grp + ['Sin_Rec']], _a[_cols_grp + ['Sin_Ant']], on=_cols_grp, how='outer').fillna(0)
+        _c['Var_pp'] = (_c['Sin_Rec'] - _c['Sin_Ant']) * 100
+        _sin_rec_g = _rec['Total Sinistro'].sum() / (_premio_total_geral * janela / 365) if _premio_total_geral > 0 else 0
+        _sin_ant_g = _ant['Total Sinistro'].sum() / (_premio_total_geral * janela / 365) if _premio_total_geral > 0 else 0
+        return _c, _sin_rec_g, _sin_ant_g, _ini_rec, _ini_ant
+
+    _janelas = [60, 90, 180]
+    _res = {j: _calcular_janela(j) for j in _janelas}
+
+    # ── KPIs — um por janela ─────────────────────────────────────────────────
+    st.markdown("**Sinistralidade geral por janela**")
+    _kcols = st.columns(3)
+    for i, j in enumerate(_janelas):
+        _, _srg, _sag, _ini_rec, _ini_ant = _res[j]
+        _var = (_srg - _sag) * 100
+        with _kcols[i]:
+            st.metric(
+                f"Últimos {j} dias",
+                f"{_srg:.1%}",
+                delta=f"{_var:+.1f}pp vs {j}d anteriores",
+                delta_color="inverse"
+            )
+            st.caption(
+                "Recente: " + _ini_rec.strftime('%d/%m/%y') + " a " + _data_max.strftime('%d/%m/%y') +
+                "  |  Anterior: " + _ini_ant.strftime('%d/%m/%y') + " a " + _ini_rec.strftime('%d/%m/%y')
+            )
+
+    st.write("")
+    st.markdown(f"**Variação da sinistralidade por {_agrupar} — 60 / 90 / 180 dias**")
+
+    # ── 3 gráficos lado a lado ───────────────────────────────────────────────
+    _gcols = st.columns(3)
+    for i, j in enumerate(_janelas):
+        _comp, _, _, _, _ = _res[j]
+        _plot = _comp[_comp['Sin_Rec'] + _comp['Sin_Ant'] > 0].copy()
+
+        # Garante rótulo como string categórica — evita escala numérica no eixo Y
+        _plot['_label'] = _plot[_cols_grp[0]].astype(str)
+        _plot = _plot.sort_values('Var_pp')
+
+        _cores = ['#DC2626' if v > 0 else '#16A34A' for v in _plot['Var_pp']]
+        _max_abs = max(abs(_plot['Var_pp']).max() if not _plot.empty else 1, 1) * 1.4
+
+        _fig = go.Figure(go.Bar(
+            x=_plot['Var_pp'],
+            y=_plot['_label'],
+            orientation='h',
+            marker_color=_cores,
+            text=_plot['Var_pp'].map(lambda x: f"{x:+.1f}pp"),
+            textposition='outside',
+        ))
+        _fig.add_vline(x=0, line_width=1.5, line_color='#374151')
+        _fig.update_layout(
+            title=dict(text=f"Últimos {j} dias", font=dict(size=13)),
+            xaxis=dict(title='Variação (pp)', ticksuffix='pp', range=[-_max_abs, _max_abs]),
+            yaxis=dict(
+                title='',
+                tickfont=dict(size=11),
+                type='category',          # força eixo categórico — nunca interpola os rótulos
+                categoryorder='array',
+                categoryarray=_plot['_label'].tolist()
+            ),
+            margin=dict(t=40, b=20, l=10, r=50),
+            height=max(220, len(_plot) * 50 + 80),
+            plot_bgcolor='white'
+        )
+        with _gcols[i]:
+            st.plotly_chart(_fig, use_container_width=True, config={'displayModeBar': False})
+
+    # ── Tabela consolidada ───────────────────────────────────────────────────
+    with st.expander("📋 Ver tabela detalhada de comparação"):
+        _tbl_base = _res[60][0][_cols_grp].copy()
+        for j in _janelas:
+            _c = _res[j][0][_cols_grp + ['Sin_Rec','Sin_Ant','Var_pp']].copy()
+            _c.columns = _cols_grp + [f'Sin_Rec_{j}', f'Sin_Ant_{j}', f'Var_{j}']
+            _tbl_base = pd.merge(_tbl_base, _c, on=_cols_grp, how='outer').fillna(0)
+        for j in _janelas:
+            _tbl_base[f'Sin_Rec_{j}'] = _tbl_base[f'Sin_Rec_{j}'].map(lambda x: f"{x:.1%}")
+            _tbl_base[f'Sin_Ant_{j}'] = _tbl_base[f'Sin_Ant_{j}'].map(lambda x: f"{x:.1%}")
+            _tbl_base[f'Var_{j}']     = _tbl_base[f'Var_{j}'].map(lambda x: f"{x:+.1f}pp")
+        _tbl_base.rename(columns={
+            _cols_grp[0]: _agrupar,
+            'Sin_Rec_60':'Rec.60d','Sin_Ant_60':'Ant.60d','Var_60':'Var.60d',
+            'Sin_Rec_90':'Rec.90d','Sin_Ant_90':'Ant.90d','Var_90':'Var.90d',
+            'Sin_Rec_180':'Rec.180d','Sin_Ant_180':'Ant.180d','Var_180':'Var.180d',
+        }, inplace=True)
+        st.dataframe(_tbl_base, hide_index=True, use_container_width=True)
+
+else:
+    st.info("Nenhum dado disponível para análise de variação.")
 
 st.write("---")
 st.caption("Desenvolvido por Alex Sousa.")
