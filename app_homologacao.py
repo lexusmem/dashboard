@@ -1172,37 +1172,37 @@ col_graf_seg_3, col_graf_seg_4 = st.columns(2)
 with col_graf_seg_3:
     # --- TABELA: DESEMPENHO CONSOLIDADO POR ANO (SEGURADO) ---
     # 1. Agrupamento dos dados por Ano de Vigência
-    # Prêmio e Qtd Apólices por Ano Vigência da apólice
     df_consolidado_ano_seg = df_segurado_calculo.groupby('Ano Vigência').agg(
         Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
+        Total_Sinistro=('Soma Sinistro Por Apolice', 'sum'),
         Qtd_Apolices=('N° Apólice', 'nunique')
     ).reset_index()
 
-    # Sinistro e Qtd Sinistros por Ano de OCORRÊNCIA do sinistro
-    _sin_seg = df_sinistros[df_sinistros['N° Apólice'].isin(df_segurado_calculo['N° Apólice'].unique())].copy()
-    _sin_seg['dt_ocorrencia_dt'] = pd.to_datetime(_sin_seg['dt_ocorrencia'], dayfirst=True, errors='coerce')
-    _sin_seg['Ano Ocorrencia'] = _sin_seg['dt_ocorrencia_dt'].dt.year
-    _sin_seg['Total Sinistro'] = (_sin_seg['vl_sinistro_total'].fillna(0) + _sin_seg['vl_despesa_total'].fillna(0)
-                                  + _sin_seg['vl_honorario_total'].fillna(0) - _sin_seg['vl_salvado_total'].fillna(0))
-    _sin_seg_ano = _sin_seg.groupby('Ano Ocorrencia').agg(
-        Total_Sinistro=('Total Sinistro', 'sum'),
-        Qtd_Sinistros=('nr_sinistro', 'nunique')
-    ).reset_index().rename(columns={'Ano Ocorrencia': 'Ano Vigência'})
-
-    df_consolidado_ano_seg = pd.merge(df_consolidado_ano_seg, _sin_seg_ano, on='Ano Vigência', how='outer').fillna(0)
-    df_consolidado_ano_seg = df_consolidado_ano_seg.sort_values('Ano Vigência')
+    # Qtd Sinistros — cruza com df_sinistros pelo ano de ocorrência
+    _sin_seg_anos = df_sinistros[df_sinistros['N° Apólice'].isin(df_segurado_calculo['N° Apólice'].unique())].copy()
+    if 'dt_ocorrencia_dt' not in _sin_seg_anos.columns:
+        _sin_seg_anos['dt_ocorrencia_dt'] = pd.to_datetime(_sin_seg_anos['dt_ocorrencia'], dayfirst=True, errors='coerce')
+    _sin_seg_anos['Ano Vigência'] = _sin_seg_anos['dt_ocorrencia_dt'].dt.year
+    _qtd_sin_seg = _sin_seg_anos.groupby('Ano Vigência')['nr_sinistro'].nunique().reset_index()
+    _qtd_sin_seg.rename(columns={'nr_sinistro': 'Qtd_Sinistros'}, inplace=True)
+    df_consolidado_ano_seg = pd.merge(df_consolidado_ano_seg, _qtd_sin_seg, on='Ano Vigência', how='left').fillna(0)
     df_consolidado_ano_seg['Qtd_Sinistros'] = df_consolidado_ano_seg['Qtd_Sinistros'].astype(int)
-    df_consolidado_ano_seg['Qtd_Apolices']  = df_consolidado_ano_seg['Qtd_Apolices'].astype(int)
 
-    # Sinistralidade — prêmio por vigência, sinistro por ocorrência
+    # Sinistralidade — vetorizado (sem .apply)
     df_consolidado_ano_seg['% Sinistralidade'] = (
         df_consolidado_ano_seg['Total_Sinistro'] / df_consolidado_ano_seg['Total_Premio'].replace(0, float('nan'))
     ).fillna(0)
 
+    # Formata para exibição
     df_consolidado_view = df_consolidado_ano_seg.copy()
     df_consolidado_view['Total_Premio']     = df_consolidado_view['Total_Premio'].map(formatar_valor_br)
     df_consolidado_view['Total_Sinistro']   = df_consolidado_view['Total_Sinistro'].map(formatar_valor_br)
     df_consolidado_view['% Sinistralidade'] = df_consolidado_view['% Sinistralidade'].map(lambda x: f"{x:.2%}")
+    df_consolidado_view.rename(columns={
+        'Ano Vigência': 'Ano Vigência',
+        'Total_Premio': 'Total_Premio',
+        'Total_Sinistro': 'Total_Sinistro'
+    }, inplace=True)
 
     st.markdown(f'<p class="section-label">Desempenho Consolidado por Ano - Segurado</p>', unsafe_allow_html=True)
     st.dataframe(
