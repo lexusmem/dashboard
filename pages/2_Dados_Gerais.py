@@ -760,23 +760,11 @@ with col_linha_barra_2:
 # ============= ANÁLISE CONSOLIDADA POR ANO (DADOS GERAIS) =============
 # 1. Agrupamento por Ano (Prêmio, Sinistro e Qtd Apólices)
 # Utilizamos o df_para_soma que já contém os dados filtrados
-# Prêmio e Qtd Apólices por Ano Vigência da apólice
 df_ano_geral = df_para_soma.groupby('Ano Vigência').agg(
     Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
+    Total_Sinistro=('Soma Sinistro Por Apolice', 'sum'),
     Qtd_Apolices=('N° Apólice', 'nunique')
 ).reset_index()
-
-# Sinistro por Ano de OCORRÊNCIA — cruzado com sinistros filtrados
-_sin_oc = df_sinistro_periodo_atualizado.copy()
-if 'dt_ocorrencia_dt' not in _sin_oc.columns:
-    _sin_oc['dt_ocorrencia_dt'] = pd.to_datetime(_sin_oc['dt_ocorrencia'], dayfirst=True, errors='coerce')
-_sin_oc['Ano Ocorrencia'] = _sin_oc['dt_ocorrencia_dt'].dt.year
-_sin_oc_ano = _sin_oc.groupby('Ano Ocorrencia').agg(
-    Total_Sinistro=('Total Sinistro', 'sum'),
-).reset_index().rename(columns={'Ano Ocorrencia': 'Ano Vigência'})
-
-df_ano_geral = pd.merge(df_ano_geral, _sin_oc_ano, on='Ano Vigência', how='outer').fillna(0)
-df_ano_geral = df_ano_geral.sort_values('Ano Vigência')
 
 # 2. Busca a quantidade de sinistros por ano
 # Filtramos a base de sinistros para as apólices que pertencem ao período selecionado
