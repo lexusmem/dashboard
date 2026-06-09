@@ -2544,6 +2544,184 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
         }, inplace=True)
         st.dataframe(_tbl_base, hide_index=True, use_container_width=True)
 
+
+    st.write("---")
+    st.markdown("### 📉 Evolução Trimestral e Mensal da Sinistralidade")
+    st.caption(
+        "Visão de tendência do período completo filtrado. "
+        "Trimestral mostra a direção de médio prazo; mensal (últimos 12 meses) mostra o movimento recente. "
+        "Identifique em qual Ramo ou Utilização a sinistralidade está subindo."
+    )
+
+    # ── Prepara base completa com trimestre e mês ─────────────────────────────
+    _df_full = df_sinistro_periodo_atualizado.copy()
+    if 'dt_aviso_dt' not in _df_full.columns:
+        _df_full['dt_aviso_dt'] = pd.to_datetime(_df_full['dt_aviso'], dayfirst=True, errors='coerce')
+
+    _df_full['Ano']       = _df_full['dt_aviso_dt'].dt.year
+    _df_full['Trimestre'] = _df_full['dt_aviso_dt'].dt.quarter
+    _df_full['AnoTri']    = _df_full['Ano'].astype(str) + ' T' + _df_full['Trimestre'].astype(str)
+    _df_full['AnoMes']    = _df_full['dt_aviso_dt'].dt.to_period('M').astype(str)
+
+    # Junta Ramo e Utilização
+    _df_full = pd.merge(_df_full, _mapa_apo, on='N° Apólice', how='left')
+
+    # Prêmio trimestral e mensal — proporcional ao número de trimestres/meses
+    _anos_base    = df_para_soma['Ano Vigência'].nunique() or 1
+    _premio_total_full = df_para_soma['Soma Prêmio Pago por Apolice'].sum()
+    _premio_por_tri = _premio_total_full / (_anos_base * 4)  # 4 trimestres por ano
+    _premio_por_mes = _premio_total_full / (_anos_base * 12) # 12 meses por ano
+
+    # ── Seletor de dimensão ───────────────────────────────────────────────────
+    _dim = st.radio(
+        "Analisar por:",
+        ["Ramo", "Utilização"],
+        horizontal=True,
+        key="diag_dim_tend"
+    )
+
+    # ── Tab: Trimestral vs Mensal ─────────────────────────────────────────────
+    _tab_tri, _tab_mes = st.tabs(["📅 Trimestral (período completo)", "📆 Mensal (últimos 12 meses)"])
+
+    # ════ TRIMESTRAL ══════════════════════════════════════════════════════════
+    with _tab_tri:
+        _grp_tri = _df_full.groupby(['AnoTri', _dim], as_index=False).agg(
+            Total_Sinistro=('Total Sinistro', 'sum'),
+            Qtd_Sinistros=('nr_sinistro', 'nunique')
+        )
+        # Prêmio proporcional por trimestre por grupo
+        _premio_dim = df_para_soma.groupby(_dim, as_index=False).agg(
+            Premio_Dim=('Soma Prêmio Pago por Apolice', 'sum')
+        )
+        _n_tri_total = _df_full['AnoTri'].nunique() or 1
+        _premio_dim['Premio_Tri'] = _premio_dim['Premio_Dim'] / (_anos_base * 4)
+
+        _grp_tri = pd.merge(_grp_tri, _premio_dim[[_dim, 'Premio_Tri']], on=_dim, how='left')
+        _grp_tri['Sinistralidade'] = (
+            _grp_tri['Total_Sinistro'] / _grp_tri['Premio_Tri'].replace(0, float('nan'))
+        ).fillna(0)
+        _grp_tri['_label'] = _grp_tri[_dim].astype(str)
+
+        # Ordena períodos corretamente
+        _periodos_tri = sorted(_grp_tri['AnoTri'].unique(),
+                               key=lambda x: (int(x.split(' T')[0]), int(x.split(' T')[1])))
+
+        _fig_tri = go.Figure()
+        for _grp_val in sorted(_grp_tri['_label'].unique()):
+            _d = _grp_tri[_grp_tri['_label'] == _grp_val].copy()
+            _d = _d.set_index('AnoTri').reindex(_periodos_tri).reset_index()
+            _d['Sinistralidade'] = _d['Sinistralidade'].fillna(0)
+
+            # Detecta tendência do último ano (últimos 4 trimestres)
+            _ultimos = _d.tail(4)['Sinistralidade']
+            _tend = (_ultimos.iloc[-1] - _ultimos.iloc[0]) if len(_ultimos) >= 2 else 0
+            _cor_nome = "🔴" if _tend > 0.05 else ("🟡" if _tend > 0 else "🟢")
+
+            _fig_tri.add_trace(go.Scatter(
+                x=_d['AnoTri'],
+                y=_d['Sinistralidade'],
+                mode='lines+markers',
+                name=f"{_cor_nome} {_grp_val}",
+                line=dict(width=2),
+                marker=dict(size=6),
+                hovertemplate=f"{_dim} {_grp_val}<br>%{{x}}: %{{y:.1%}}<extra></extra>"
+            ))
+
+        _fig_tri.update_layout(
+            xaxis=dict(title='Trimestre', tickangle=-45, tickfont=dict(size=9)),
+            yaxis=dict(title='Sinistralidade (%)', tickformat='.0%'),
+            legend=dict(orientation='h', y=1.15),
+            margin=dict(t=30, b=60, l=0, r=0),
+            height=400,
+            hovermode='x unified',
+            plot_bgcolor='white'
+        )
+        st.plotly_chart(_fig_tri, use_container_width=True, config={'displayModeBar': False})
+
+        # Alerta automático — quem mais subiu no último ano
+        _tend_resumo = []
+        for _grp_val in _grp_tri['_label'].unique():
+            _d = _grp_tri[_grp_tri['_label'] == _grp_val].sort_values('AnoTri').tail(4)
+            if len(_d) >= 2:
+                _delta = _d['Sinistralidade'].iloc[-1] - _d['Sinistralidade'].iloc[0]
+                _tend_resumo.append((_grp_val, _delta, _d['Sinistralidade'].iloc[-1]))
+
+        if _tend_resumo:
+            _tend_resumo.sort(key=lambda x: x[1], reverse=True)
+            _pior = _tend_resumo[0]
+            _melhor = _tend_resumo[-1]
+            _col_al1, _col_al2 = st.columns(2)
+            with _col_al1:
+                if _pior[1] > 0:
+                    st.error(
+                        f"🔴 **{_dim} {_pior[0]}** teve a maior alta: "
+                        f"**+{_pior[1]:.1%}** nos últimos 4 trimestres "
+                        f"(sinistralidade atual: {_pior[2]:.1%})"
+                    )
+                else:
+                    st.success(f"🟢 Todos os {_dim.lower()}s melhoraram ou estabilizaram.")
+            with _col_al2:
+                if _melhor[1] < 0:
+                    st.success(
+                        f"🟢 **{_dim} {_melhor[0]}** teve a maior queda: "
+                        f"**{_melhor[1]:.1%}** nos últimos 4 trimestres "
+                        f"(sinistralidade atual: {_melhor[2]:.1%})"
+                    )
+
+    # ════ MENSAL (últimos 12 meses) ═══════════════════════════════════════════
+    with _tab_mes:
+        _data_12m = _data_max - pd.Timedelta(days=365)
+        _df_12m = _df_full[_df_full['dt_aviso_dt'] >= _data_12m].copy()
+
+        _grp_mes = _df_12m.groupby(['AnoMes', _dim], as_index=False).agg(
+            Total_Sinistro=('Total Sinistro', 'sum'),
+            Qtd_Sinistros=('nr_sinistro', 'nunique')
+        )
+        _premio_dim['Premio_Mes'] = _premio_dim['Premio_Dim'] / (_anos_base * 12)
+        _grp_mes = pd.merge(_grp_mes, _premio_dim[[_dim, 'Premio_Mes']], on=_dim, how='left')
+        _grp_mes['Sinistralidade'] = (
+            _grp_mes['Total_Sinistro'] / _grp_mes['Premio_Mes'].replace(0, float('nan'))
+        ).fillna(0)
+        _grp_mes['_label'] = _grp_mes[_dim].astype(str)
+
+        _periodos_mes = sorted(_grp_mes['AnoMes'].unique())
+
+        _fig_mes = go.Figure()
+        for _grp_val in sorted(_grp_mes['_label'].unique()):
+            _d = _grp_mes[_grp_mes['_label'] == _grp_val].copy()
+            _d = _d.set_index('AnoMes').reindex(_periodos_mes).reset_index()
+            _d['Sinistralidade'] = _d['Sinistralidade'].fillna(0)
+
+            # Média móvel 3 meses
+            _d['MM3'] = _d['Sinistralidade'].rolling(3, min_periods=1).mean()
+
+            _fig_mes.add_trace(go.Scatter(
+                x=_d['AnoMes'], y=_d['Sinistralidade'],
+                mode='markers', name=f"{_grp_val} (mensal)",
+                marker=dict(size=5), opacity=0.4,
+                showlegend=False,
+                hovertemplate=f"{_dim} {_grp_val}<br>%{{x}}: %{{y:.1%}}<extra></extra>"
+            ))
+            _fig_mes.add_trace(go.Scatter(
+                x=_d['AnoMes'], y=_d['MM3'],
+                mode='lines', name=f"{_grp_val} (MM3)",
+                line=dict(width=2.5),
+                hovertemplate=f"{_dim} {_grp_val} MM3<br>%{{x}}: %{{y:.1%}}<extra></extra>"
+            ))
+
+        _fig_mes.update_layout(
+            xaxis=dict(title='Mês', tickangle=-45, tickfont=dict(size=9)),
+            yaxis=dict(title='Sinistralidade (%)', tickformat='.0%'),
+            legend=dict(orientation='h', y=1.15),
+            margin=dict(t=30, b=60, l=0, r=0),
+            height=400,
+            hovermode='x unified',
+            plot_bgcolor='white'
+        )
+        st.caption("Pontos = sinistralidade mensal bruta. Linhas = média móvel 3 meses (MM3) — suaviza variações pontuais.")
+        st.plotly_chart(_fig_mes, use_container_width=True, config={'displayModeBar': False})
+
+
 else:
     st.info("Nenhum dado disponível para análise de variação.")
 
