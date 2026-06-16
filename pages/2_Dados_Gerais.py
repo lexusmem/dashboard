@@ -760,75 +760,129 @@ with col_linha_barra_2:
 # ============= ANÁLISE CONSOLIDADA POR ANO (DADOS GERAIS) =============
 # 1. Agrupamento por Ano (Prêmio, Sinistro e Qtd Apólices)
 # Utilizamos o df_para_soma que já contém os dados filtrados
-df_ano_geral = df_para_soma.groupby('Ano Vigência').agg(
-    Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
-    Total_Sinistro=('Soma Sinistro Por Apolice', 'sum'),
-    Qtd_Apolices=('N° Apólice', 'nunique')
-).reset_index()
+# ── Seletor de visão: Ano de Subscrição (UWY) × Ano do Acidente (AY) ─────────
+with st.container(border=True):
+    st.markdown(
+        '<div style="font-size:12px;color:#64748B;margin-bottom:6px;">'
+        '🔁 <b>A seleção abaixo altera somente</b> a tabela <b>Desempenho Consolidado por Ano</b> '
+        'e o gráfico <b>Evolução da Sinistralidade (%)</b> dentro deste quadro.</div>',
+        unsafe_allow_html=True
+    )
+    _visao_ano = st.radio(
+        "**Visão de alocação de sinistros:**",
+        options=["Ano de Subscrição (UWY)", "Ano do Acidente (AY)"],
+        horizontal=True,
+        key="radio_visao_ano",
+        help=(
+            "**Ano de Subscrição (UWY):** prêmio, sinistro e quantidade de sinistros alocados "
+            "ao ano de vigência da apólice. Ideal para análise de subscrição — mostra o "
+            "resultado técnico de cada safra de apólices.\n\n"
+            "**Ano do Acidente (AY):** sinistros alocados ao ano em que o evento ocorreu, "
+            "independente da vigência da apólice. Ideal para análise de exposição a "
+            "risco e eventos climáticos/judiciais por período."
+        )
+    )
 
-# 2. Busca a quantidade de sinistros por ano
-# Filtramos a base de sinistros para as apólices que pertencem ao período selecionado
-lista_apos_ano = df_para_soma['N° Apólice'].unique()
-df_sin_filtrado_ano = df_sinistros[df_sinistros['N° Apólice'].isin(lista_apos_ano)].copy()
+    # Descrição visual da visão selecionada
+    if _visao_ano == "Ano de Subscrição (UWY)":
+        st.caption(
+            "📋 **Ano de Subscrição / Underwriting Year (UWY):** prêmio e sinistros agrupados pelo **ano de vigência da apólice**. "
+            "Permite avaliar o resultado técnico de cada coorte de contratos subscritos."
+        )
+    else:
+        st.caption(
+            "📋 **Ano do Acidente / Accident Year (AY):** sinistros agrupados pelo **ano em que o evento ocorreu**. "
+            "Prêmio mantido por ano de vigência. Permite analisar a concentração de eventos por período."
+        )
 
-# Extraímos o ano da data de ocorrência para contagem correta
-if 'dt_ocorrencia_dt' in df_sin_filtrado_ano.columns:
-    df_sin_filtrado_ano['Ano_Ocorrencia'] = df_sin_filtrado_ano['dt_ocorrencia_dt'].dt.year
-else:
-    df_sin_filtrado_ano['Ano_Ocorrencia'] = pd.to_datetime(df_sin_filtrado_ano['dt_ocorrencia'], dayfirst=True, errors='coerce').dt.year
+    # ── Base de sinistros filtrada pelas apólices do período ─────────────────────
+    lista_apos_ano = df_para_soma['N° Apólice'].unique()
+    df_sin_filtrado_ano = df_sinistros[df_sinistros['N° Apólice'].isin(lista_apos_ano)].copy()
 
-qtd_sin_por_ano = df_sin_filtrado_ano.groupby('Ano_Ocorrencia')['nr_sinistro'].nunique().reset_index()
-qtd_sin_por_ano.rename(columns={'Ano_Ocorrencia': 'Ano Vigência', 'nr_sinistro': 'Qtd_Sinistros'}, inplace=True)
+    # ── Cálculo conforme visão selecionada ───────────────────────────────────────
+    if _visao_ano == "Ano de Subscrição (UWY)":
+        # Ano de Subscrição (UWY): qtd sinistros pelo Ano Vigência da apólice
+        _apo_uw = df_para_soma[['N° Apólice', 'Ano Vigência']].drop_duplicates('N° Apólice')
+        _sin_uw = pd.merge(df_sin_filtrado_ano, _apo_uw, on='N° Apólice', how='left')
+        qtd_sin_por_ano = _sin_uw.groupby('Ano Vigência')['nr_sinistro'].nunique().reset_index()
+        qtd_sin_por_ano.rename(columns={'nr_sinistro': 'Qtd_Sinistros'}, inplace=True)
+        df_ano_geral = df_para_soma.groupby('Ano Vigência').agg(
+            Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
+            Total_Sinistro=('Soma Sinistro Por Apolice', 'sum'),
+            Qtd_Apolices=('N° Apólice', 'nunique')
+        ).reset_index()
+        df_final_ano = pd.merge(df_ano_geral, qtd_sin_por_ano, on='Ano Vigência', how='left').fillna(0)
+    else:
+        # Ano do Acidente (AY): sinistros alocados ao ano de ocorrência
+        if 'dt_ocorrencia_dt' in df_sin_filtrado_ano.columns:
+            df_sin_filtrado_ano['Ano_Ocorrencia'] = df_sin_filtrado_ano['dt_ocorrencia_dt'].dt.year
+        else:
+            df_sin_filtrado_ano['Ano_Ocorrencia'] = pd.to_datetime(
+                df_sin_filtrado_ano['dt_ocorrencia'], dayfirst=True, errors='coerce').dt.year
+        # Sinistro por ano de ocorrência
+        _sin_oc = df_sin_filtrado_ano.copy()
+        _sin_oc['Total Sinistro'] = (_sin_oc['vl_sinistro_total'].fillna(0) + _sin_oc['vl_despesa_total'].fillna(0)
+                                      + _sin_oc['vl_honorario_total'].fillna(0) - _sin_oc['vl_salvado_total'].fillna(0))
+        _sin_oc_ano = _sin_oc.groupby('Ano_Ocorrencia').agg(
+            Total_Sinistro_AY=('Total Sinistro', 'sum'),
+            Qtd_Sinistros=('nr_sinistro', 'nunique')
+        ).reset_index().rename(columns={'Ano_Ocorrencia': 'Ano Vigência'})
+        df_ano_geral = df_para_soma.groupby('Ano Vigência').agg(
+            Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
+            Qtd_Apolices=('N° Apólice', 'nunique')
+        ).reset_index()
+        df_final_ano = pd.merge(df_ano_geral, _sin_oc_ano, on='Ano Vigência', how='outer').fillna(0)
+        df_final_ano.rename(columns={'Total_Sinistro_AY': 'Total_Sinistro'}, inplace=True)
+        df_final_ano = df_final_ano.sort_values('Ano Vigência')
 
-# 3. Cruzamento dos dados de Prêmio e Sinistro
-df_final_ano = pd.merge(df_ano_geral, qtd_sin_por_ano, on='Ano Vigência', how='left').fillna(0)
+    df_final_ano['Qtd_Sinistros'] = df_final_ano['Qtd_Sinistros'].astype(int)
 
-# 4. Cálculo da Sinistralidade (numérico para o gráfico)
-df_final_ano['Sinistralidade_Num'] = df_final_ano.apply(
-    lambda row: (row['Total_Sinistro'] / row['Total_Premio']) if row['Total_Premio'] != 0 else 0, axis=1
-)
+    # 4. Cálculo da Sinistralidade (numérico para o gráfico)
+    df_final_ano['Sinistralidade_Num'] = (
+        df_final_ano['Total_Sinistro'] / df_final_ano['Total_Premio'].replace(0, float('nan'))
+    ).fillna(0)
 
-# 5. Formatação para a Tabela de Exibição
-df_ano_view = df_final_ano.copy()
-df_ano_view['Total_Premio'] = df_ano_view['Total_Premio'].map(formatar_valor_br) # Usa sua função de formatação
-df_ano_view['Total_Sinistro'] = df_ano_view['Total_Sinistro'].map(formatar_valor_br)
-df_ano_view['% Sinistralidade'] = df_ano_view['Sinistralidade_Num'].map(lambda x: f"{x:.2%}")
-df_ano_view['Qtd_Sinistros'] = df_ano_view['Qtd_Sinistros'].astype(int)
+    # 5. Formatação para a Tabela de Exibição
+    df_ano_view = df_final_ano.copy()
+    df_ano_view['Total_Premio'] = df_ano_view['Total_Premio'].map(formatar_valor_br)
+    df_ano_view['Total_Sinistro'] = df_ano_view['Total_Sinistro'].map(formatar_valor_br)
+    df_ano_view['% Sinistralidade'] = df_ano_view['Sinistralidade_Num'].map(lambda x: f"{x:.2%}")
+    df_ano_view['Qtd_Sinistros'] = df_ano_view['Qtd_Sinistros'].astype(int)
 
-# 6. Gráfico de Visualização de Sinistralidade por Ano
-fig_sin_ano = px.line(
-    df_final_ano,
-    x='Ano Vigência',
-    y='Sinistralidade_Num',
-    markers=True,
-    text=df_final_ano['Sinistralidade_Num'].map(lambda x: f"{x:.2%}"),
-    labels={'Sinistralidade_Num': 'Sinistralidade', 'Ano Vigência': 'Ano'},
-    template="plotly_white"
-)
+    # 6. Gráfico de Visualização de Sinistralidade por Ano
+    fig_sin_ano = px.line(
+        df_final_ano,
+        x='Ano Vigência',
+        y='Sinistralidade_Num',
+        markers=True,
+        text=df_final_ano['Sinistralidade_Num'].map(lambda x: f"{x:.2%}"),
+        labels={'Sinistralidade_Num': 'Sinistralidade', 'Ano Vigência': 'Ano'},
+        template="plotly_white"
+    )
 
-fig_sin_ano.update_traces(
-    line_color='red', 
-    textposition="top center",
-    hovertemplate="Ano: %{x}<br>Sinistralidade: %{y:.2%}"
-)
+    fig_sin_ano.update_traces(
+        line_color='red', 
+        textposition="top center",
+        hovertemplate="Ano: %{x}<br>Sinistralidade: %{y:.2%}"
+    )
 
-fig_sin_ano.update_layout(
-    yaxis_tickformat='.0%', # Formata o eixo Y como porcentagem
-    xaxis=dict(dtick=1),     # Garante que mostre ano a ano
-    height=400,
-    margin=dict(l=0, r=0, t=30, b=0)
-)
+    fig_sin_ano.update_layout(
+        yaxis_tickformat='.0%', # Formata o eixo Y como porcentagem
+        xaxis=dict(dtick=1),     # Garante que mostre ano a ano
+        height=400,
+        margin=dict(l=0, r=0, t=30, b=0)
+    )
 
-# Exibição da Tabela ano ramo
-col_ano_1,col_ano_2 = st.columns(2)
+    # Exibição da Tabela ano ramo
+    col_ano_1,col_ano_2 = st.columns(2)
 
-with col_ano_1:
-    st.markdown('<p class="section-label">Desempenho Consolidado por Ano</p>', unsafe_allow_html=True)
-    st.dataframe(df_ano_view[['Ano Vigência','Total_Premio', 'Total_Sinistro', '% Sinistralidade', 'Qtd_Apolices', 'Qtd_Sinistros']], 
-                hide_index=True, use_container_width=True)
-with col_ano_2:
-    st.markdown('<p class="section-label">Evolução da Sinistralidade (%)</p>', unsafe_allow_html=True)
-    st.plotly_chart(fig_sin_ano, use_container_width=True, config={'displayModeBar': False})
+    with col_ano_1:
+        st.markdown('<p class="section-label">Desempenho Consolidado por Ano</p>', unsafe_allow_html=True)
+        st.dataframe(df_ano_view[['Ano Vigência','Total_Premio', 'Total_Sinistro', '% Sinistralidade', 'Qtd_Apolices', 'Qtd_Sinistros']], 
+                    hide_index=True, use_container_width=True)
+    with col_ano_2:
+        st.markdown('<p class="section-label">Evolução da Sinistralidade (%)</p>', unsafe_allow_html=True)
+        st.plotly_chart(fig_sin_ano, use_container_width=True, config={'displayModeBar': False})
 
 # --- Exibição dos Resultados ---
 col_final_1, col_final_2 = st.columns(2)
@@ -2263,8 +2317,19 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
             aceleracao = coef2[0] * 100  # % ao ano
 
             # Ticket médio por sinistro (últimos 12 meses)
-            df_12m = df_sin_tend[df_sin_tend['dt_aviso'] >= df_sin_tend['dt_aviso'].max() - pd.DateOffset(months=12)]
+            _data_max_tk = df_sin_tend['dt_aviso'].max()
+            _corte_12m = _data_max_tk - pd.DateOffset(months=12)
+            _corte_24m = _data_max_tk - pd.DateOffset(months=24)
+            df_12m = df_sin_tend[df_sin_tend['dt_aviso'] >= _corte_12m]
             ticket_medio = df_12m['Total Sinistro'].sum() / max(df_12m['nr_sinistro'].nunique(), 1)
+
+            # Ticket médio dos 12 meses ANTERIORES (meses 13 a 24) — janela mais
+            # madura, menos afetada pela demora no aviso/envio dos sinistros recentes
+            df_12m_ant = df_sin_tend[
+                (df_sin_tend['dt_aviso'] >= _corte_24m) & (df_sin_tend['dt_aviso'] < _corte_12m)
+            ]
+            ticket_medio_ant = df_12m_ant['Total Sinistro'].sum() / max(df_12m_ant['nr_sinistro'].nunique(), 1)
+            _var_ticket = ((ticket_medio - ticket_medio_ant) / ticket_medio_ant * 100) if ticket_medio_ant > 0 else 0
 
             # Score de reajuste (0 = sem necessidade, 100 = urgente)
             score = 0
@@ -2305,10 +2370,13 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
                     <tr><td>📊 Sinistralidade média 3 anos</td><td style="text-align:right;font-weight:bold;">{sin_media_3a:.1%}</td></tr>
                     <tr><td>📅 Variação ano a ano</td><td style="text-align:right;font-weight:bold;">{variacao_yoy:+.1f}%</td></tr>
                     <tr><td>📈 Aceleração anual</td><td style="text-align:right;font-weight:bold;">{aceleracao:+.2f}% a.a.</td></tr>
-                    <tr><td>💰 Ticket médio sinistro (12m)</td><td style="text-align:right;font-weight:bold;">R$ {ticket_medio:,.2f}</td></tr>
+                    <tr><td>💰 Ticket médio sinistro (últimos 12m)</td><td style="text-align:right;font-weight:bold;">R$ {ticket_medio:,.2f}</td></tr>
+                    <tr><td>💰 Ticket médio sinistro (12m anteriores)</td><td style="text-align:right;font-weight:bold;">R$ {ticket_medio_ant:,.2f}</td></tr>
+                    <tr><td>↕️ Variação do ticket médio</td><td style="text-align:right;font-weight:bold;color:{'#DC2626' if _var_ticket > 0 else '#16A34A'};">{_var_ticket:+.1f}%</td></tr>
                 </table>
                 <hr style="border:1px solid #E2E8F0;margin:10px 0;">
                 <div style="font-size:11px;color:#64748B;">{desc}</div>
+                <div style="font-size:10px;color:#94A3B8;margin-top:6px;">⚠️ O ticket médio dos últimos 12 meses pode estar subestimado pela demora no aviso/envio dos sinistros recentes. Use o ticket dos 12 meses anteriores (janela mais madura) como referência de comparação.</div>
             </div>
             """, unsafe_allow_html=True)
         else:
@@ -2335,9 +2403,401 @@ st.markdown("""
 • Aceleração da tendência em % ao ano (peso 30%): acima de 5% ao ano adiciona 30 pontos; acima de 2% adiciona 15 pontos<br>
 Score 70-100 = Reajuste Urgente | Score 40-69 = Reajuste Recomendado | Score 0-39 = Prêmio Adequado.<br><br>
 
+<b>Ticket médio (últimos 12m vs 12m anteriores):</b> O painel mostra o custo médio por sinistro em duas janelas de 12 meses. A janela mais recente pode estar <i>subestimada</i> porque sinistros recentes ainda não foram avisados/enviados (atraso de comunicação). A janela dos 12 meses anteriores já está mais madura e serve de referência: se o ticket recente está muito abaixo do anterior, parte da diferença pode ser apenas atraso de aviso, e não melhora real de severidade.<br><br>
+
 <b>Como foi desenvolvido:</b> A sinistralidade anual usa a mesma base do Desempenho Consolidado por Ano (Ano de Vigência da Apólice), garantindo consistência. As médias móveis mensais são calculadas sobre a data de aviso dos sinistros, que é o dado mais atual disponível. A regressão linear é calculada com numpy.polyfit sobre os anos disponíveis filtrados.
 </div>
 """, unsafe_allow_html=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAINEL DE DIAGNÓSTICO DE VARIAÇÃO DA SINISTRALIDADE — posicionado no final
+# ══════════════════════════════════════════════════════════════════════════════
+st.write("---")
+st.subheader("🔎 Diagnóstico de Variação da Sinistralidade")
+st.caption(
+    "Identifica quais Ramos e Utilizações contribuíram para a variação recente da sinistralidade. "
+    "Mostra as janelas de 60, 90 e 180 dias lado a lado, comparando cada período com o anterior equivalente, "
+    "usando a data de aviso dos sinistros."
+)
+
+# ── Fragmento Streamlit: reexecuta APENAS a seção ao mudar o seletor, sem
+#    recarregar a página inteira (ganho de performance — Streamlit >= 1.33).
+_st_fragment = getattr(st, 'fragment', None) or getattr(st, 'experimental_fragment', None)
+if _st_fragment is None:
+    _st_fragment = lambda _f: _f  # versões antigas: comportamento original (rerun completo)
+
+if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
+
+    # ── Preparação compartilhada (executada uma única vez por recarga) ───────
+    # Prepara base com datas
+    _df_sin = df_sinistro_periodo_atualizado.copy()
+    if 'dt_aviso_dt' not in _df_sin.columns:
+        _df_sin['dt_aviso_dt'] = pd.to_datetime(_df_sin['dt_aviso'], dayfirst=True, errors='coerce')
+
+    _data_max = _df_sin['dt_aviso_dt'].max()
+    _mapa_apo = df_geral_periodo[['N° Apólice', 'Ramo', 'Utilização']].drop_duplicates('N° Apólice')
+    _df_sin   = pd.merge(_df_sin, _mapa_apo, on='N° Apólice', how='left')
+
+    _premio_total_geral = df_para_soma['Soma Prêmio Pago por Apolice'].sum()
+
+    # ── Prepara base completa com trimestre e mês ─────────────────────────────
+    _df_full = df_sinistro_periodo_atualizado.copy()
+    if 'dt_aviso_dt' not in _df_full.columns:
+        _df_full['dt_aviso_dt'] = pd.to_datetime(_df_full['dt_aviso'], dayfirst=True, errors='coerce')
+
+    _df_full['Ano']       = _df_full['dt_aviso_dt'].dt.year
+    _df_full['Trimestre'] = _df_full['dt_aviso_dt'].dt.quarter
+    _df_full['AnoTri']    = _df_full['Ano'].astype(str) + ' T' + _df_full['Trimestre'].astype(str)
+    _df_full['AnoMes']    = _df_full['dt_aviso_dt'].dt.to_period('M').astype(str)
+
+    # Junta Ramo e Utilização
+    _df_full = pd.merge(_df_full, _mapa_apo, on='N° Apólice', how='left')
+
+    # Prêmio trimestral e mensal — proporcional ao número de trimestres/meses
+    _anos_base    = df_para_soma['Ano Vigência'].nunique() or 1
+    _premio_total_full = df_para_soma['Soma Prêmio Pago por Apolice'].sum()
+    _premio_por_tri = _premio_total_full / (_anos_base * 4)  # 4 trimestres por ano
+    _premio_por_mes = _premio_total_full / (_anos_base * 12) # 12 meses por ano
+
+    # ══ SEÇÃO 1 — Diagnóstico de Variação (fragmento isolado) ═══════════════
+    @_st_fragment
+    def _render_diag_variacao():
+        # Item 3: seletor por botão de seleção (igual à Evolução Trimestral/Mensal)
+        _agrupar = st.radio(
+            'Agrupar por:',
+            ['Ramo', 'Utilização'],
+            horizontal=True,
+            key='diag_agrupar_radio'
+        )
+        _cols_grp = [_agrupar]
+
+        # Prêmio por grupo (proporcional à janela)
+        _premio_grp = df_para_soma.groupby(_cols_grp, as_index=False).agg(
+            Premio_Total=('Soma Prêmio Pago por Apolice', 'sum')
+        )
+
+        def _calcular_janela(janela):
+            _ini_rec = _data_max - pd.Timedelta(days=janela)
+            _ini_ant = _ini_rec - pd.Timedelta(days=janela)
+            _rec = _df_sin[_df_sin['dt_aviso_dt'] > _ini_rec]
+            _ant = _df_sin[(_df_sin['dt_aviso_dt'] > _ini_ant) & (_df_sin['dt_aviso_dt'] <= _ini_rec)]
+
+            def _agg(df):
+                if df.empty:
+                    return pd.DataFrame(columns=_cols_grp + ['Total_Sinistro'])
+                return df.groupby(_cols_grp, as_index=False).agg(Total_Sinistro=('Total Sinistro', 'sum'))
+
+            _pj = _premio_grp.copy()
+            _pj['Premio_J'] = _pj['Premio_Total'] * (janela / 365)
+            _r = pd.merge(_pj, _agg(_rec), on=_cols_grp, how='left').fillna(0)
+            _a = pd.merge(_pj, _agg(_ant), on=_cols_grp, how='left').fillna(0)
+            _r[f'Sin_Rec'] = (_r['Total_Sinistro'] / _r['Premio_J'].replace(0, float('nan'))).fillna(0)
+            _a[f'Sin_Ant'] = (_a['Total_Sinistro'] / _a['Premio_J'].replace(0, float('nan'))).fillna(0)
+            _c = pd.merge(_r[_cols_grp + ['Sin_Rec']], _a[_cols_grp + ['Sin_Ant']], on=_cols_grp, how='outer').fillna(0)
+            _c['Var_pp'] = (_c['Sin_Rec'] - _c['Sin_Ant']) * 100
+            _sin_rec_g = _rec['Total Sinistro'].sum() / (_premio_total_geral * janela / 365) if _premio_total_geral > 0 else 0
+            _sin_ant_g = _ant['Total Sinistro'].sum() / (_premio_total_geral * janela / 365) if _premio_total_geral > 0 else 0
+            return _c, _sin_rec_g, _sin_ant_g, _ini_rec, _ini_ant
+
+        _janelas = [60, 90, 180]
+        _res = {j: _calcular_janela(j) for j in _janelas}
+
+        # ── KPIs — um por janela ─────────────────────────────────────────────────
+        st.markdown("**Sinistralidade por janela — período recente vs anterior**")
+        _kcols = st.columns(3)
+        for i, j in enumerate(_janelas):
+            _, _srg, _sag, _ini_rec, _ini_ant = _res[j]
+            _var = (_srg - _sag) * 100
+            with _kcols[i]:
+                st.markdown(
+                    f'<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:14px 18px;">'
+                    f'<div style="font-size:11px;color:#64748B;text-transform:uppercase;letter-spacing:.05em;">Últimos {j} dias</div>'
+                    f'<div style="display:flex;align-items:baseline;gap:16px;margin:6px 0;">'
+                    f'  <div>'
+                    f'    <div style="font-size:11px;color:#64748B;">Recente</div>'
+                    f'    <div style="font-size:26px;font-weight:700;color:#1E293B;">{_srg:.1%}</div>'
+                    f'  </div>'
+                    f'  <div style="color:#CBD5E1;font-size:20px;">→</div>'
+                    f'  <div>'
+                    f'    <div style="font-size:11px;color:#64748B;">Anterior</div>'
+                    f'    <div style="font-size:26px;font-weight:700;color:#94A3B8;">{_sag:.1%}</div>'
+                    f'  </div>'
+                    f'</div>'
+                    f'<div style="font-size:12px;font-weight:600;color:{"#DC2626" if _var > 0 else "#16A34A"};">'
+                    f'  {"▲" if _var > 0 else "▼"} {abs(_var):.1f}pp {"piora" if _var > 0 else "melhora"}'
+                    f'</div>'
+                    f'<div style="font-size:10px;color:#94A3B8;margin-top:6px;">'
+                    f'  Rec: {_ini_rec.strftime("%d/%m/%y")} a {_data_max.strftime("%d/%m/%y")}<br>'
+                    f'  Ant: {_ini_ant.strftime("%d/%m/%y")} a {_ini_rec.strftime("%d/%m/%y")}'
+                    f'</div>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+
+        st.write("")
+        st.markdown(f"**Variação da sinistralidade por {_agrupar} — 60 / 90 / 180 dias**")
+
+        # ── 3 gráficos lado a lado ───────────────────────────────────────────────
+        _gcols = st.columns(3)
+        for i, j in enumerate(_janelas):
+            _comp, _, _, _, _ = _res[j]
+            _plot = _comp[_comp['Sin_Rec'] + _comp['Sin_Ant'] > 0].copy()
+
+            # Garante rótulo como string categórica — evita escala numérica no eixo Y
+            _plot['_label'] = _plot[_cols_grp[0]].astype(str)
+            _plot = _plot.sort_values('Var_pp')
+
+            _cores = ['#DC2626' if v > 0 else '#16A34A' for v in _plot['Var_pp']]
+            _max_abs = max(abs(_plot['Var_pp']).max() if not _plot.empty else 1, 1) * 1.4
+
+            _fig = go.Figure(go.Bar(
+                x=_plot['Var_pp'],
+                y=_plot['_label'],
+                orientation='h',
+                marker_color=_cores,
+                text=_plot['Var_pp'].map(lambda x: f"{x:+.1f}pp"),
+                textposition='outside',
+            ))
+            _fig.add_vline(x=0, line_width=1.5, line_color='#374151')
+            _fig.update_layout(
+                title=dict(text=f"Últimos {j} dias", font=dict(size=13)),
+                xaxis=dict(title='Variação (pp)', ticksuffix='pp', range=[-_max_abs, _max_abs]),
+                yaxis=dict(
+                    title='',
+                    tickfont=dict(size=11),
+                    type='category',          # força eixo categórico — nunca interpola os rótulos
+                    categoryorder='array',
+                    categoryarray=_plot['_label'].tolist()
+                ),
+                margin=dict(t=40, b=20, l=10, r=50),
+                height=max(220, len(_plot) * 50 + 80),
+                plot_bgcolor='white'
+            )
+            with _gcols[i]:
+                st.plotly_chart(_fig, use_container_width=True, config={'displayModeBar': False})
+
+        # ── Tabela consolidada ───────────────────────────────────────────────────
+        with st.expander("📋 Ver tabela detalhada de comparação"):
+            _tbl_base = _res[60][0][_cols_grp].copy()
+            for j in _janelas:
+                _c = _res[j][0][_cols_grp + ['Sin_Rec','Sin_Ant','Var_pp']].copy()
+                _c.columns = _cols_grp + [f'Sin_Rec_{j}', f'Sin_Ant_{j}', f'Var_{j}']
+                _tbl_base = pd.merge(_tbl_base, _c, on=_cols_grp, how='outer').fillna(0)
+            for j in _janelas:
+                _tbl_base[f'Sin_Rec_{j}'] = _tbl_base[f'Sin_Rec_{j}'].map(lambda x: f"{x:.1%}")
+                _tbl_base[f'Sin_Ant_{j}'] = _tbl_base[f'Sin_Ant_{j}'].map(lambda x: f"{x:.1%}")
+                _tbl_base[f'Var_{j}']     = _tbl_base[f'Var_{j}'].map(lambda x: f"{x:+.1f}pp")
+            _tbl_base.rename(columns={
+                _cols_grp[0]: _agrupar,
+                'Sin_Rec_60':'Rec.60d','Sin_Ant_60':'Ant.60d','Var_60':'Var.60d',
+                'Sin_Rec_90':'Rec.90d','Sin_Ant_90':'Ant.90d','Var_90':'Var.90d',
+                'Sin_Rec_180':'Rec.180d','Sin_Ant_180':'Ant.180d','Var_180':'Var.180d',
+            }, inplace=True)
+            st.dataframe(_tbl_base, hide_index=True, use_container_width=True)
+
+        st.markdown("")
+        st.markdown("""
+<div style="background:#F8FAFC;border-radius:10px;padding:18px;border:1px solid #E2E8F0;font-size:13px;color:#334155;">
+<b>📖 Como entender esta análise</b><br><br>
+
+<b>O que é:</b> Esta seção responde à pergunta: <i>quais Ramos ou Utilizações puxaram a sinistralidade para cima (ou para baixo) recentemente?</i> Ela compara três janelas de tempo — 60, 90 e 180 dias — cada uma contra o período imediatamente anterior de mesma duração, usando a <b>data de aviso</b> dos sinistros.<br><br>
+
+<b>Cartões de sinistralidade por janela:</b> Mostram a sinistralidade geral da carteira no período recente vs. o período anterior equivalente. A seta indica se houve piora (▲ vermelho) ou melhora (▼ verde), em pontos percentuais (pp). As datas de cada janela aparecem abaixo do indicador.<br><br>
+
+<b>Gráficos de variação por Ramo/Utilização:</b> Cada barra mostra quanto a sinistralidade daquele grupo variou entre o período anterior e o recente, em pontos percentuais. Barras vermelhas à direita = grupos que pioraram; barras verdes à esquerda = grupos que melhoraram. Compare as três janelas: se um grupo aparece vermelho nas três, a piora é consistente e não pontual.<br><br>
+
+<b>Tabela detalhada:</b> O expansor mostra, para cada grupo, a sinistralidade do período recente (Rec.), do anterior (Ant.) e a variação (Var.) em cada janela — útil para validar os gráficos com números exatos.<br><br>
+
+<b>Como foi desenvolvido:</b> O prêmio de cada grupo é proporcionalizado ao tamanho da janela (ex.: prêmio anual × 60/365 para a janela de 60 dias). O sinistro é somado pela data de aviso dentro de cada janela. Sinistralidade = sinistro da janela ÷ prêmio proporcional. A variação em pp é a diferença entre a sinistralidade recente e a anterior. Janelas curtas (60d) reagem rápido mas oscilam mais; a janela de 180d é mais estável.<br><br>
+
+<b>Atenção:</b> Como a análise usa a data de aviso, sinistros ocorridos recentemente mas ainda não avisados não aparecem — a janela mais recente pode estar subestimada.
+</div>
+""", unsafe_allow_html=True)
+
+    # ══ SEÇÃO 2 — Evolução Trimestral e Mensal (fragmento isolado) ══════════
+    @_st_fragment
+    def _render_evolucao_tri_mensal():
+        # ── Seletor de dimensão ───────────────────────────────────────────────────
+        _dim = st.radio(
+            "Analisar por:",
+            ["Ramo", "Utilização"],
+            horizontal=True,
+            key="diag_dim_tend"
+        )
+
+        # ── Tab: Trimestral vs Mensal ─────────────────────────────────────────────
+        _tab_tri, _tab_mes = st.tabs(["📅 Trimestral (período completo)", "📆 Mensal (últimos 12 meses)"])
+
+        # ════ TRIMESTRAL ══════════════════════════════════════════════════════════
+        with _tab_tri:
+            _grp_tri = _df_full.groupby(['AnoTri', _dim], as_index=False).agg(
+                Total_Sinistro=('Total Sinistro', 'sum'),
+                Qtd_Sinistros=('nr_sinistro', 'nunique')
+            )
+            # Prêmio proporcional por trimestre por grupo
+            _premio_dim = df_para_soma.groupby(_dim, as_index=False).agg(
+                Premio_Dim=('Soma Prêmio Pago por Apolice', 'sum')
+            )
+            _n_tri_total = _df_full['AnoTri'].nunique() or 1
+            _premio_dim['Premio_Tri'] = _premio_dim['Premio_Dim'] / (_anos_base * 4)
+
+            _grp_tri = pd.merge(_grp_tri, _premio_dim[[_dim, 'Premio_Tri']], on=_dim, how='left')
+            _grp_tri['Sinistralidade'] = (
+                _grp_tri['Total_Sinistro'] / _grp_tri['Premio_Tri'].replace(0, float('nan'))
+            ).fillna(0)
+            _grp_tri['_label'] = _grp_tri[_dim].astype(str)
+
+            # Ordena períodos corretamente
+            _periodos_tri = sorted(_grp_tri['AnoTri'].unique(),
+                                   key=lambda x: (int(x.split(' T')[0]), int(x.split(' T')[1])))
+
+            _fig_tri = go.Figure()
+            for _grp_val in sorted(_grp_tri['_label'].unique()):
+                _d = _grp_tri[_grp_tri['_label'] == _grp_val].copy()
+                _d = _d.set_index('AnoTri').reindex(_periodos_tri).reset_index()
+                _d['Sinistralidade'] = _d['Sinistralidade'].fillna(0)
+
+                # Detecta tendência do último ano (últimos 4 trimestres)
+                _ultimos = _d.tail(4)['Sinistralidade']
+                _tend = (_ultimos.iloc[-1] - _ultimos.iloc[0]) if len(_ultimos) >= 2 else 0
+                _cor_nome = "🔴" if _tend > 0.05 else ("🟡" if _tend > 0 else "🟢")
+
+                _fig_tri.add_trace(go.Scatter(
+                    x=_d['AnoTri'],
+                    y=_d['Sinistralidade'],
+                    mode='lines+markers',
+                    name=f"{_cor_nome} {_grp_val}",
+                    line=dict(width=2),
+                    marker=dict(size=6),
+                    hovertemplate=f"{_dim} {_grp_val}<br>%{{x}}: %{{y:.1%}}<extra></extra>"
+                ))
+
+            _fig_tri.update_layout(
+                xaxis=dict(title='Trimestre', tickangle=-45, tickfont=dict(size=9)),
+                yaxis=dict(title='Sinistralidade (%)', tickformat='.0%'),
+                legend=dict(orientation='h', y=1.15),
+                margin=dict(t=30, b=60, l=0, r=0),
+                height=400,
+                hovermode='x unified',
+                plot_bgcolor='white'
+            )
+            st.plotly_chart(_fig_tri, use_container_width=True, config={'displayModeBar': False})
+
+            # Alerta automático — quem mais subiu no último ano
+            _tend_resumo = []
+            for _grp_val in _grp_tri['_label'].unique():
+                _d = _grp_tri[_grp_tri['_label'] == _grp_val].sort_values('AnoTri').tail(4)
+                if len(_d) >= 2:
+                    _delta = _d['Sinistralidade'].iloc[-1] - _d['Sinistralidade'].iloc[0]
+                    _tend_resumo.append((_grp_val, _delta, _d['Sinistralidade'].iloc[-1]))
+
+            if _tend_resumo:
+                _tend_resumo.sort(key=lambda x: x[1], reverse=True)
+                _pior = _tend_resumo[0]
+                _melhor = _tend_resumo[-1]
+                _col_al1, _col_al2 = st.columns(2)
+                with _col_al1:
+                    if _pior[1] > 0:
+                        st.error(
+                            f"🔴 **{_dim} {_pior[0]}** teve a maior alta: "
+                            f"**+{_pior[1]:.1%}** nos últimos 4 trimestres "
+                            f"(sinistralidade atual: {_pior[2]:.1%})"
+                        )
+                    else:
+                        st.success(f"🟢 Todos os {_dim.lower()}s melhoraram ou estabilizaram.")
+                with _col_al2:
+                    if _melhor[1] < 0:
+                        st.success(
+                            f"🟢 **{_dim} {_melhor[0]}** teve a maior queda: "
+                            f"**{_melhor[1]:.1%}** nos últimos 4 trimestres "
+                            f"(sinistralidade atual: {_melhor[2]:.1%})"
+                        )
+
+        # ════ MENSAL (últimos 12 meses) ═══════════════════════════════════════════
+        with _tab_mes:
+            _data_12m = _data_max - pd.Timedelta(days=365)
+            _df_12m = _df_full[_df_full['dt_aviso_dt'] >= _data_12m].copy()
+
+            _grp_mes = _df_12m.groupby(['AnoMes', _dim], as_index=False).agg(
+                Total_Sinistro=('Total Sinistro', 'sum'),
+                Qtd_Sinistros=('nr_sinistro', 'nunique')
+            )
+            _premio_dim['Premio_Mes'] = _premio_dim['Premio_Dim'] / (_anos_base * 12)
+            _grp_mes = pd.merge(_grp_mes, _premio_dim[[_dim, 'Premio_Mes']], on=_dim, how='left')
+            _grp_mes['Sinistralidade'] = (
+                _grp_mes['Total_Sinistro'] / _grp_mes['Premio_Mes'].replace(0, float('nan'))
+            ).fillna(0)
+            _grp_mes['_label'] = _grp_mes[_dim].astype(str)
+
+            _periodos_mes = sorted(_grp_mes['AnoMes'].unique())
+
+            _fig_mes = go.Figure()
+            for _grp_val in sorted(_grp_mes['_label'].unique()):
+                _d = _grp_mes[_grp_mes['_label'] == _grp_val].copy()
+                _d = _d.set_index('AnoMes').reindex(_periodos_mes).reset_index()
+                _d['Sinistralidade'] = _d['Sinistralidade'].fillna(0)
+
+                # Média móvel 3 meses
+                _d['MM3'] = _d['Sinistralidade'].rolling(3, min_periods=1).mean()
+
+                _fig_mes.add_trace(go.Scatter(
+                    x=_d['AnoMes'], y=_d['Sinistralidade'],
+                    mode='markers', name=f"{_grp_val} (mensal)",
+                    marker=dict(size=5), opacity=0.4,
+                    showlegend=False,
+                    hovertemplate=f"{_dim} {_grp_val}<br>%{{x}}: %{{y:.1%}}<extra></extra>"
+                ))
+                _fig_mes.add_trace(go.Scatter(
+                    x=_d['AnoMes'], y=_d['MM3'],
+                    mode='lines', name=f"{_grp_val} (MM3)",
+                    line=dict(width=2.5),
+                    hovertemplate=f"{_dim} {_grp_val} MM3<br>%{{x}}: %{{y:.1%}}<extra></extra>"
+                ))
+
+            _fig_mes.update_layout(
+                xaxis=dict(title='Mês', tickangle=-45, tickfont=dict(size=9)),
+                yaxis=dict(title='Sinistralidade (%)', tickformat='.0%'),
+                legend=dict(orientation='h', y=1.15),
+                margin=dict(t=30, b=60, l=0, r=0),
+                height=400,
+                hovermode='x unified',
+                plot_bgcolor='white'
+            )
+            st.caption("Pontos = sinistralidade mensal bruta. Linhas = média móvel 3 meses (MM3) — suaviza variações pontuais.")
+            st.plotly_chart(_fig_mes, use_container_width=True, config={'displayModeBar': False})
+
+        st.markdown("")
+        st.markdown("""
+<div style="background:#F8FAFC;border-radius:10px;padding:18px;border:1px solid #E2E8F0;font-size:13px;color:#334155;">
+<b>📖 Como entender esta análise</b><br><br>
+
+<b>O que é:</b> Esta seção mostra a <i>trajetória</i> da sinistralidade de cada Ramo ou Utilização ao longo do tempo, em duas escalas: trimestral (período completo filtrado — direção de médio prazo) e mensal (últimos 12 meses — movimento recente).<br><br>
+
+<b>Aba Trimestral:</b> Uma linha por grupo, com a sinistralidade de cada trimestre. O emoji ao lado do nome resume a tendência dos últimos 4 trimestres: 🔴 alta relevante (subiu mais de 5pp), 🟡 alta leve, 🟢 estável ou em queda. Os alertas automáticos abaixo do gráfico destacam o grupo com maior alta e o de maior queda no último ano.<br><br>
+
+<b>Aba Mensal:</b> Os pontos são a sinistralidade mensal bruta (volátil por natureza); as linhas são a média móvel de 3 meses (MM3), que suaviza oscilações pontuais e revela a direção real. Acompanhe as linhas, não os pontos: linha subindo = deterioração em curso.<br><br>
+
+<b>Como foi desenvolvido:</b> O sinistro é agrupado por trimestre/mês de <b>aviso</b> e por Ramo ou Utilização. O prêmio de cada grupo é distribuído uniformemente entre os períodos (prêmio total do grupo ÷ nº de anos da base × 4 trimestres ou × 12 meses). Sinistralidade do período = sinistro do período ÷ prêmio proporcional do grupo.<br><br>
+
+<b>Atenção:</b> Por usar prêmio médio uniforme, grupos com forte crescimento ou queda de produção podem ter a sinistralidade distorcida em períodos específicos. Meses muito recentes tendem a aparecer melhores do que são, pela demora no aviso dos sinistros.
+</div>
+""", unsafe_allow_html=True)
+
+    # ── Renderização ─────────────────────────────────────────────────────────
+    _render_diag_variacao()
+
+    st.write("---")
+    st.markdown("### 📉 Evolução Trimestral e Mensal da Sinistralidade")
+    st.caption(
+        "Visão de tendência do período completo filtrado. "
+        "Trimestral mostra a direção de médio prazo; mensal (últimos 12 meses) mostra o movimento recente. "
+        "Identifique em qual Ramo ou Utilização a sinistralidade está subindo."
+    )
+    _render_evolucao_tri_mensal()
+
+else:
+    st.info("Nenhum dado disponível para análise de variação.")
 
 st.write("---")
 st.caption("Desenvolvido por Alex Sousa.")
