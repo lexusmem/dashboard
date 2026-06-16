@@ -760,7 +760,7 @@ with col_linha_barra_2:
 # ============= ANÁLISE CONSOLIDADA POR ANO (DADOS GERAIS) =============
 # 1. Agrupamento por Ano (Prêmio, Sinistro e Qtd Apólices)
 # Utilizamos o df_para_soma que já contém os dados filtrados
-# ── Seletor de visão: Ano de Subscrição (UWY) × Ano de Subscrição (AY) ───────
+# ── Seletor de visão: Ano de Subscrição (UWY) × Ano do Acidente (AY) ─────────
 with st.container(border=True):
     st.markdown(
         '<div style="font-size:12px;color:#64748B;margin-bottom:6px;">'
@@ -770,14 +770,14 @@ with st.container(border=True):
     )
     _visao_ano = st.radio(
         "**Visão de alocação de sinistros:**",
-        options=["Ano de Subscrição (UWY)", "Ano de Subscrição (AY)"],
+        options=["Ano de Subscrição (UWY)", "Ano do Acidente (AY)"],
         horizontal=True,
         key="radio_visao_ano",
         help=(
             "**Ano de Subscrição (UWY):** prêmio, sinistro e quantidade de sinistros alocados "
             "ao ano de vigência da apólice. Ideal para análise de subscrição — mostra o "
             "resultado técnico de cada safra de apólices.\n\n"
-            "**Ano de Subscrição (AY):** sinistros alocados ao ano em que o evento ocorreu, "
+            "**Ano do Acidente (AY):** sinistros alocados ao ano em que o evento ocorreu, "
             "independente da vigência da apólice. Ideal para análise de exposição a "
             "risco e eventos climáticos/judiciais por período."
         )
@@ -791,7 +791,7 @@ with st.container(border=True):
         )
     else:
         st.caption(
-            "📋 **Ano de Subscrição / Accident Year (AY):** sinistros agrupados pelo **ano em que o evento ocorreu**. "
+            "📋 **Ano do Acidente / Accident Year (AY):** sinistros agrupados pelo **ano em que o evento ocorreu**. "
             "Prêmio mantido por ano de vigência. Permite analisar a concentração de eventos por período."
         )
 
@@ -813,7 +813,7 @@ with st.container(border=True):
         ).reset_index()
         df_final_ano = pd.merge(df_ano_geral, qtd_sin_por_ano, on='Ano Vigência', how='left').fillna(0)
     else:
-        # Ano de Subscrição (AY): sinistros alocados ao ano de ocorrência
+        # Ano do Acidente (AY): sinistros alocados ao ano de ocorrência
         if 'dt_ocorrencia_dt' in df_sin_filtrado_ano.columns:
             df_sin_filtrado_ano['Ano_Ocorrencia'] = df_sin_filtrado_ano['dt_ocorrencia_dt'].dt.year
         else:
