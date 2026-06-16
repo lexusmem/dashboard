@@ -760,7 +760,7 @@ with col_linha_barra_2:
 # ============= ANÁLISE CONSOLIDADA POR ANO (DADOS GERAIS) =============
 # 1. Agrupamento por Ano (Prêmio, Sinistro e Qtd Apólices)
 # Utilizamos o df_para_soma que já contém os dados filtrados
-# ── Seletor de visão: Underwriting Year × Accident Year ──────────────────────
+# ── Seletor de visão: Ano de Subscrição (UWY) × Ano de Subscrição (AY) ───────
 with st.container(border=True):
     st.markdown(
         '<div style="font-size:12px;color:#64748B;margin-bottom:6px;">'
@@ -770,28 +770,28 @@ with st.container(border=True):
     )
     _visao_ano = st.radio(
         "**Visão de alocação de sinistros:**",
-        options=["Underwriting Year", "Accident Year"],
+        options=["Ano de Subscrição (UWY)", "Ano de Subscrição (AY)"],
         horizontal=True,
         key="radio_visao_ano",
         help=(
-            "**Underwriting Year:** prêmio, sinistro e quantidade de sinistros alocados "
+            "**Ano de Subscrição (UWY):** prêmio, sinistro e quantidade de sinistros alocados "
             "ao ano de vigência da apólice. Ideal para análise de subscrição — mostra o "
             "resultado técnico de cada safra de apólices.\n\n"
-            "**Accident Year:** sinistros alocados ao ano em que o evento ocorreu, "
+            "**Ano de Subscrição (AY):** sinistros alocados ao ano em que o evento ocorreu, "
             "independente da vigência da apólice. Ideal para análise de exposição a "
             "risco e eventos climáticos/judiciais por período."
         )
     )
 
     # Descrição visual da visão selecionada
-    if _visao_ano == "Underwriting Year":
+    if _visao_ano == "Ano de Subscrição (UWY)":
         st.caption(
-            "📋 **Underwriting Year (UWY):** prêmio e sinistros agrupados pelo **ano de vigência da apólice**. "
+            "📋 **Ano de Subscrição / Underwriting Year (UWY):** prêmio e sinistros agrupados pelo **ano de vigência da apólice**. "
             "Permite avaliar o resultado técnico de cada coorte de contratos subscritos."
         )
     else:
         st.caption(
-            "📋 **Accident Year (AY):** sinistros agrupados pelo **ano em que o evento ocorreu**. "
+            "📋 **Ano de Subscrição / Accident Year (AY):** sinistros agrupados pelo **ano em que o evento ocorreu**. "
             "Prêmio mantido por ano de vigência. Permite analisar a concentração de eventos por período."
         )
 
@@ -800,8 +800,8 @@ with st.container(border=True):
     df_sin_filtrado_ano = df_sinistros[df_sinistros['N° Apólice'].isin(lista_apos_ano)].copy()
 
     # ── Cálculo conforme visão selecionada ───────────────────────────────────────
-    if _visao_ano == "Underwriting Year":
-        # Underwriting Year: qtd sinistros pelo Ano Vigência da apólice
+    if _visao_ano == "Ano de Subscrição (UWY)":
+        # Ano de Subscrição (UWY): qtd sinistros pelo Ano Vigência da apólice
         _apo_uw = df_para_soma[['N° Apólice', 'Ano Vigência']].drop_duplicates('N° Apólice')
         _sin_uw = pd.merge(df_sin_filtrado_ano, _apo_uw, on='N° Apólice', how='left')
         qtd_sin_por_ano = _sin_uw.groupby('Ano Vigência')['nr_sinistro'].nunique().reset_index()
@@ -813,7 +813,7 @@ with st.container(border=True):
         ).reset_index()
         df_final_ano = pd.merge(df_ano_geral, qtd_sin_por_ano, on='Ano Vigência', how='left').fillna(0)
     else:
-        # Accident Year: sinistros alocados ao ano de ocorrência
+        # Ano de Subscrição (AY): sinistros alocados ao ano de ocorrência
         if 'dt_ocorrencia_dt' in df_sin_filtrado_ano.columns:
             df_sin_filtrado_ano['Ano_Ocorrencia'] = df_sin_filtrado_ano['dt_ocorrencia_dt'].dt.year
         else:
