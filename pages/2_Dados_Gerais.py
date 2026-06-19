@@ -396,6 +396,44 @@ dados_calculados = st.session_state['dados_calculados']
 df_sinistros     = st.session_state['df_sinistros']
 df_cobertura     = st.session_state.get('df_cobertura', pd.DataFrame())
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 📸 SNAPSHOT DIÁRIO AUTOMÁTICO DA BASE DE SINISTROS
+# Objetivo: capturar uma "fotografia" diária dos valores financeiros de cada
+# sinistro, permitindo comparações futuras para identificar movimentações
+# (aumento de reserva, novos pagamentos) em sinistros antigos.
+# - Salva uma única vez por dia (idempotente: pula se já existe)
+# - Arquivo Parquet leve (~50KB/dia para milhares de sinistros)
+# - Pasta `snapshots/` ao lado do app; não interfere em nada se falhar
+# ─────────────────────────────────────────────────────────────────────────────
+from pathlib import Path as _Path
+_SNAP_DIR = _Path("snapshots")
+try:
+    _SNAP_DIR.mkdir(exist_ok=True)
+except Exception:
+    pass
+
+_HOJE_STR = pd.Timestamp.today().strftime("%Y-%m-%d")
+# Evita verificar disco a cada rerun do Streamlit dentro da mesma sessão
+if st.session_state.get('snap_check_date') != _HOJE_STR:
+    _snap_file = _SNAP_DIR / f"sinistros_{_HOJE_STR}.parquet"
+    if (not _snap_file.exists()) and (not df_sinistros.empty):
+        _cols_snap = [c for c in [
+            'nr_sinistro', 'N° Apólice', 'cd_apolice', 'nr_ramo', 'Ramo', 'Utilização',
+            'dt_aviso', 'dt_ocorrencia',
+            'vl_sinistro_pago', 'vl_sinistro_pendente', 'vl_sinistro_total',
+            'vl_despesa_pago', 'vl_despesa_pendente', 'vl_despesa_total',
+            'vl_honorario_total', 'vl_salvado_total',
+            'Total Sinistro',
+            'status_processo', 'status_movimento'
+        ] if c in df_sinistros.columns]
+        try:
+            df_sinistros[_cols_snap].to_parquet(_snap_file, index=False)
+        except Exception:
+            # Feature opcional — qualquer falha (pyarrow ausente, permissão de
+            # disco, etc.) é silenciosa para não impactar o uso normal do app.
+            pass
+    st.session_state['snap_check_date'] = _HOJE_STR
+
 # Prepara dados_exibicao
 dados_exibicao = dados_calculados.copy()
 dados_exibicao['Soma Prêmio Pago por Apolice'] = dados_exibicao['Soma Prêmio Pago por Apolice'].astype(object)
@@ -3157,6 +3195,457 @@ if (not df_sinistro_periodo_atualizado.empty) and (not df_geral_periodo.empty):
 
 else:
     st.info("Nenhum dado disponível para análise de cauda histórica.")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 📦 ANÁLISE DE MOVIMENTAÇÃO FINANCEIRA EM SINISTROS ANTIGOS
+# Compara a base atual com snapshots salvos automaticamente em dias anteriores.
+# Mostra quais sinistros antigos tiveram aumento de reserva ou novos pagamentos
+# entre a data de referência e hoje — capturando o efeito da "cauda viva".
+# ─────────────────────────────────────────────────────────────────────────────
+st.write("---")
+st.subheader("📦 Movimentação Financeira em Sinistros Antigos")
+st.markdown(
+    '<p class="section-label">Compara a base atual com fotografias diárias '
+    'salvas automaticamente para revelar quais sinistros antigos tiveram '
+    'movimentação financeira (aumento de reserva, novos pagamentos) no período.</p>',
+    unsafe_allow_html=True
+)
+
+# Decorador de fragmento (mesma técnica usada nas outras seções)
+_st_fragment_mv = getattr(st, 'fragment', None) or getattr(st, 'experimental_fragment', None)
+if _st_fragment_mv is None:
+    _st_fragment_mv = lambda _f: _f
+
+# ── Inventário de snapshots disponíveis ──────────────────────────────────────
+_snap_files = []
+if _SNAP_DIR.exists():
+    for _f in sorted(_SNAP_DIR.glob("sinistros_*.parquet")):
+        _date_str = _f.stem.replace("sinistros_", "")
+        try:
+            _date_obj = pd.to_datetime(_date_str, format="%Y-%m-%d")
+            _snap_files.append((_date_obj, _f))
+        except Exception:
+            continue
+
+# Snapshots anteriores a hoje (a base atual já é o "snapshot de hoje")
+_snap_anteriores = [(d, p) for (d, p) in _snap_files if d.strftime("%Y-%m-%d") != _HOJE_STR]
+
+if not _snap_anteriores:
+    # Caso típico no primeiro uso ou primeiro dia de implantação
+    st.info(
+        "📸 **Snapshots diários ativados.** A base atual foi salva automaticamente "
+        f"como snapshot do dia {pd.Timestamp.today().strftime('%d/%m/%Y')}. "
+        "A análise comparativa ficará disponível a partir do próximo dia em que "
+        "o aplicativo for aberto. Quanto mais dias a base for consultada, "
+        "mais datas de referência você terá para comparar."
+    )
+    _qtd_snaps = len(_snap_files)
+    st.caption(
+        f"📁 Snapshots armazenados até o momento: **{_qtd_snaps}**. "
+        f"Localização: `{_SNAP_DIR.resolve()}`."
+    )
+
+elif df_sinistros.empty:
+    st.info("Base de sinistros vazia — nada a comparar.")
+
+else:
+
+    @_st_fragment_mv
+    def _render_movimentacao_antigos():
+        # ── Controles ────────────────────────────────────────────────────────
+        _col_c1, _col_c2 = st.columns([2, 1])
+
+        with _col_c1:
+            # Monta opções: snapshots agrupados por marcos comuns + lista completa
+            _opcoes_marco = []
+            _data_atual = pd.Timestamp.today().normalize()
+            for _label, _dias in [
+                ("Últimos 7 dias", 7),
+                ("Últimos 30 dias", 30),
+                ("Últimos 60 dias", 60),
+                ("Últimos 90 dias", 90),
+                ("Últimos 180 dias", 180),
+                ("Último ano", 365),
+            ]:
+                _alvo = _data_atual - pd.Timedelta(days=_dias)
+                # Pega o snapshot mais próximo (anterior ou igual) à data alvo
+                _candidatos = [(d, p) for (d, p) in _snap_anteriores if d <= _alvo]
+                if _candidatos:
+                    _d_escolhida, _p_escolhida = max(_candidatos, key=lambda x: x[0])
+                    _opcoes_marco.append((f"{_label} (snapshot de {_d_escolhida.strftime('%d/%m/%Y')})", _p_escolhida))
+
+            _opcoes_data_especifica = [
+                (f"Data específica: {d.strftime('%d/%m/%Y')}", p)
+                for (d, p) in sorted(_snap_anteriores, key=lambda x: x[0], reverse=True)
+            ]
+
+            _todas_opcoes = _opcoes_marco + [("───────────", None)] + _opcoes_data_especifica
+            _todas_opcoes = [opt for opt in _todas_opcoes if opt[1] is not None or opt[0] == "───────────"]
+
+            _labels = [opt[0] for opt in _todas_opcoes]
+            _idx_default = 0
+            # Default: prefere "Últimos 30 dias" se disponível
+            for _i, _lbl in enumerate(_labels):
+                if "Últimos 30 dias" in _lbl:
+                    _idx_default = _i
+                    break
+
+            _escolha = st.selectbox(
+                "Comparar base atual com:",
+                options=_labels,
+                index=_idx_default,
+                key="mv_snap_choice",
+                help="Selecione um marco temporal ou uma data específica para comparar com a base atual."
+            )
+            if _escolha == "───────────":
+                st.info("Selecione uma opção válida.")
+                return
+            _snap_path = dict(_todas_opcoes)[_escolha]
+
+        with _col_c2:
+            _limite_meses_mv = st.radio(
+                "Sinistro 'antigo' quando aviso é maior que:",
+                options=[6, 12, 24],
+                index=1,
+                horizontal=True,
+                format_func=lambda x: f"{x} meses",
+                key="mv_antigo_threshold",
+                help=(
+                    "Define o que conta como 'sinistro antigo'. Apenas sinistros "
+                    "com data de aviso anterior a esse limite (em relação ao "
+                    "snapshot escolhido) entram na análise."
+                )
+            )
+
+        # ── Carrega snapshot e prepara base ──────────────────────────────────
+        try:
+            _df_old = pd.read_parquet(_snap_path)
+        except Exception as _e:
+            st.error(f"Não foi possível ler o snapshot selecionado: {_e}")
+            return
+
+        _data_snap = pd.to_datetime(_snap_path.stem.replace("sinistros_", ""), format="%Y-%m-%d")
+
+        # Calcula Total Sinistro consistente nos dois lados se a coluna não existir
+        def _garante_total(_df):
+            if 'Total Sinistro' in _df.columns:
+                _df['Total Sinistro'] = pd.to_numeric(_df['Total Sinistro'], errors='coerce').fillna(0)
+                return _df
+            _df['Total Sinistro'] = (
+                pd.to_numeric(_df.get('vl_sinistro_total', 0), errors='coerce').fillna(0)
+                + pd.to_numeric(_df.get('vl_despesa_total', 0), errors='coerce').fillna(0)
+                + pd.to_numeric(_df.get('vl_honorario_total', 0), errors='coerce').fillna(0)
+                - pd.to_numeric(_df.get('vl_salvado_total', 0), errors='coerce').fillna(0)
+            )
+            return _df
+
+        _df_old = _garante_total(_df_old.copy())
+        _df_now = _garante_total(df_sinistros.copy())
+
+        # Garante numérico em todas as colunas de valor
+        for _c in ['vl_sinistro_pago', 'vl_sinistro_pendente', 'vl_sinistro_total',
+                   'vl_despesa_pago', 'vl_despesa_pendente', 'vl_despesa_total']:
+            if _c in _df_old.columns:
+                _df_old[_c] = pd.to_numeric(_df_old[_c], errors='coerce').fillna(0)
+            if _c in _df_now.columns:
+                _df_now[_c] = pd.to_numeric(_df_now[_c], errors='coerce').fillna(0)
+
+        # ── Merge por nr_sinistro ────────────────────────────────────────────
+        _cols_merge = ['nr_sinistro', 'Total Sinistro']
+        for _c in ['vl_sinistro_pago', 'vl_sinistro_pendente', 'vl_despesa_pago', 'vl_despesa_pendente']:
+            if _c in _df_old.columns and _c in _df_now.columns:
+                _cols_merge.append(_c)
+
+        _cols_old = ['nr_sinistro', 'dt_aviso', 'dt_ocorrencia'] + [c for c in _cols_merge if c != 'nr_sinistro']
+        _cols_now = list(_cols_merge) + ['dt_aviso']
+        if 'Ramo' in _df_now.columns:
+            _cols_now.append('Ramo')
+        if 'Utilização' in _df_now.columns:
+            _cols_now.append('Utilização')
+
+        _cols_old = [c for c in _cols_old if c in _df_old.columns]
+        _cols_now = [c for c in _cols_now if c in _df_now.columns]
+
+        _merged = pd.merge(
+            _df_old[_cols_old].drop_duplicates('nr_sinistro'),
+            _df_now[_cols_now].drop_duplicates('nr_sinistro'),
+            on='nr_sinistro', how='inner', suffixes=('_old', '_now')
+        )
+
+        if _merged.empty:
+            st.info("Nenhum sinistro em comum entre a base atual e o snapshot selecionado.")
+            return
+
+        # ── Calcula deltas ───────────────────────────────────────────────────
+        _merged['delta_total']    = _merged['Total Sinistro_now']  - _merged['Total Sinistro_old']
+        if 'vl_sinistro_pago_old' in _merged.columns and 'vl_sinistro_pago_now' in _merged.columns:
+            _merged['delta_pago_sin']  = _merged['vl_sinistro_pago_now']  - _merged['vl_sinistro_pago_old']
+        else:
+            _merged['delta_pago_sin'] = 0
+        if 'vl_sinistro_pendente_old' in _merged.columns and 'vl_sinistro_pendente_now' in _merged.columns:
+            _merged['delta_pend_sin']  = _merged['vl_sinistro_pendente_now']  - _merged['vl_sinistro_pendente_old']
+        else:
+            _merged['delta_pend_sin'] = 0
+        if 'vl_despesa_pago_old' in _merged.columns and 'vl_despesa_pago_now' in _merged.columns:
+            _merged['delta_pago_desp'] = _merged['vl_despesa_pago_now']     - _merged['vl_despesa_pago_old']
+        else:
+            _merged['delta_pago_desp'] = 0
+        if 'vl_despesa_pendente_old' in _merged.columns and 'vl_despesa_pendente_now' in _merged.columns:
+            _merged['delta_pend_desp'] = _merged['vl_despesa_pendente_now'] - _merged['vl_despesa_pendente_old']
+        else:
+            _merged['delta_pend_desp'] = 0
+
+        _merged['delta_pago']  = _merged['delta_pago_sin']  + _merged['delta_pago_desp']
+        _merged['delta_pend']  = _merged['delta_pend_sin']  + _merged['delta_pend_desp']
+
+        # Data de aviso (do snapshot — é a data original do aviso, não muda)
+        _col_aviso = 'dt_aviso_old' if 'dt_aviso_old' in _merged.columns else 'dt_aviso'
+        _merged['dt_aviso_dt'] = pd.to_datetime(_merged[_col_aviso], dayfirst=True, errors='coerce')
+
+        # Filtro: apenas sinistros "antigos" no momento do snapshot
+        _corte_antigo = _data_snap - pd.DateOffset(months=int(_limite_meses_mv))
+        _antigos = _merged[_merged['dt_aviso_dt'] < _corte_antigo].copy()
+
+        # Apenas os que tiveram movimentação não-nula
+        _moveu = _antigos[
+            (_antigos['delta_total'].abs() > 0.01) |
+            (_antigos['delta_pago'].abs() > 0.01)  |
+            (_antigos['delta_pend'].abs() > 0.01)
+        ].copy()
+
+        # ── KPIs ─────────────────────────────────────────────────────────────
+        _qtd_movs    = len(_moveu)
+        _qtd_antigos = len(_antigos)
+        _total_mov   = _moveu['delta_total'].sum()
+        _total_pago  = _moveu['delta_pago'].sum()
+        _total_pend  = _moveu['delta_pend'].sum()
+
+        # Impacto na sinistralidade do período do slider (df_para_soma)
+        _premio_per = df_para_soma['Soma Prêmio Pago por Apolice'].sum() if not df_para_soma.empty else 0
+        _impacto_pp_mv = (_total_mov / _premio_per * 100) if _premio_per > 0 else 0
+
+        _dias_entre = (_data_atual - _data_snap).days
+
+        # Resumo do período comparado
+        st.markdown(
+            f'<div style="background:#EFF6FF;border-left:3px solid #1a56db;padding:10px 14px;'
+            f'border-radius:6px;font-size:13px;color:#1E3A8A;margin-bottom:14px;">'
+            f'📅 <b>Comparando:</b> snapshot de <b>{_data_snap.strftime("%d/%m/%Y")}</b> '
+            f'(há {_dias_entre} dias) com a base atual de <b>{pd.Timestamp.today().strftime("%d/%m/%Y")}</b>. '
+            f'<br>🔎 <b>Universo analisado:</b> {_qtd_antigos:,} sinistros antigos '
+            f'(aviso anterior a {_corte_antigo.strftime("%d/%m/%Y")}).'.replace(',', '.') +
+            '</div>',
+            unsafe_allow_html=True
+        )
+
+        _card_base = (
+            "background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;"
+            "padding:14px 16px;height:100%;"
+        )
+        _card_alert = (
+            "background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;"
+            "padding:14px 16px;height:100%;"
+        )
+
+        _cor_impacto = "#DC2626" if _impacto_pp_mv > 0.5 else ("#D97706" if _impacto_pp_mv > 0.1 else "#059669")
+        _card_imp = _card_alert if _impacto_pp_mv > 0.5 else _card_base
+
+        _k1, _k2, _k3, _k4 = st.columns(4)
+        with _k1:
+            st.markdown(
+                f'<div style="{_card_base}">'
+                f'<div style="font-size:12px;color:#64748B;">🔢 Sinistros antigos movimentados</div>'
+                f'<div style="font-size:22px;font-weight:600;color:#0F172A;margin-top:4px;">{_qtd_movs:,}</div>'
+                f'<div style="font-size:11px;color:#94A3B8;margin-top:2px;">de {_qtd_antigos:,} antigos avaliados</div>'
+                f'</div>'.replace(',', '.'),
+                unsafe_allow_html=True
+            )
+        with _k2:
+            _cor_total = "#DC2626" if _total_mov > 0 else ("#059669" if _total_mov < 0 else "#0F172A")
+            _sinal = "+" if _total_mov > 0 else ""
+            st.markdown(
+                f'<div style="{_card_base}">'
+                f'<div style="font-size:12px;color:#64748B;">💸 Variação total de R$ (Total Sinistro)</div>'
+                f'<div style="font-size:22px;font-weight:600;color:{_cor_total};margin-top:4px;">{_sinal}R$ {formatar_valor_br(_total_mov)}</div>'
+                f'<div style="font-size:11px;color:#94A3B8;margin-top:2px;">sinistro + despesa, líquido</div>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+        with _k3:
+            _cor_pago = "#DC2626" if _total_pago > 0 else "#0F172A"
+            _sinal_p = "+" if _total_pago > 0 else ""
+            st.markdown(
+                f'<div style="{_card_base}">'
+                f'<div style="font-size:12px;color:#64748B;">💰 Novos pagamentos realizados</div>'
+                f'<div style="font-size:22px;font-weight:600;color:{_cor_pago};margin-top:4px;">{_sinal_p}R$ {formatar_valor_br(_total_pago)}</div>'
+                f'<div style="font-size:11px;color:#94A3B8;margin-top:2px;">delta vl_pago no período</div>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+        with _k4:
+            st.markdown(
+                f'<div style="{_card_imp}">'
+                f'<div style="font-size:12px;color:#64748B;">📊 Impacto na sinistralidade do período</div>'
+                f'<div style="font-size:22px;font-weight:600;color:{_cor_impacto};margin-top:4px;">{_impacto_pp_mv:+.2f} pp</div>'
+                f'<div style="font-size:11px;color:#94A3B8;margin-top:2px;">delta total ÷ prêmio do período</div>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+
+        # Segunda linha: split reserva (pendente)
+        st.markdown("<br>", unsafe_allow_html=True)
+        _k5, _k6 = st.columns(2)
+        with _k5:
+            _cor_pend = "#DC2626" if _total_pend > 0 else ("#059669" if _total_pend < 0 else "#0F172A")
+            _sinal_pe = "+" if _total_pend > 0 else ""
+            st.markdown(
+                f'<div style="{_card_base}">'
+                f'<div style="font-size:12px;color:#64748B;">🔄 Ajuste líquido de reserva (pendente)</div>'
+                f'<div style="font-size:22px;font-weight:600;color:{_cor_pend};margin-top:4px;">{_sinal_pe}R$ {formatar_valor_br(_total_pend)}</div>'
+                f'<div style="font-size:11px;color:#94A3B8;margin-top:2px;">vermelho = reserva aumentou (esperando mais pagamento)</div>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+        with _k6:
+            # Decomposição: quantos casos aumentaram vs diminuíram em Total Sinistro
+            _aumentaram = (_moveu['delta_total'] > 0.01).sum()
+            _diminuiram = (_moveu['delta_total'] < -0.01).sum()
+            st.markdown(
+                f'<div style="{_card_base}">'
+                f'<div style="font-size:12px;color:#64748B;">⚖️ Direção das movimentações</div>'
+                f'<div style="font-size:18px;font-weight:600;color:#0F172A;margin-top:4px;">'
+                f'<span style="color:#DC2626;">▲ {_aumentaram:,}</span> aumentaram &nbsp;|&nbsp; '
+                f'<span style="color:#059669;">▼ {_diminuiram:,}</span> reduziram'
+                f'</div>'
+                f'<div style="font-size:11px;color:#94A3B8;margin-top:2px;">reduções típicas: salvado, recuperação, encerramento</div>'
+                f'</div>'.replace(',', '.'),
+                unsafe_allow_html=True
+            )
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # ── Distribuição por idade do sinistro ───────────────────────────────
+        if not _moveu.empty:
+            st.markdown(
+                '<p class="section-label">Movimentação por idade do sinistro (no momento do snapshot)</p>',
+                unsafe_allow_html=True
+            )
+            _moveu['idade_meses'] = ((_data_snap - _moveu['dt_aviso_dt']).dt.days / 30).round(1)
+
+            _faixas_idade = [
+                (f'{_limite_meses_mv}-12m', _limite_meses_mv, 12, '#D97706'),
+                ('1-2 anos', 12, 24, '#DC2626'),
+                ('2-3 anos', 24, 36, '#DC2626'),
+                ('3-5 anos', 36, 60, '#991B1B'),
+                ('> 5 anos', 60, 9999, '#7F1D1D'),
+            ]
+            # Filtra apenas faixas dentro do limite escolhido
+            _faixas_idade = [(l, lo, hi, c) for (l, lo, hi, c) in _faixas_idade if hi > _limite_meses_mv]
+
+            _rows_idade = []
+            for _label, _lo, _hi, _cor in _faixas_idade:
+                _mask = (_moveu['idade_meses'] > _lo) & (_moveu['idade_meses'] <= _hi)
+                if _mask.sum() == 0:
+                    continue
+                _rows_idade.append({
+                    'Faixa': _label,
+                    'Qtd': int(_mask.sum()),
+                    'Delta Total': float(_moveu.loc[_mask, 'delta_total'].sum()),
+                    'cor': _cor,
+                })
+            if _rows_idade:
+                _df_idade = pd.DataFrame(_rows_idade)
+                _col_g1, _col_g2 = st.columns(2)
+                with _col_g1:
+                    _fig_idade_q = go.Figure(go.Bar(
+                        x=_df_idade['Qtd'], y=_df_idade['Faixa'],
+                        orientation='h',
+                        marker_color=_df_idade['cor'],
+                        text=_df_idade['Qtd'].apply(lambda v: f'{int(v):,}'.replace(',', '.')),
+                        textposition='outside',
+                        hovertemplate='<b>%{y}</b><br>Qtd: %{x}<extra></extra>',
+                    ))
+                    _fig_idade_q.update_layout(
+                        title=dict(text='Quantidade de sinistros movimentados', font=dict(size=14)),
+                        height=300, margin=dict(l=10, r=30, t=40, b=10),
+                        plot_bgcolor='white', yaxis=dict(autorange='reversed'),
+                        xaxis_title='Quantidade',
+                    )
+                    st.plotly_chart(_fig_idade_q, use_container_width=True, config={'displayModeBar': False})
+                with _col_g2:
+                    _fig_idade_v = go.Figure(go.Bar(
+                        x=_df_idade['Delta Total'], y=_df_idade['Faixa'],
+                        orientation='h',
+                        marker_color=_df_idade['cor'],
+                        text=_df_idade['Delta Total'].apply(lambda v: f'R$ {formatar_valor_br(v)}'),
+                        textposition='outside',
+                        hovertemplate='<b>%{y}</b><br>Variação R$: %{x:,.2f}<extra></extra>',
+                    ))
+                    _fig_idade_v.update_layout(
+                        title=dict(text='Variação financeira (R$)', font=dict(size=14)),
+                        height=300, margin=dict(l=10, r=30, t=40, b=10),
+                        plot_bgcolor='white', yaxis=dict(autorange='reversed'),
+                        xaxis_title='Variação (R$)',
+                    )
+                    st.plotly_chart(_fig_idade_v, use_container_width=True, config={'displayModeBar': False})
+
+        # ── Top sinistros antigos com maior movimentação ─────────────────────
+        if not _moveu.empty:
+            st.markdown(
+                '<p class="section-label">Top 20 sinistros antigos com maior movimentação financeira no período</p>',
+                unsafe_allow_html=True
+            )
+            _moveu['_abs_mov'] = _moveu['delta_total'].abs() + _moveu['delta_pago'].abs() + _moveu['delta_pend'].abs()
+            _top = _moveu.sort_values('_abs_mov', ascending=False).head(20).copy()
+            _top['Aviso'] = _top['dt_aviso_dt'].dt.strftime('%d/%m/%Y')
+            _top['Idade (meses)'] = _top['idade_meses'].round(1) if 'idade_meses' in _top.columns else \
+                                    ((_data_snap - _top['dt_aviso_dt']).dt.days / 30).round(1)
+            _top['Δ Total R$']    = _top['delta_total'].apply(lambda v: ('+' if v > 0 else '') + 'R$ ' + formatar_valor_br(v))
+            _top['Δ Pago R$']     = _top['delta_pago'].apply(lambda v: ('+' if v > 0 else '') + 'R$ ' + formatar_valor_br(v))
+            _top['Δ Reserva R$']  = _top['delta_pend'].apply(lambda v: ('+' if v > 0 else '') + 'R$ ' + formatar_valor_br(v))
+
+            _cols_top = ['nr_sinistro']
+            _col_ramo = 'Ramo' if 'Ramo' in _top.columns else None
+            _col_uti  = 'Utilização' if 'Utilização' in _top.columns else None
+            if _col_ramo: _cols_top.append(_col_ramo)
+            if _col_uti:  _cols_top.append(_col_uti)
+            _cols_top += ['Aviso', 'Idade (meses)', 'Δ Total R$', 'Δ Pago R$', 'Δ Reserva R$']
+
+            _top_view = _top[_cols_top].rename(columns={'nr_sinistro': 'N° Sinistro'})
+            st.dataframe(_top_view, use_container_width=True, hide_index=True)
+
+        # ── Quadro "Como entender esta análise" ──────────────────────────────
+        st.markdown("")
+        st.markdown(f"""
+<div style="background:#F8FAFC;border-radius:10px;padding:18px;border:1px solid #E2E8F0;font-size:13px;color:#334155;">
+<b>📖 Como entender esta análise</b><br><br>
+
+<b>O que é:</b> Esta seção responde a uma pergunta diferente da Cauda Histórica: <i>quanto da sinistralidade que estou vendo hoje vem de sinistros antigos que tiveram movimentação financeira no período?</i> Cauda Histórica olha o atraso entre ocorrência e aviso. Esta seção olha o que mudou de valor em sinistros já avisados há tempos — aumentos de reserva, novos pagamentos, ajustes — usando snapshots diários da base.<br><br>
+
+<b>Como funciona:</b> Toda vez que você abre o app, ele salva automaticamente uma "fotografia" leve da base de sinistros em uma pasta <code>snapshots/</code>. Cada arquivo guarda, para cada sinistro, os valores pago, pendente e total. Quando você escolhe uma data de referência aqui, o app carrega o snapshot daquele dia, compara com a base atual sinistro a sinistro, e mostra o que mudou apenas nos sinistros considerados antigos (segundo o limite escolhido).<br><br>
+
+<b>Cartões (KPIs):</b><br>
+• <b>Sinistros antigos movimentados:</b> quantos sinistros antigos tiveram variação financeira (qualquer direção) no período.<br>
+• <b>Variação total de R$:</b> soma líquida das variações de Total Sinistro (sinistro + despesa). Positivo = a carteira "engordou" por sinistros antigos. Negativo = houve liquidação líquida ou recuperação.<br>
+• <b>Novos pagamentos realizados:</b> aumento de <code>vl_pago</code>. Indica caixa que saiu da seguradora no período por sinistros antigos.<br>
+• <b>Impacto na sinistralidade:</b> a variação total dividida pelo prêmio do período do slider. É o número que mostra o peso disso na sua sinistralidade aparente — vermelho acima de 0,5 pp é material.<br>
+• <b>Ajuste líquido de reserva:</b> aumento de <code>vl_pendente</code>. Vermelho aqui significa que a área técnica entende que os antigos ainda vão consumir mais — é um sinal antecipado de deterioração futura.<br>
+• <b>Direção das movimentações:</b> quantos sinistros aumentaram vs reduziram. Reduções podem ser salvados, recuperações de cosseguro/resseguro ou encerramento abaixo da reserva.<br><br>
+
+<b>Distribuição por idade:</b> dois gráficos lado a lado mostram em quais faixas etárias do sinistro (no momento do snapshot) está concentrada a movimentação — por quantidade e por R$. Faixas mais escuras = sinistros mais antigos. Se a maior parte do R$ está em "&gt; 3 anos", você tem sinistros muito longevos pesando na carteira corrente.<br><br>
+
+<b>Top 20:</b> os sinistros com maior soma absoluta de movimentação. Use para investigação caso a caso — pode revelar acordos, sentenças judiciais ou ajustes técnicos específicos que merecem entendimento.<br><br>
+
+<b>Como foi desenvolvido:</b> Snapshot diário em formato Parquet, idempotente (salva uma única vez por dia). Comparação por merge inner via <code>nr_sinistro</code> — só entram sinistros presentes em ambas as datas, descartando os "novos" do período (que viram da Análise de Cauda Histórica). Filtro de "antigo" é aplicado pela data de aviso em relação ao snapshot escolhido, não à data de hoje, para ser consistente. Movimentações menores que R$ 0,01 em valor absoluto são descartadas (ruído de arredondamento).<br><br>
+
+<b>Atenção:</b><br>
+• A análise só fica útil após acumular pelo menos 2 dias de snapshots. Hoje você está iniciando o acúmulo — amanhã já terá comparação possível, e em 30 dias o painel atinge seu potencial pleno.<br>
+• Snapshots são salvos automaticamente, mas se o app não for aberto em determinado dia, aquela data ficará faltando — o painel pula naturalmente para a data anterior mais próxima.<br>
+• Pasta de snapshots: <code>{_SNAP_DIR.resolve()}</code>. Snapshots disponíveis: <b>{len(_snap_anteriores)}</b>.
+</div>
+""", unsafe_allow_html=True)
+
+    _render_movimentacao_antigos()
 
 st.write("---")
 st.caption("Desenvolvido por Alex Sousa.")
