@@ -4,3 +4,4 @@ plotly
 streamlit-antd-components
 openpyxl
 fpdf2
+pyarrow
