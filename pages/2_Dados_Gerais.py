@@ -2799,6 +2799,365 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
 else:
     st.info("Nenhum dado disponível para análise de variação.")
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 🕰️ ANÁLISE DE CAUDA HISTÓRICA — Sinistros antigos influenciando o período
+# Objetivo: identificar sinistros cuja DATA DE OCORRÊNCIA é muito anterior à
+# DATA DE AVISO, distorcendo a sinistralidade do período filtrado. Esses casos
+# tipicamente representam avisos tardios (IBNR realizado) ou atualizações de
+# reservas/pagamentos em sinistros antigos.
+# ─────────────────────────────────────────────────────────────────────────────
+st.write("---")
+st.subheader("🕰️ Análise de Cauda Histórica — Sinistros Avisados com Atraso")
+st.markdown(
+    '<p class="section-label">Quantifica e visualiza o quanto sinistros com '
+    'ocorrência em períodos passados estão pesando na sinistralidade dos '
+    'avisos do período filtrado.</p>',
+    unsafe_allow_html=True
+)
+
+# Garante que o decorador de fragmento esteja disponível neste escopo
+_st_fragment_ch = getattr(st, 'fragment', None) or getattr(st, 'experimental_fragment', None)
+if _st_fragment_ch is None:
+    _st_fragment_ch = lambda _f: _f
+
+if (not df_sinistro_periodo_atualizado.empty) and (not df_geral_periodo.empty):
+
+    # ── Preparação compartilhada (executada uma única vez por recarga) ───────
+    _df_ch_base = df_sinistro_periodo_atualizado.copy()
+
+    # Garante colunas de data já parseadas
+    if 'dt_aviso_dt' not in _df_ch_base.columns:
+        _df_ch_base['dt_aviso_dt'] = pd.to_datetime(_df_ch_base['dt_aviso'], dayfirst=True, errors='coerce')
+    if 'dt_ocorrencia_dt' not in _df_ch_base.columns:
+        _df_ch_base['dt_ocorrencia_dt'] = pd.to_datetime(_df_ch_base['dt_ocorrencia'], dayfirst=True, errors='coerce')
+
+    # Calcula lag (dias) entre aviso e ocorrência. Descarta linhas sem ambas datas.
+    _df_ch_base = _df_ch_base.dropna(subset=['dt_aviso_dt', 'dt_ocorrencia_dt']).copy()
+    _df_ch_base['lag_dias'] = (_df_ch_base['dt_aviso_dt'] - _df_ch_base['dt_ocorrencia_dt']).dt.days
+
+    # Remove inconsistências: lag negativo (aviso antes da ocorrência — erro de
+    # cadastro) e lag absurdo (> 10 anos — quase sempre cadastro errado).
+    _df_ch_base = _df_ch_base[(_df_ch_base['lag_dias'] >= 0) & (_df_ch_base['lag_dias'] <= 3650)].copy()
+
+    # Agrega por nr_sinistro (uma linha por sinistro, soma valores e pega max lag)
+    if 'Total Sinistro' in _df_ch_base.columns:
+        _agg_dict = {
+            'lag_dias': 'max',
+            'dt_ocorrencia_dt': 'min',
+            'dt_aviso_dt': 'min',
+            'Total Sinistro': 'sum',
+        }
+        # Inclui Ramo/Utilização se existirem
+        for _c in ['Ramo', 'Utilização']:
+            if _c in _df_ch_base.columns:
+                _agg_dict[_c] = 'first'
+        _df_ch = _df_ch_base.groupby('nr_sinistro', as_index=False).agg(_agg_dict)
+    else:
+        _df_ch = pd.DataFrame()
+
+    # Premio total do período (usado para calcular impacto na sinistralidade)
+    _premio_total_ch = df_para_soma['Soma Prêmio Pago por Apolice'].sum()
+
+    if _df_ch.empty or _premio_total_ch <= 0:
+        st.info("Não há sinistros com data de ocorrência e aviso válidas para analisar a cauda histórica no período selecionado.")
+    else:
+
+        @_st_fragment_ch
+        def _render_cauda_historica():
+            # ── Controles ────────────────────────────────────────────────────
+            _col_ctrl_1, _col_ctrl_2 = st.columns([1, 3])
+            with _col_ctrl_1:
+                _limite_meses = st.radio(
+                    "Considerar **cauda histórica** quando o aviso ocorreu mais de:",
+                    options=[6, 12, 18, 24],
+                    index=1,  # default: 12 meses
+                    horizontal=True,
+                    format_func=lambda x: f"{x} meses",
+                    key="cauda_historica_threshold",
+                    help=(
+                        "Limite (em meses) entre a data de ocorrência e a data de "
+                        "aviso. Avisos com lag acima desse valor são tratados como "
+                        "cauda histórica (sinistros antigos avisados no período)."
+                    )
+                )
+            _limite_dias = int(_limite_meses) * 30
+
+            # Marca sinistros de cauda
+            _df = _df_ch.copy()
+            _df['eh_cauda'] = _df['lag_dias'] > _limite_dias
+
+            # ── KPIs principais ─────────────────────────────────────────────
+            _qtd_total       = len(_df)
+            _valor_total     = _df['Total Sinistro'].sum()
+            _qtd_cauda       = int(_df['eh_cauda'].sum())
+            _valor_cauda     = _df.loc[_df['eh_cauda'], 'Total Sinistro'].sum()
+            _pct_qtd_cauda   = (_qtd_cauda / _qtd_total * 100) if _qtd_total > 0 else 0
+            _pct_valor_cauda = (_valor_cauda / _valor_total * 100) if _valor_total > 0 else 0
+            _lag_medio       = _df['lag_dias'].mean()
+            _lag_mediano     = _df['lag_dias'].median()
+
+            # Sinistralidade com / sem cauda histórica
+            _sin_com    = _valor_total / _premio_total_ch * 100
+            _sin_sem    = (_valor_total - _valor_cauda) / _premio_total_ch * 100
+            _impacto_pp = _sin_com - _sin_sem
+
+            # Estilo dos cards (mesma estética dos painéis acima)
+            _card_base = (
+                "background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;"
+                "padding:14px 16px;height:100%;"
+            )
+            _card_alert = (
+                "background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;"
+                "padding:14px 16px;height:100%;"
+            )
+
+            _cor_impacto = "#DC2626" if _impacto_pp > 0.5 else ("#D97706" if _impacto_pp > 0.1 else "#059669")
+            _card_impacto = _card_alert if _impacto_pp > 0.5 else _card_base
+
+            _c1, _c2, _c3, _c4 = st.columns(4)
+            with _c1:
+                st.markdown(
+                    f'<div style="{_card_base}">'
+                    f'<div style="font-size:12px;color:#64748B;">⏱️ Lag médio de aviso</div>'
+                    f'<div style="font-size:22px;font-weight:600;color:#0F172A;margin-top:4px;">{_lag_medio:.0f} dias</div>'
+                    f'<div style="font-size:11px;color:#94A3B8;margin-top:2px;">mediana: {_lag_mediano:.0f} dias</div>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+            with _c2:
+                st.markdown(
+                    f'<div style="{_card_base}">'
+                    f'<div style="font-size:12px;color:#64748B;">📌 Sinistros com cauda histórica</div>'
+                    f'<div style="font-size:22px;font-weight:600;color:#0F172A;margin-top:4px;">{_qtd_cauda:,}</div>'
+                    f'<div style="font-size:11px;color:#94A3B8;margin-top:2px;">{_pct_qtd_cauda:.1f}% dos {_qtd_total:,} sinistros do período</div>'
+                    f'</div>'.replace(',', '.'),
+                    unsafe_allow_html=True
+                )
+            with _c3:
+                _cor_valor = "#DC2626" if _pct_valor_cauda > 15 else ("#D97706" if _pct_valor_cauda > 5 else "#0F172A")
+                st.markdown(
+                    f'<div style="{_card_base}">'
+                    f'<div style="font-size:12px;color:#64748B;">💰 R$ representado pela cauda</div>'
+                    f'<div style="font-size:22px;font-weight:600;color:{_cor_valor};margin-top:4px;">R$ {formatar_valor_br(_valor_cauda)}</div>'
+                    f'<div style="font-size:11px;color:#94A3B8;margin-top:2px;">{_pct_valor_cauda:.1f}% do valor total avisado</div>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+            with _c4:
+                st.markdown(
+                    f'<div style="{_card_impacto}">'
+                    f'<div style="font-size:12px;color:#64748B;">📊 Impacto na sinistralidade</div>'
+                    f'<div style="font-size:22px;font-weight:600;color:{_cor_impacto};margin-top:4px;">{_impacto_pp:+.2f} pp</div>'
+                    f'<div style="font-size:11px;color:#94A3B8;margin-top:2px;">{_sin_com:.1f}% com / {_sin_sem:.1f}% sem cauda</div>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # ── Distribuição do lag por faixa ───────────────────────────────
+            st.markdown(
+                '<p class="section-label">Distribuição do lag entre ocorrência e aviso</p>',
+                unsafe_allow_html=True
+            )
+
+            _faixas = [
+                ('0–30 dias',     0,    30,    '#059669'),
+                ('31–90 dias',    31,   90,    '#059669'),
+                ('91–180 dias',   91,   180,   '#D97706'),
+                ('181–365 dias',  181,  365,   '#D97706'),
+                ('1–2 anos',      366,  730,   '#DC2626'),
+                ('2–3 anos',      731,  1095,  '#DC2626'),
+                ('> 3 anos',      1096, 99999, '#7F1D1D'),
+            ]
+            _rows_faixa = []
+            for _label, _lo, _hi, _cor in _faixas:
+                _mask = (_df['lag_dias'] >= _lo) & (_df['lag_dias'] <= _hi)
+                _rows_faixa.append({
+                    'Faixa':       _label,
+                    'Qtd':         int(_mask.sum()),
+                    'Valor':       float(_df.loc[_mask, 'Total Sinistro'].sum()),
+                    'cor':         _cor,
+                })
+            _df_faixa = pd.DataFrame(_rows_faixa)
+
+            _col_h1, _col_h2 = st.columns(2)
+            with _col_h1:
+                _fig_qtd = go.Figure(go.Bar(
+                    x=_df_faixa['Qtd'],
+                    y=_df_faixa['Faixa'],
+                    orientation='h',
+                    marker_color=_df_faixa['cor'],
+                    text=_df_faixa['Qtd'].apply(lambda v: f'{int(v):,}'.replace(',', '.')),
+                    textposition='outside',
+                    hovertemplate='<b>%{y}</b><br>Qtd: %{x}<extra></extra>',
+                ))
+                _fig_qtd.update_layout(
+                    title=dict(text='Quantidade de sinistros por faixa de lag', font=dict(size=14)),
+                    height=320,
+                    margin=dict(l=10, r=30, t=40, b=10),
+                    plot_bgcolor='white',
+                    yaxis=dict(autorange='reversed'),
+                    xaxis_title='Quantidade',
+                )
+                st.plotly_chart(_fig_qtd, use_container_width=True, config={'displayModeBar': False})
+
+            with _col_h2:
+                _fig_val = go.Figure(go.Bar(
+                    x=_df_faixa['Valor'],
+                    y=_df_faixa['Faixa'],
+                    orientation='h',
+                    marker_color=_df_faixa['cor'],
+                    text=_df_faixa['Valor'].apply(lambda v: f'R$ {formatar_valor_br(v)}'),
+                    textposition='outside',
+                    hovertemplate='<b>%{y}</b><br>Valor: R$ %{x:,.2f}<extra></extra>',
+                ))
+                _fig_val.update_layout(
+                    title=dict(text='Valor (R$) por faixa de lag', font=dict(size=14)),
+                    height=320,
+                    margin=dict(l=10, r=30, t=40, b=10),
+                    plot_bgcolor='white',
+                    yaxis=dict(autorange='reversed'),
+                    xaxis_title='Valor (R$)',
+                )
+                st.plotly_chart(_fig_val, use_container_width=True, config={'displayModeBar': False})
+
+            # ── Matriz Ano Ocorrência × Ano Aviso ───────────────────────────
+            st.markdown(
+                '<p class="section-label">Matriz Ano de Ocorrência × Ano de Aviso</p>',
+                unsafe_allow_html=True
+            )
+            st.caption(
+                "🎯 Diagonal = aviso no mesmo ano da ocorrência (normal). "
+                "Abaixo da diagonal = avisos tardios (cauda histórica). "
+                "Quanto mais valor abaixo da diagonal, maior o efeito de IBNR realizado no período."
+            )
+
+            _df_mat = _df.copy()
+            _df_mat['Ano_Oc']  = _df_mat['dt_ocorrencia_dt'].dt.year
+            _df_mat['Ano_Av']  = _df_mat['dt_aviso_dt'].dt.year
+
+            _piv = _df_mat.pivot_table(
+                index='Ano_Oc', columns='Ano_Av',
+                values='Total Sinistro', aggfunc='sum', fill_value=0
+            ).sort_index().sort_index(axis=1)
+
+            if not _piv.empty:
+                _piv_qtd = _df_mat.pivot_table(
+                    index='Ano_Oc', columns='Ano_Av',
+                    values='nr_sinistro', aggfunc='count', fill_value=0
+                ).reindex(index=_piv.index, columns=_piv.columns, fill_value=0)
+
+                # Texto exibido em cada célula: R$ + qtd
+                _text = [
+                    [
+                        (f"R$ {formatar_valor_br(_piv.iat[i, j])}<br>{int(_piv_qtd.iat[i, j])} sin")
+                        if _piv.iat[i, j] > 0 else ""
+                        for j in range(len(_piv.columns))
+                    ]
+                    for i in range(len(_piv.index))
+                ]
+                _hover = [
+                    [
+                        (f"Ocorrência: {_piv.index[i]}<br>Aviso: {_piv.columns[j]}<br>"
+                         f"R$ {formatar_valor_br(_piv.iat[i, j])}<br>"
+                         f"{int(_piv_qtd.iat[i, j])} sinistros")
+                        for j in range(len(_piv.columns))
+                    ]
+                    for i in range(len(_piv.index))
+                ]
+
+                _fig_mat = go.Figure(go.Heatmap(
+                    z=_piv.values,
+                    x=[str(c) for c in _piv.columns],
+                    y=[str(i) for i in _piv.index],
+                    text=_text,
+                    texttemplate='%{text}',
+                    textfont=dict(size=11),
+                    customdata=_hover,
+                    hovertemplate='%{customdata}<extra></extra>',
+                    colorscale=[
+                        [0.0,  '#F8FAFC'],
+                        [0.1,  '#DBEAFE'],
+                        [0.3,  '#93C5FD'],
+                        [0.6,  '#3B82F6'],
+                        [1.0,  '#1E40AF'],
+                    ],
+                    showscale=True,
+                    colorbar=dict(title='R$', tickformat=',.0f'),
+                ))
+                _fig_mat.update_layout(
+                    height=max(280, 60 + 60 * len(_piv.index)),
+                    margin=dict(l=10, r=10, t=20, b=10),
+                    xaxis=dict(title='Ano de Aviso', side='top'),
+                    yaxis=dict(title='Ano de Ocorrência', autorange='reversed'),
+                    plot_bgcolor='white',
+                )
+                st.plotly_chart(_fig_mat, use_container_width=True, config={'displayModeBar': False})
+
+            # ── Top sinistros antigos com maior impacto ─────────────────────
+            st.markdown(
+                f'<p class="section-label">Top sinistros antigos (lag > {_limite_meses} meses) com maior impacto no período</p>',
+                unsafe_allow_html=True
+            )
+            _df_top = _df[_df['eh_cauda']].copy()
+            if _df_top.empty:
+                st.info(f"Nenhum sinistro com lag superior a {_limite_meses} meses no período filtrado.")
+            else:
+                _df_top = _df_top.sort_values('Total Sinistro', ascending=False).head(15)
+                _df_top['Lag (meses)'] = (_df_top['lag_dias'] / 30).round(1)
+                _df_top['Ocorrência']  = _df_top['dt_ocorrencia_dt'].dt.strftime('%d/%m/%Y')
+                _df_top['Aviso']       = _df_top['dt_aviso_dt'].dt.strftime('%d/%m/%Y')
+                _df_top['Total Sinistro R$'] = _df_top['Total Sinistro'].apply(formatar_valor_br)
+
+                _cols_show = ['nr_sinistro']
+                for _c in ['Ramo', 'Utilização']:
+                    if _c in _df_top.columns:
+                        _cols_show.append(_c)
+                _cols_show += ['Ocorrência', 'Aviso', 'Lag (meses)', 'Total Sinistro R$']
+
+                _df_top_view = _df_top[_cols_show].rename(columns={
+                    'nr_sinistro':         'N° Sinistro',
+                    'Total Sinistro R$':   'Total Sinistro',
+                })
+
+                st.dataframe(
+                    _df_top_view,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+            # ── Quadro "Como entender esta análise" ─────────────────────────
+            st.markdown("")
+            st.markdown("""
+<div style="background:#F8FAFC;border-radius:10px;padding:18px;border:1px solid #E2E8F0;font-size:13px;color:#334155;">
+<b>📖 Como entender esta análise</b><br><br>
+
+<b>O que é:</b> Esta seção responde à pergunta: <i>quanto da sinistralidade que estou vendo no período veio de sinistros que aconteceram lá atrás e só foram avisados agora?</i> Em seguros, é normal o segurado demorar dias, meses (ou anos, em RC e Judicial) para comunicar um evento. Esses avisos tardios e atualizações de sinistros antigos compõem o que o mercado chama de <b>cauda histórica</b> (IBNR realizado).<br><br>
+
+<b>Cartões (KPIs):</b><br>
+• <b>Lag médio / mediano:</b> média e mediana de dias entre <i>dt_ocorrencia</i> e <i>dt_aviso</i>. A mediana é mais robusta — se ela está baixa e a média alta, há poucos sinistros muito antigos puxando a média para cima.<br>
+• <b>Qtd. com cauda:</b> número de sinistros avisados no período cujo evento aconteceu há mais que o limite escolhido (6/12/18/24 meses), e o que isso representa em % da carteira.<br>
+• <b>R$ da cauda:</b> valor financeiro desses sinistros antigos. É aqui que o impacto real aparece — um único sinistro grande de 2 anos atrás pode pesar mais que dezenas de avisos rápidos.<br>
+• <b>Impacto na sinistralidade:</b> compara a sinistralidade do período <i>com</i> e <i>sem</i> os sinistros de cauda. Por exemplo, +4,8 pp significa que sua sinistralidade aparenta ser 4,8 pontos percentuais pior do que a do "negócio corrente". Vermelho = impacto material (&gt; 0,5 pp).<br><br>
+
+<b>Distribuição do lag (barras horizontais):</b> mostra como os sinistros se distribuem por faixa de atraso. Verde = aviso rápido (até 90 dias, esperado). Laranja = atraso intermediário (entre 3 e 12 meses, monitorar). Vermelho = cauda histórica (acima de 1 ano). A barra de quantidade revela frequência; a de R$ revela severidade — uma faixa pequena em qtd mas grande em R$ é onde mora o risco.<br><br>
+
+<b>Matriz Ano de Ocorrência × Ano de Aviso (heatmap):</b> cada célula é o R$ total dos sinistros que ocorreram no ano da linha e foram avisados no ano da coluna. A <b>diagonal</b> (ano de ocorrência = ano de aviso) é o cenário ideal: aviso rápido. Tudo que está <b>abaixo da diagonal</b> é avisado depois — quanto mais "escuro" (azul mais intenso), maior o valor de cauda. Se a coluna do ano mais recente tem muito valor longe da diagonal, é sinal de que o período está sendo inflado por sinistros antigos.<br><br>
+
+<b>Top sinistros antigos:</b> lista os 15 maiores sinistros de cauda no período, com data de ocorrência, data de aviso, lag em meses e valor. Use para investigar caso a caso — pode revelar concentrações em um corretor, ramo ou tipo de cobertura específico.<br><br>
+
+<b>Como foi desenvolvido:</b> Para cada sinistro do período filtrado pelo slider, calcula-se o <i>lag</i> = dt_aviso − dt_ocorrencia (em dias). Sinistros com lag negativo ou superior a 10 anos são descartados como erro de cadastro. O limite de cauda histórica é configurável (6, 12, 18 ou 24 meses); o padrão é 12 meses. A sinistralidade "sem cauda" é recalculada subtraindo o R$ dos sinistros acima do limite, mantendo o prêmio do período inalterado.<br><br>
+
+<b>Atenção:</b> A análise depende da qualidade do preenchimento da data de ocorrência. Sinistros com dt_ocorrencia em branco são descartados — se sua base tem muitos casos assim, os números aqui subestimam o problema. Além disso, atualizações de reserva em sinistros antigos (movimentações financeiras sem novo aviso) não aparecem como "cauda" por este critério; para captar esse efeito, seria necessário comparar a base atual com snapshots anteriores.
+</div>
+""", unsafe_allow_html=True)
+
+        _render_cauda_historica()
+
+else:
+    st.info("Nenhum dado disponível para análise de cauda histórica.")
+
 st.write("---")
 st.caption("Desenvolvido por Alex Sousa.")
 
