@@ -407,7 +407,7 @@ df_cobertura     = st.session_state.get('df_cobertura', pd.DataFrame())
 _HOJE_STR = pd.Timestamp.today().strftime("%Y-%m-%d")
 
 def _gerar_snapshot_bytes(_df_sin):
-    """Gera bytes Parquet do snapshot de hoje, prontos para download."""
+    """Gera bytes Parquet do snapshot consolidado (hoje + histórico em sessão)."""
     import io as _io
     _cols_snap = [c for c in [
         'nr_sinistro', 'N° Apólice', 'cd_apolice', 'nr_ramo', 'Ramo', 'Utilização',
@@ -418,10 +418,29 @@ def _gerar_snapshot_bytes(_df_sin):
         'Total Sinistro',
         'status_processo', 'status_movimento'
     ] if c in _df_sin.columns]
+
+    # Snapshot de hoje
+    _df_hoje = _df_sin[_cols_snap].copy()
+    _df_hoje['data_snapshot'] = pd.Timestamp(_HOJE_STR)
+
+    # Inclui todos os snapshots históricos já carregados na sessão
+    _todos_dfs = [_df_hoje]
+    for _date_key, _df_hist in st.session_state.get('snapshots_uploaded', {}).items():
+        if _date_key == _HOJE_STR:
+            continue
+        _df_h = _df_hist.copy()
+        if 'data_snapshot' not in _df_h.columns:
+            _df_h['data_snapshot'] = pd.Timestamp(_date_key)
+        _todos_dfs.append(_df_h)
+
+    _consolidado = pd.concat(_todos_dfs, ignore_index=True, sort=False)
+    # Dedup por (nr_sinistro, data_snapshot) — fica o mais recente em caso de colisão
+    _consolidado = _consolidado.drop_duplicates(subset=['nr_sinistro', 'data_snapshot'], keep='last')
+
     _buf = _io.BytesIO()
-    _df_sin[_cols_snap].to_parquet(_buf, index=False)
+    _consolidado.to_parquet(_buf, index=False)
     _buf.seek(0)
-    return _buf.getvalue()
+    return _buf.getvalue(), len(_consolidado), _consolidado['data_snapshot'].nunique()
 
 # Inicializa o dicionário de snapshots carregados nesta sessão (chave = data ISO)
 if 'snapshots_uploaded' not in st.session_state:
@@ -3216,77 +3235,120 @@ if _st_fragment_mv is None:
     _st_fragment_mv = lambda _f: _f
 
 # ── Bloco de Download / Upload de snapshots ──────────────────────────────────
-with st.expander("📥 Baixar snapshot de hoje  /  📤 Carregar snapshots antigos para comparação", expanded=True):
+with st.expander("📥 Baixar snapshot consolidado  /  📤 Carregar snapshots para comparação", expanded=True):
     st.markdown(
         '<div style="font-size:12px;color:#64748B;margin-bottom:10px;">'
-        '<b>Como funciona:</b> '
-        '(1) Baixe o snapshot de hoje todos os dias e salve em uma pasta dedicada do seu Google Drive/OneDrive (ex: <code>AllSeg/snapshots/</code>). '
-        '(2) Quando quiser comparar com uma data passada, faça upload do(s) snapshot(s) antigo(s) salvos. '
-        '(3) Eles ficam disponíveis durante toda a sessão atual do navegador.'
+        '<b>Rotina diária recomendada:</b> '
+        '(1) Faça upload do <code>sinistros_consolidado.parquet</code> salvo no seu Drive. '
+        '(2) Baixe o novo consolidado (já inclui o dia de hoje automaticamente). '
+        '(3) Substitua o arquivo no Drive pelo recém-baixado. '
+        '<br>O app também aceita arquivos antigos no formato individual (<code>sinistros_AAAA-MM-DD.parquet</code>) — '
+        'ele detecta automaticamente e mescla tudo num único consolidado.'
         '</div>',
         unsafe_allow_html=True
     )
 
     _col_dl, _col_up = st.columns([1, 2])
 
-    with _col_dl:
-        if not df_sinistros.empty:
-            try:
-                _snap_bytes_hoje = _gerar_snapshot_bytes(df_sinistros)
-                st.download_button(
-                    label=f"📥 Baixar snapshot de {pd.Timestamp.today().strftime('%d/%m/%Y')}",
-                    data=_snap_bytes_hoje,
-                    file_name=f"sinistros_{_HOJE_STR}.parquet",
-                    mime="application/octet-stream",
-                    use_container_width=True,
-                    help="Arquivo Parquet leve com os valores financeiros de cada sinistro de hoje. Salve no seu Drive."
-                )
-                st.caption(f"📦 Tamanho: ~{len(_snap_bytes_hoje)/1024:.0f} KB · {df_sinistros['nr_sinistro'].nunique():,} sinistros".replace(',', '.'))
-            except Exception as _e:
-                st.error(f"Não foi possível gerar o snapshot: {_e}")
-
     with _col_up:
         _uploaded = st.file_uploader(
-            "📤 Carregar snapshots antigos (.parquet)",
+            "📤 Carregar snapshot(s) — consolidado ou individuais",
             type=['parquet'],
             accept_multiple_files=True,
             key="upload_snapshots",
-            help="Selecione um ou vários arquivos sinistros_YYYY-MM-DD.parquet salvos previamente."
+            help=(
+                "Aceita o arquivo único 'sinistros_consolidado.parquet' (recomendado) "
+                "ou arquivos individuais no formato 'sinistros_AAAA-MM-DD.parquet'. "
+                "Pode subir múltiplos arquivos de uma vez."
+            )
         )
         if _uploaded:
             _novos = 0
             for _file in _uploaded:
-                # Extrai data do nome do arquivo (sinistros_YYYY-MM-DD.parquet)
-                _stem = _file.name.replace('.parquet', '')
-                _date_part = _stem.replace('sinistros_', '').replace('snapshot_sinistros_', '')
-                try:
-                    _date_obj = pd.to_datetime(_date_part, format='%Y-%m-%d')
-                    _date_key = _date_obj.strftime('%Y-%m-%d')
-                except Exception:
-                    st.warning(f"❌ Nome do arquivo `{_file.name}` não tem o formato esperado (sinistros_YYYY-MM-DD.parquet). Ignorado.")
-                    continue
-                if _date_key == _HOJE_STR:
-                    st.warning(f"⚠️ `{_file.name}` é de hoje — comparar com hoje não faz sentido. Ignorado.")
-                    continue
                 try:
                     _df_uploaded = pd.read_parquet(_file)
-                    if 'nr_sinistro' not in _df_uploaded.columns:
-                        st.error(f"❌ `{_file.name}` não tem a coluna nr_sinistro. Ignorado.")
+                except Exception as _e:
+                    st.error(f"❌ Erro ao ler `{_file.name}`: {_e}")
+                    continue
+                if 'nr_sinistro' not in _df_uploaded.columns:
+                    st.error(f"❌ `{_file.name}` não tem a coluna nr_sinistro. Ignorado.")
+                    continue
+
+                # Detecta automaticamente: consolidado (com data_snapshot) vs individual
+                if 'data_snapshot' in _df_uploaded.columns:
+                    # Consolidado: extrai cada data e armazena separadamente
+                    _df_uploaded['data_snapshot'] = pd.to_datetime(_df_uploaded['data_snapshot'], errors='coerce')
+                    _datas_no_arquivo = _df_uploaded['data_snapshot'].dropna().dt.strftime('%Y-%m-%d').unique()
+                    for _date_key in _datas_no_arquivo:
+                        if _date_key == _HOJE_STR:
+                            continue
+                        _df_dia = _df_uploaded[_df_uploaded['data_snapshot'].dt.strftime('%Y-%m-%d') == _date_key].copy()
+                        _df_dia = _df_dia.drop(columns=['data_snapshot'])
+                        st.session_state['snapshots_uploaded'][_date_key] = _df_dia
+                        _novos += 1
+                else:
+                    # Arquivo individual: extrai data do nome do arquivo
+                    _stem = _file.name.replace('.parquet', '')
+                    _date_part = _stem.replace('sinistros_', '').replace('snapshot_sinistros_', '')
+                    try:
+                        _date_obj = pd.to_datetime(_date_part, format='%Y-%m-%d')
+                        _date_key = _date_obj.strftime('%Y-%m-%d')
+                    except Exception:
+                        st.warning(f"❌ Nome `{_file.name}` não tem o formato esperado (sinistros_AAAA-MM-DD.parquet). Ignorado.")
+                        continue
+                    if _date_key == _HOJE_STR:
+                        st.warning(f"⚠️ `{_file.name}` é de hoje — ignorado.")
                         continue
                     st.session_state['snapshots_uploaded'][_date_key] = _df_uploaded
                     _novos += 1
-                except Exception as _e:
-                    st.error(f"❌ Erro ao ler `{_file.name}`: {_e}")
             if _novos > 0:
                 st.success(f"✅ {_novos} snapshot(s) carregado(s) com sucesso.")
+
+    with _col_dl:
+        if not df_sinistros.empty:
+            try:
+                _snap_bytes, _qtd_linhas, _qtd_datas = _gerar_snapshot_bytes(df_sinistros)
+                # Indicador claro do que será baixado
+                _qtd_hist = len(st.session_state.get('snapshots_uploaded', {}))
+                if _qtd_hist == 0:
+                    _aviso_dl = (
+                        '<div style="font-size:11px;color:#D97706;margin-bottom:6px;">'
+                        '⚠️ Nenhum histórico carregado — download terá só o dia de hoje. '
+                        'Faça upload do consolidado anterior primeiro se quiser preservar histórico.'
+                        '</div>'
+                    )
+                else:
+                    _aviso_dl = (
+                        f'<div style="font-size:11px;color:#059669;margin-bottom:6px;">'
+                        f'✅ Download incluirá {_qtd_datas} dia(s): hoje + {_qtd_hist} histórico(s).'
+                        f'</div>'
+                    )
+                st.markdown(_aviso_dl, unsafe_allow_html=True)
+
+                st.download_button(
+                    label=f"📥 Baixar consolidado ({_qtd_datas} dia(s))",
+                    data=_snap_bytes,
+                    file_name=f"sinistros_consolidado_{_HOJE_STR}.parquet",
+                    mime="application/octet-stream",
+                    use_container_width=True,
+                    help="Arquivo Parquet único com todos os dias carregados + hoje. Salve no seu Drive substituindo o anterior."
+                )
+                st.caption(f"📦 ~{len(_snap_bytes)/1024:.0f} KB · {_qtd_linhas:,} linhas".replace(',', '.'))
+            except Exception as _e:
+                st.error(f"Não foi possível gerar o consolidado: {_e}")
 
     # Lista snapshots já carregados nesta sessão
     if st.session_state['snapshots_uploaded']:
         _datas_carregadas = sorted(st.session_state['snapshots_uploaded'].keys(), reverse=True)
         _datas_fmt = [pd.to_datetime(d).strftime('%d/%m/%Y') for d in _datas_carregadas]
+        # Mostra primeiros 10 + "…" se houver mais
+        if len(_datas_fmt) > 10:
+            _lista_str = ", ".join(_datas_fmt[:10]) + f", … (+{len(_datas_fmt)-10} mais)"
+        else:
+            _lista_str = ", ".join(_datas_fmt)
         st.markdown(
             f'<div style="font-size:12px;color:#059669;margin-top:8px;">'
-            f'✅ <b>{len(_datas_carregadas)} snapshot(s) ativos na sessão:</b> {", ".join(_datas_fmt)}'
+            f'✅ <b>{len(_datas_carregadas)} snapshot(s) ativo(s) na sessão:</b> {_lista_str}'
             f'</div>',
             unsafe_allow_html=True
         )
@@ -3693,7 +3755,7 @@ else:
 
 <b>O que é:</b> Esta seção responde a uma pergunta diferente da Cauda Histórica: <i>quanto da sinistralidade que estou vendo hoje vem de sinistros antigos que tiveram movimentação financeira no período?</i> Cauda Histórica olha o atraso entre ocorrência e aviso. Esta seção olha o que mudou de valor em sinistros já avisados há tempos — aumentos de reserva, novos pagamentos, ajustes — usando snapshots diários da base.<br><br>
 
-<b>Como funciona:</b> Como o app roda na nuvem (Streamlit Cloud), o filesystem é efêmero — não dá pra salvar snapshots automaticamente no servidor. O fluxo é manual: <b>(1)</b> você baixa o snapshot do dia (botão de download no topo da seção); <b>(2)</b> salva o arquivo Parquet em uma pasta do seu Google Drive/OneDrive; <b>(3)</b> quando quiser comparar com uma data passada, faz upload do(s) snapshot(s) salvo(s) — eles ficam disponíveis durante toda a sessão atual do navegador. Cada arquivo guarda, para cada sinistro, os valores pago, pendente e total. O app então compara o snapshot escolhido com a base atual sinistro a sinistro, mostrando o que mudou apenas nos sinistros considerados antigos (segundo o limite escolhido).<br><br>
+<b>Como funciona:</b> Como o app roda na nuvem (Streamlit Cloud), o filesystem é efêmero — não dá pra salvar snapshots automaticamente no servidor. O fluxo é manual e cumulativo: você mantém <b>um único arquivo</b> <code>sinistros_consolidado_AAAA-MM-DD.parquet</code> no seu Drive contendo o histórico de todos os dias. Rotina diária: <b>(1)</b> abrir o app e fazer upload do consolidado anterior; <b>(2)</b> baixar o novo consolidado, que já inclui o dia de hoje automaticamente mesclado ao histórico; <b>(3)</b> substituir o arquivo no Drive pelo novo. Cada dia adiciona ~130 KB; em um ano o arquivo terá ~50 MB. O app também aceita arquivos antigos no formato individual <code>sinistros_AAAA-MM-DD.parquet</code> caso você tenha começado com aquele formato — ele detecta automaticamente e mescla tudo no consolidado. Para a análise, o app compara o snapshot escolhido com a base atual sinistro a sinistro, mostrando o que mudou apenas nos sinistros considerados antigos (segundo o limite escolhido).<br><br>
 
 <b>Cartões (KPIs):</b><br>
 • <b>Sinistros antigos movimentados:</b> quantos sinistros antigos tiveram variação financeira (qualquer direção) no período.<br>
@@ -3710,10 +3772,11 @@ else:
 <b>Como foi desenvolvido:</b> Snapshot do dia gerado em memória, em formato Parquet (~50-150 KB por arquivo). Comparação por merge inner via <code>nr_sinistro</code> — só entram sinistros presentes em ambas as datas, descartando os "novos" do período (que viram da Análise de Cauda Histórica). Filtro de "antigo" é aplicado pela data de aviso em relação ao snapshot escolhido, não à data de hoje, para ser consistente. Movimentações menores que R$ 0,01 em valor absoluto são descartadas (ruído de arredondamento).<br><br>
 
 <b>Atenção:</b><br>
-• A análise só fica útil após você ter pelo menos 1 snapshot antigo salvo. Para começar a acumular histórico, baixe o snapshot de hoje agora e salve numa pasta dedicada no Drive. Faça isso todos os dias úteis — assim, em 30 dias você terá janelas mensais comparáveis.<br>
-• Sugestão de rotina: nomeie sua pasta como <code>AllSeg/snapshots/</code> no Drive e baixe um arquivo por dia, sempre com o nome padrão <code>sinistros_AAAA-MM-DD.parquet</code> que o botão já gera.<br>
-• Se um dia for esquecido, aquela data ficará faltando — o painel pula naturalmente para a data anterior mais próxima.<br>
-• Snapshots disponíveis nesta sessão: <b>{len(_snap_anteriores)}</b>. Eles ficam carregados apenas durante a sessão atual do navegador — ao fechar a aba ou após inatividade, será necessário fazer upload novamente.
+• A análise só fica útil após você ter pelo menos 1 dia histórico no consolidado. Para começar, baixe hoje o arquivo (terá só hoje), salve no Drive como <code>sinistros_consolidado.parquet</code> e amanhã faça o ciclo upload/download. A partir do segundo dia o painel comparativo já funciona.<br>
+• <b>Sequência crítica:</b> sempre faça <i>upload primeiro, download depois</i>. Se baixar sem ter feito upload do consolidado anterior, o novo arquivo terá só o dia de hoje e o histórico anterior fica órfão no Drive (não some — o arquivo antigo continua lá com a data anterior no nome, e você pode recuperá-lo subindo na próxima vez).<br>
+• Sugestão de pasta no Drive: <code>AllSeg/snapshots/</code>. O Drive mantém histórico de versões do arquivo, então mesmo se algo der errado em um dia, dá pra restaurar.<br>
+• Se um dia for esquecido, aquela data ficará faltando — o painel pula naturalmente para a data anterior mais próxima quando você usa os atalhos "Últimos N dias".<br>
+• Snapshots ativos nesta sessão: <b>{len(_snap_anteriores)}</b>. Eles ficam carregados apenas durante a sessão atual do navegador — ao fechar a aba ou após inatividade, será necessário fazer upload novamente.
 </div>
 """, unsafe_allow_html=True)
 
