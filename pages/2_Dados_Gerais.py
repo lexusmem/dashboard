@@ -3264,14 +3264,16 @@ with st.expander("📥 Baixar snapshot consolidado  /  📤 Carregar snapshots p
         )
         if _uploaded:
             _novos = 0
+            _ignorados_hoje = 0
+            _erros = []
             for _file in _uploaded:
                 try:
                     _df_uploaded = pd.read_parquet(_file)
                 except Exception as _e:
-                    st.error(f"❌ Erro ao ler `{_file.name}`: {_e}")
+                    _erros.append(f"`{_file.name}`: erro de leitura ({_e})")
                     continue
                 if 'nr_sinistro' not in _df_uploaded.columns:
-                    st.error(f"❌ `{_file.name}` não tem a coluna nr_sinistro. Ignorado.")
+                    _erros.append(f"`{_file.name}`: sem coluna nr_sinistro")
                     continue
 
                 # Detecta automaticamente: consolidado (com data_snapshot) vs individual
@@ -3281,6 +3283,7 @@ with st.expander("📥 Baixar snapshot consolidado  /  📤 Carregar snapshots p
                     _datas_no_arquivo = _df_uploaded['data_snapshot'].dropna().dt.strftime('%Y-%m-%d').unique()
                     for _date_key in _datas_no_arquivo:
                         if _date_key == _HOJE_STR:
+                            _ignorados_hoje += 1
                             continue
                         _df_dia = _df_uploaded[_df_uploaded['data_snapshot'].dt.strftime('%Y-%m-%d') == _date_key].copy()
                         _df_dia = _df_dia.drop(columns=['data_snapshot'])
@@ -3294,15 +3297,33 @@ with st.expander("📥 Baixar snapshot consolidado  /  📤 Carregar snapshots p
                         _date_obj = pd.to_datetime(_date_part, format='%Y-%m-%d')
                         _date_key = _date_obj.strftime('%Y-%m-%d')
                     except Exception:
-                        st.warning(f"❌ Nome `{_file.name}` não tem o formato esperado (sinistros_AAAA-MM-DD.parquet). Ignorado.")
+                        _erros.append(f"`{_file.name}`: nome fora do padrão (esperado sinistros_AAAA-MM-DD.parquet)")
                         continue
                     if _date_key == _HOJE_STR:
-                        st.warning(f"⚠️ `{_file.name}` é de hoje — ignorado.")
+                        _ignorados_hoje += 1
                         continue
                     st.session_state['snapshots_uploaded'][_date_key] = _df_uploaded
                     _novos += 1
+
+            # ── Feedback diferenciado por resultado ──────────────────────────
             if _novos > 0:
-                st.success(f"✅ {_novos} snapshot(s) carregado(s) com sucesso.")
+                _msg = f"✅ **{_novos} data(s) histórica(s) carregada(s) com sucesso.**"
+                if _ignorados_hoje > 0:
+                    _msg += f" ({_ignorados_hoje} entrada(s) de hoje ignorada(s) — comparar com hoje não faz sentido.)"
+                st.success(_msg)
+            elif _ignorados_hoje > 0 and not _erros:
+                # Caso comum no início: usuário sobe o arquivo recém-baixado
+                st.info(
+                    f"ℹ️ **O(s) arquivo(s) enviado(s) contém(êm) apenas o dia de hoje "
+                    f"({pd.to_datetime(_HOJE_STR).strftime('%d/%m/%Y')}).** "
+                    "Não há histórico para adicionar — para a análise comparativa funcionar, "
+                    "você precisa subir snapshots de **dias anteriores** (que você baixou em "
+                    "execuções passadas). Se este é seu primeiro dia usando o recurso, basta "
+                    "baixar o consolidado de hoje, salvar no Drive, e voltar amanhã."
+                )
+            if _erros:
+                for _err in _erros:
+                    st.error(f"❌ {_err}")
 
     with _col_dl:
         if not df_sinistros.empty:
