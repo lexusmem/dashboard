@@ -397,42 +397,35 @@ df_sinistros     = st.session_state['df_sinistros']
 df_cobertura     = st.session_state.get('df_cobertura', pd.DataFrame())
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 📸 SNAPSHOT DIÁRIO AUTOMÁTICO DA BASE DE SINISTROS
-# Objetivo: capturar uma "fotografia" diária dos valores financeiros de cada
-# sinistro, permitindo comparações futuras para identificar movimentações
-# (aumento de reserva, novos pagamentos) em sinistros antigos.
-# - Salva uma única vez por dia (idempotente: pula se já existe)
-# - Arquivo Parquet leve (~50KB/dia para milhares de sinistros)
-# - Pasta `snapshots/` ao lado do app; não interfere em nada se falhar
+# 📸 SNAPSHOT DIÁRIO DA BASE DE SINISTROS — fluxo manual download/upload
+# Como o app roda no Streamlit Community Cloud (filesystem efêmero), snapshots
+# não podem ser persistidos em disco. Em vez disso:
+#   • Botão de DOWNLOAD gera o snapshot do dia em memória (Parquet) para o
+#     usuário salvar manualmente no Google Drive/OneDrive.
+#   • UPLOAD permite carregar snapshots antigos para comparação histórica.
 # ─────────────────────────────────────────────────────────────────────────────
-from pathlib import Path as _Path
-_SNAP_DIR = _Path("snapshots")
-try:
-    _SNAP_DIR.mkdir(exist_ok=True)
-except Exception:
-    pass
-
 _HOJE_STR = pd.Timestamp.today().strftime("%Y-%m-%d")
-# Evita verificar disco a cada rerun do Streamlit dentro da mesma sessão
-if st.session_state.get('snap_check_date') != _HOJE_STR:
-    _snap_file = _SNAP_DIR / f"sinistros_{_HOJE_STR}.parquet"
-    if (not _snap_file.exists()) and (not df_sinistros.empty):
-        _cols_snap = [c for c in [
-            'nr_sinistro', 'N° Apólice', 'cd_apolice', 'nr_ramo', 'Ramo', 'Utilização',
-            'dt_aviso', 'dt_ocorrencia',
-            'vl_sinistro_pago', 'vl_sinistro_pendente', 'vl_sinistro_total',
-            'vl_despesa_pago', 'vl_despesa_pendente', 'vl_despesa_total',
-            'vl_honorario_total', 'vl_salvado_total',
-            'Total Sinistro',
-            'status_processo', 'status_movimento'
-        ] if c in df_sinistros.columns]
-        try:
-            df_sinistros[_cols_snap].to_parquet(_snap_file, index=False)
-        except Exception:
-            # Feature opcional — qualquer falha (pyarrow ausente, permissão de
-            # disco, etc.) é silenciosa para não impactar o uso normal do app.
-            pass
-    st.session_state['snap_check_date'] = _HOJE_STR
+
+def _gerar_snapshot_bytes(_df_sin):
+    """Gera bytes Parquet do snapshot de hoje, prontos para download."""
+    import io as _io
+    _cols_snap = [c for c in [
+        'nr_sinistro', 'N° Apólice', 'cd_apolice', 'nr_ramo', 'Ramo', 'Utilização',
+        'dt_aviso', 'dt_ocorrencia',
+        'vl_sinistro_pago', 'vl_sinistro_pendente', 'vl_sinistro_total',
+        'vl_despesa_pago', 'vl_despesa_pendente', 'vl_despesa_total',
+        'vl_honorario_total', 'vl_salvado_total',
+        'Total Sinistro',
+        'status_processo', 'status_movimento'
+    ] if c in _df_sin.columns]
+    _buf = _io.BytesIO()
+    _df_sin[_cols_snap].to_parquet(_buf, index=False)
+    _buf.seek(0)
+    return _buf.getvalue()
+
+# Inicializa o dicionário de snapshots carregados nesta sessão (chave = data ISO)
+if 'snapshots_uploaded' not in st.session_state:
+    st.session_state['snapshots_uploaded'] = {}
 
 # Prepara dados_exibicao
 dados_exibicao = dados_calculados.copy()
@@ -3198,16 +3191,22 @@ else:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 📦 ANÁLISE DE MOVIMENTAÇÃO FINANCEIRA EM SINISTROS ANTIGOS
-# Compara a base atual com snapshots salvos automaticamente em dias anteriores.
+# Compara a base atual com snapshots de dias anteriores (carregados manualmente).
 # Mostra quais sinistros antigos tiveram aumento de reserva ou novos pagamentos
 # entre a data de referência e hoje — capturando o efeito da "cauda viva".
+#
+# Fluxo (Streamlit Cloud — filesystem efêmero):
+#   1. Usuário baixa o snapshot do dia (botão de download)
+#   2. Salva manualmente em pasta no Google Drive/OneDrive
+#   3. Quando quer comparar, faz upload dos snapshots antigos (file_uploader)
+#   4. Snapshots ficam em st.session_state durante a sessão
 # ─────────────────────────────────────────────────────────────────────────────
 st.write("---")
 st.subheader("📦 Movimentação Financeira em Sinistros Antigos")
 st.markdown(
-    '<p class="section-label">Compara a base atual com fotografias diárias '
-    'salvas automaticamente para revelar quais sinistros antigos tiveram '
-    'movimentação financeira (aumento de reserva, novos pagamentos) no período.</p>',
+    '<p class="section-label">Compara a base atual com fotografias diárias da '
+    'base para revelar quais sinistros antigos tiveram movimentação financeira '
+    '(aumento de reserva, novos pagamentos) no período.</p>',
     unsafe_allow_html=True
 )
 
@@ -3216,33 +3215,104 @@ _st_fragment_mv = getattr(st, 'fragment', None) or getattr(st, 'experimental_fra
 if _st_fragment_mv is None:
     _st_fragment_mv = lambda _f: _f
 
-# ── Inventário de snapshots disponíveis ──────────────────────────────────────
-_snap_files = []
-if _SNAP_DIR.exists():
-    for _f in sorted(_SNAP_DIR.glob("sinistros_*.parquet")):
-        _date_str = _f.stem.replace("sinistros_", "")
-        try:
-            _date_obj = pd.to_datetime(_date_str, format="%Y-%m-%d")
-            _snap_files.append((_date_obj, _f))
-        except Exception:
-            continue
+# ── Bloco de Download / Upload de snapshots ──────────────────────────────────
+with st.expander("📥 Baixar snapshot de hoje  /  📤 Carregar snapshots antigos para comparação", expanded=True):
+    st.markdown(
+        '<div style="font-size:12px;color:#64748B;margin-bottom:10px;">'
+        '<b>Como funciona:</b> '
+        '(1) Baixe o snapshot de hoje todos os dias e salve em uma pasta dedicada do seu Google Drive/OneDrive (ex: <code>AllSeg/snapshots/</code>). '
+        '(2) Quando quiser comparar com uma data passada, faça upload do(s) snapshot(s) antigo(s) salvos. '
+        '(3) Eles ficam disponíveis durante toda a sessão atual do navegador.'
+        '</div>',
+        unsafe_allow_html=True
+    )
 
-# Snapshots anteriores a hoje (a base atual já é o "snapshot de hoje")
-_snap_anteriores = [(d, p) for (d, p) in _snap_files if d.strftime("%Y-%m-%d") != _HOJE_STR]
+    _col_dl, _col_up = st.columns([1, 2])
+
+    with _col_dl:
+        if not df_sinistros.empty:
+            try:
+                _snap_bytes_hoje = _gerar_snapshot_bytes(df_sinistros)
+                st.download_button(
+                    label=f"📥 Baixar snapshot de {pd.Timestamp.today().strftime('%d/%m/%Y')}",
+                    data=_snap_bytes_hoje,
+                    file_name=f"sinistros_{_HOJE_STR}.parquet",
+                    mime="application/octet-stream",
+                    use_container_width=True,
+                    help="Arquivo Parquet leve com os valores financeiros de cada sinistro de hoje. Salve no seu Drive."
+                )
+                st.caption(f"📦 Tamanho: ~{len(_snap_bytes_hoje)/1024:.0f} KB · {df_sinistros['nr_sinistro'].nunique():,} sinistros".replace(',', '.'))
+            except Exception as _e:
+                st.error(f"Não foi possível gerar o snapshot: {_e}")
+
+    with _col_up:
+        _uploaded = st.file_uploader(
+            "📤 Carregar snapshots antigos (.parquet)",
+            type=['parquet'],
+            accept_multiple_files=True,
+            key="upload_snapshots",
+            help="Selecione um ou vários arquivos sinistros_YYYY-MM-DD.parquet salvos previamente."
+        )
+        if _uploaded:
+            _novos = 0
+            for _file in _uploaded:
+                # Extrai data do nome do arquivo (sinistros_YYYY-MM-DD.parquet)
+                _stem = _file.name.replace('.parquet', '')
+                _date_part = _stem.replace('sinistros_', '').replace('snapshot_sinistros_', '')
+                try:
+                    _date_obj = pd.to_datetime(_date_part, format='%Y-%m-%d')
+                    _date_key = _date_obj.strftime('%Y-%m-%d')
+                except Exception:
+                    st.warning(f"❌ Nome do arquivo `{_file.name}` não tem o formato esperado (sinistros_YYYY-MM-DD.parquet). Ignorado.")
+                    continue
+                if _date_key == _HOJE_STR:
+                    st.warning(f"⚠️ `{_file.name}` é de hoje — comparar com hoje não faz sentido. Ignorado.")
+                    continue
+                try:
+                    _df_uploaded = pd.read_parquet(_file)
+                    if 'nr_sinistro' not in _df_uploaded.columns:
+                        st.error(f"❌ `{_file.name}` não tem a coluna nr_sinistro. Ignorado.")
+                        continue
+                    st.session_state['snapshots_uploaded'][_date_key] = _df_uploaded
+                    _novos += 1
+                except Exception as _e:
+                    st.error(f"❌ Erro ao ler `{_file.name}`: {_e}")
+            if _novos > 0:
+                st.success(f"✅ {_novos} snapshot(s) carregado(s) com sucesso.")
+
+    # Lista snapshots já carregados nesta sessão
+    if st.session_state['snapshots_uploaded']:
+        _datas_carregadas = sorted(st.session_state['snapshots_uploaded'].keys(), reverse=True)
+        _datas_fmt = [pd.to_datetime(d).strftime('%d/%m/%Y') for d in _datas_carregadas]
+        st.markdown(
+            f'<div style="font-size:12px;color:#059669;margin-top:8px;">'
+            f'✅ <b>{len(_datas_carregadas)} snapshot(s) ativos na sessão:</b> {", ".join(_datas_fmt)}'
+            f'</div>',
+            unsafe_allow_html=True
+        )
+        _col_clr, _ = st.columns([1, 3])
+        with _col_clr:
+            if st.button("🗑️ Limpar snapshots carregados", key="btn_clear_snaps"):
+                st.session_state['snapshots_uploaded'] = {}
+                st.rerun()
+
+# ── Inventário de snapshots disponíveis (apenas os carregados via upload) ────
+_snap_anteriores = []
+for _date_key, _df_snap in st.session_state['snapshots_uploaded'].items():
+    if _date_key == _HOJE_STR:
+        continue
+    try:
+        _date_obj = pd.to_datetime(_date_key, format='%Y-%m-%d')
+        _snap_anteriores.append((_date_obj, _df_snap))
+    except Exception:
+        continue
 
 if not _snap_anteriores:
-    # Caso típico no primeiro uso ou primeiro dia de implantação
     st.info(
-        "📸 **Snapshots diários ativados.** A base atual foi salva automaticamente "
-        f"como snapshot do dia {pd.Timestamp.today().strftime('%d/%m/%Y')}. "
-        "A análise comparativa ficará disponível a partir do próximo dia em que "
-        "o aplicativo for aberto. Quanto mais dias a base for consultada, "
-        "mais datas de referência você terá para comparar."
-    )
-    _qtd_snaps = len(_snap_files)
-    st.caption(
-        f"📁 Snapshots armazenados até o momento: **{_qtd_snaps}**. "
-        f"Localização: `{_SNAP_DIR.resolve()}`."
+        "📸 **Nenhum snapshot antigo carregado ainda.** "
+        "Para usar a análise comparativa: (1) baixe o snapshot de hoje no botão acima e salve no Drive; "
+        "(2) amanhã (ou em qualquer dia futuro), abra o app, faça upload dos snapshots passados e selecione a data de referência. "
+        "Quanto mais snapshots você acumular, mais janelas comparativas terá."
     )
 
 elif df_sinistros.empty:
@@ -3271,12 +3341,15 @@ else:
                 # Pega o snapshot mais próximo (anterior ou igual) à data alvo
                 _candidatos = [(d, p) for (d, p) in _snap_anteriores if d <= _alvo]
                 if _candidatos:
-                    _d_escolhida, _p_escolhida = max(_candidatos, key=lambda x: x[0])
-                    _opcoes_marco.append((f"{_label} (snapshot de {_d_escolhida.strftime('%d/%m/%Y')})", _p_escolhida))
+                    _d_escolhida, _df_escolhido = max(_candidatos, key=lambda x: x[0])
+                    _opcoes_marco.append((
+                        f"{_label} (snapshot de {_d_escolhida.strftime('%d/%m/%Y')})",
+                        (_d_escolhida, _df_escolhido)
+                    ))
 
             _opcoes_data_especifica = [
-                (f"Data específica: {d.strftime('%d/%m/%Y')}", p)
-                for (d, p) in sorted(_snap_anteriores, key=lambda x: x[0], reverse=True)
+                (f"Data específica: {d.strftime('%d/%m/%Y')}", (d, dfx))
+                for (d, dfx) in sorted(_snap_anteriores, key=lambda x: x[0], reverse=True)
             ]
 
             _todas_opcoes = _opcoes_marco + [("───────────", None)] + _opcoes_data_especifica
@@ -3300,7 +3373,8 @@ else:
             if _escolha == "───────────":
                 st.info("Selecione uma opção válida.")
                 return
-            _snap_path = dict(_todas_opcoes)[_escolha]
+            _snap_selecionado = dict(_todas_opcoes)[_escolha]
+            _data_snap, _df_old = _snap_selecionado
 
         with _col_c2:
             _limite_meses_mv = st.radio(
@@ -3317,14 +3391,11 @@ else:
                 )
             )
 
-        # ── Carrega snapshot e prepara base ──────────────────────────────────
-        try:
-            _df_old = pd.read_parquet(_snap_path)
-        except Exception as _e:
-            st.error(f"Não foi possível ler o snapshot selecionado: {_e}")
+        # ── Snapshot já está em memória (carregado via upload) ────────────────
+        if _df_old is None or _df_old.empty:
+            st.error("Snapshot selecionado está vazio.")
             return
-
-        _data_snap = pd.to_datetime(_snap_path.stem.replace("sinistros_", ""), format="%Y-%m-%d")
+        _df_old = _df_old.copy()
 
         # Calcula Total Sinistro consistente nos dois lados se a coluna não existir
         def _garante_total(_df):
@@ -3622,7 +3693,7 @@ else:
 
 <b>O que é:</b> Esta seção responde a uma pergunta diferente da Cauda Histórica: <i>quanto da sinistralidade que estou vendo hoje vem de sinistros antigos que tiveram movimentação financeira no período?</i> Cauda Histórica olha o atraso entre ocorrência e aviso. Esta seção olha o que mudou de valor em sinistros já avisados há tempos — aumentos de reserva, novos pagamentos, ajustes — usando snapshots diários da base.<br><br>
 
-<b>Como funciona:</b> Toda vez que você abre o app, ele salva automaticamente uma "fotografia" leve da base de sinistros em uma pasta <code>snapshots/</code>. Cada arquivo guarda, para cada sinistro, os valores pago, pendente e total. Quando você escolhe uma data de referência aqui, o app carrega o snapshot daquele dia, compara com a base atual sinistro a sinistro, e mostra o que mudou apenas nos sinistros considerados antigos (segundo o limite escolhido).<br><br>
+<b>Como funciona:</b> Como o app roda na nuvem (Streamlit Cloud), o filesystem é efêmero — não dá pra salvar snapshots automaticamente no servidor. O fluxo é manual: <b>(1)</b> você baixa o snapshot do dia (botão de download no topo da seção); <b>(2)</b> salva o arquivo Parquet em uma pasta do seu Google Drive/OneDrive; <b>(3)</b> quando quiser comparar com uma data passada, faz upload do(s) snapshot(s) salvo(s) — eles ficam disponíveis durante toda a sessão atual do navegador. Cada arquivo guarda, para cada sinistro, os valores pago, pendente e total. O app então compara o snapshot escolhido com a base atual sinistro a sinistro, mostrando o que mudou apenas nos sinistros considerados antigos (segundo o limite escolhido).<br><br>
 
 <b>Cartões (KPIs):</b><br>
 • <b>Sinistros antigos movimentados:</b> quantos sinistros antigos tiveram variação financeira (qualquer direção) no período.<br>
@@ -3636,12 +3707,13 @@ else:
 
 <b>Top 20:</b> os sinistros com maior soma absoluta de movimentação. Use para investigação caso a caso — pode revelar acordos, sentenças judiciais ou ajustes técnicos específicos que merecem entendimento.<br><br>
 
-<b>Como foi desenvolvido:</b> Snapshot diário em formato Parquet, idempotente (salva uma única vez por dia). Comparação por merge inner via <code>nr_sinistro</code> — só entram sinistros presentes em ambas as datas, descartando os "novos" do período (que viram da Análise de Cauda Histórica). Filtro de "antigo" é aplicado pela data de aviso em relação ao snapshot escolhido, não à data de hoje, para ser consistente. Movimentações menores que R$ 0,01 em valor absoluto são descartadas (ruído de arredondamento).<br><br>
+<b>Como foi desenvolvido:</b> Snapshot do dia gerado em memória, em formato Parquet (~50-150 KB por arquivo). Comparação por merge inner via <code>nr_sinistro</code> — só entram sinistros presentes em ambas as datas, descartando os "novos" do período (que viram da Análise de Cauda Histórica). Filtro de "antigo" é aplicado pela data de aviso em relação ao snapshot escolhido, não à data de hoje, para ser consistente. Movimentações menores que R$ 0,01 em valor absoluto são descartadas (ruído de arredondamento).<br><br>
 
 <b>Atenção:</b><br>
-• A análise só fica útil após acumular pelo menos 2 dias de snapshots. Hoje você está iniciando o acúmulo — amanhã já terá comparação possível, e em 30 dias o painel atinge seu potencial pleno.<br>
-• Snapshots são salvos automaticamente, mas se o app não for aberto em determinado dia, aquela data ficará faltando — o painel pula naturalmente para a data anterior mais próxima.<br>
-• Pasta de snapshots: <code>{_SNAP_DIR.resolve()}</code>. Snapshots disponíveis: <b>{len(_snap_anteriores)}</b>.
+• A análise só fica útil após você ter pelo menos 1 snapshot antigo salvo. Para começar a acumular histórico, baixe o snapshot de hoje agora e salve numa pasta dedicada no Drive. Faça isso todos os dias úteis — assim, em 30 dias você terá janelas mensais comparáveis.<br>
+• Sugestão de rotina: nomeie sua pasta como <code>AllSeg/snapshots/</code> no Drive e baixe um arquivo por dia, sempre com o nome padrão <code>sinistros_AAAA-MM-DD.parquet</code> que o botão já gera.<br>
+• Se um dia for esquecido, aquela data ficará faltando — o painel pula naturalmente para a data anterior mais próxima.<br>
+• Snapshots disponíveis nesta sessão: <b>{len(_snap_anteriores)}</b>. Eles ficam carregados apenas durante a sessão atual do navegador — ao fechar a aba ou após inatividade, será necessário fazer upload novamente.
 </div>
 """, unsafe_allow_html=True)
 
