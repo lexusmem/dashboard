@@ -1995,10 +1995,10 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
                 name=str(int(av)),
                 line=dict(width=2, color=cores[i % len(cores)]),
                 marker=dict(size=6),
-                hovertemplate=f"Safra {int(av)}<br>Lag: %{{x}} anos<br>Sin. Acum: %{{y:.1%}}<extra></extra>"
+                hovertemplate=f"Safra {int(av)}<br>Ano de desenvolvimento: %{{x}}<br>Sin. Acum: %{{y:.1%}}<extra></extra>"
             ))
         fig_saf.update_layout(
-            xaxis=dict(title='Anos após vigência (Lag)', tickmode='linear', dtick=1),
+            xaxis=dict(title='Anos após vigência (ano de desenvolvimento)', tickmode='linear', dtick=1),
             yaxis=dict(title='Sinistralidade Acumulada (%)', tickformat='.0%'),
             legend=dict(title='Safra', orientation='v', x=1.01),
             margin=dict(t=20, b=20, l=0, r=60), height=380,
@@ -2082,8 +2082,8 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
             'Sin. Atual':          sin_atual,
             'Sin. Projetada':      sin_proj,
             'Fator Desenvolvimento': fator_total,
-            'Último Lag':          ultimo_lag,
-            'Status':              'Completa' if ja_completa else f'Em dev. (lag {ultimo_lag}/{max_lag})'
+            'Último Ano':          ultimo_lag,
+            'Status':              'Completa' if ja_completa else f'Em dev. (ano {ultimo_lag}/{max_lag})'
         })
 
     df_proj = pd.DataFrame(rows_proj).sort_values('Safra', ascending=False)
@@ -2170,10 +2170,10 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
 
     # Fatores de desenvolvimento históricos
     with st.expander("📊 Ver fatores de desenvolvimento históricos (Chain-Ladder)"):
-        fat_data = [{'Lag → Lag+1': f"Ano+{lag} → Ano+{lag+1}", 'Fator Médio': f"{v:.4f}×", 'Significado': f"A sinistralidade cresce em média {(v-1)*100:.1f}% entre esses dois períodos"} for lag, v in sorted(fatores.items())]
+        fat_data = [{'Ano → Ano+1': f"Ano+{lag} → Ano+{lag+1}", 'Fator Médio': f"{v:.4f}×", 'Significado': f"A sinistralidade cresce em média {(v-1)*100:.1f}% entre esses dois períodos"} for lag, v in sorted(fatores.items())]
         if fat_data:
             st.dataframe(pd.DataFrame(fat_data), hide_index=True, use_container_width=True)
-            st.caption("Fatores ponderados pelo prêmio de cada safra. Quanto mais próximo de 1.000×, mais estável o desenvolvimento naquele lag.")
+            st.caption("Fatores ponderados pelo prêmio de cada safra. Quanto mais próximo de 1.000×, mais estável o desenvolvimento naquele estágio.")
 
 
 else:
@@ -2197,7 +2197,7 @@ Uma safra que mostra 30% em Ano+0 e chega a 66% em Ano+2 significa que dois ter�
 
 <b>Atenção aos anos recentes:</b> Safras dos últimos 1-2 anos sempre parecem ter sinistralidade baixa, mas é porque ainda estão em desenvolvimento. Compare com o padrão das safras anteriores para estimar o valor final.<br><br>
 
-<b>Como foi desenvolvido:</b> Para cada sinistro, identifica o Ano de Vigência da apólice correspondente e o Ano de Aviso do sinistro. Calcula o lag (diferença em anos). Acumula o Total Sinistro por safra à medida que o lag aumenta e divide pelo prêmio total daquela safra. O gráfico de curvas mostra uma linha por safra — curvas que ainda sobem indicam safras incompletas.
+<b>Como foi desenvolvido:</b> Para cada sinistro, identifica o Ano de Vigência da apólice correspondente e o Ano de Aviso do sinistro. Calcula o <i>ano de desenvolvimento</i> (em inglês: <i>lag</i>), que é a diferença em anos. Acumula o Total Sinistro por safra à medida que o ano de desenvolvimento aumenta e divide pelo prêmio total daquela safra. O gráfico de curvas mostra uma linha por safra — curvas que ainda sobem indicam safras incompletas.
 </div>
 """, unsafe_allow_html=True)
 
@@ -2926,7 +2926,7 @@ if (not df_sinistro_periodo_atualizado.empty) and (not df_geral_periodo.empty):
                     key="cauda_historica_threshold",
                     help=(
                         "Limite (em meses) entre a data de ocorrência e a data de "
-                        "aviso. Avisos com lag acima desse valor são tratados como "
+                        "aviso. Avisos com defasagem acima desse valor são tratados como "
                         "cauda histórica (sinistros antigos avisados no período)."
                     )
                 )
@@ -2968,7 +2968,7 @@ if (not df_sinistro_periodo_atualizado.empty) and (not df_geral_periodo.empty):
             with _c1:
                 st.markdown(
                     f'<div style="{_card_base}">'
-                    f'<div style="font-size:12px;color:#64748B;">⏱️ Lag médio de aviso</div>'
+                    f'<div style="font-size:12px;color:#64748B;">⏱️ Defasagem média (ocorrência → aviso)</div>'
                     f'<div style="font-size:22px;font-weight:600;color:#0F172A;margin-top:4px;">{_lag_medio:.0f} dias</div>'
                     f'<div style="font-size:11px;color:#94A3B8;margin-top:2px;">mediana: {_lag_mediano:.0f} dias</div>'
                     f'</div>',
@@ -3007,7 +3007,7 @@ if (not df_sinistro_periodo_atualizado.empty) and (not df_geral_periodo.empty):
 
             # ── Distribuição do lag por faixa ───────────────────────────────
             st.markdown(
-                '<p class="section-label">Distribuição do lag entre ocorrência e aviso</p>',
+                '<p class="section-label">Distribuição da defasagem entre ocorrência e aviso</p>',
                 unsafe_allow_html=True
             )
 
@@ -3043,7 +3043,7 @@ if (not df_sinistro_periodo_atualizado.empty) and (not df_geral_periodo.empty):
                     hovertemplate='<b>%{y}</b><br>Qtd: %{x}<extra></extra>',
                 ))
                 _fig_qtd.update_layout(
-                    title=dict(text='Quantidade de sinistros por faixa de lag', font=dict(size=14)),
+                    title=dict(text='Quantidade de sinistros por faixa de defasagem', font=dict(size=14)),
                     height=320,
                     margin=dict(l=10, r=30, t=40, b=10),
                     plot_bgcolor='white',
@@ -3063,7 +3063,7 @@ if (not df_sinistro_periodo_atualizado.empty) and (not df_geral_periodo.empty):
                     hovertemplate='<b>%{y}</b><br>Valor: R$ %{x:,.2f}<extra></extra>',
                 ))
                 _fig_val.update_layout(
-                    title=dict(text='Valor (R$) por faixa de lag', font=dict(size=14)),
+                    title=dict(text='Valor (R$) por faixa de defasagem', font=dict(size=14)),
                     height=320,
                     margin=dict(l=10, r=30, t=40, b=10),
                     plot_bgcolor='white',
@@ -3147,15 +3147,15 @@ if (not df_sinistro_periodo_atualizado.empty) and (not df_geral_periodo.empty):
 
             # ── Top sinistros antigos com maior impacto ─────────────────────
             st.markdown(
-                f'<p class="section-label">Top sinistros antigos (lag > {_limite_meses} meses) com maior impacto no período</p>',
+                f'<p class="section-label">Top sinistros antigos (defasagem > {_limite_meses} meses) com maior impacto no período</p>',
                 unsafe_allow_html=True
             )
             _df_top = _df[_df['eh_cauda']].copy()
             if _df_top.empty:
-                st.info(f"Nenhum sinistro com lag superior a {_limite_meses} meses no período filtrado.")
+                st.info(f"Nenhum sinistro com defasagem superior a {_limite_meses} meses no período filtrado.")
             else:
                 _df_top = _df_top.sort_values('Total Sinistro', ascending=False).head(15)
-                _df_top['Lag (meses)'] = (_df_top['lag_dias'] / 30).round(1)
+                _df_top['Defasagem (meses)'] = (_df_top['lag_dias'] / 30).round(1)
                 _df_top['Ocorrência']  = _df_top['dt_ocorrencia_dt'].dt.strftime('%d/%m/%Y')
                 _df_top['Aviso']       = _df_top['dt_aviso_dt'].dt.strftime('%d/%m/%Y')
                 _df_top['Total Sinistro R$'] = _df_top['Total Sinistro'].apply(formatar_valor_br)
@@ -3164,7 +3164,7 @@ if (not df_sinistro_periodo_atualizado.empty) and (not df_geral_periodo.empty):
                 for _c in ['Ramo', 'Utilização']:
                     if _c in _df_top.columns:
                         _cols_show.append(_c)
-                _cols_show += ['Ocorrência', 'Aviso', 'Lag (meses)', 'Total Sinistro R$']
+                _cols_show += ['Ocorrência', 'Aviso', 'Defasagem (meses)', 'Total Sinistro R$']
 
                 _df_top_view = _df_top[_cols_show].rename(columns={
                     'nr_sinistro':         'N° Sinistro',
@@ -3186,18 +3186,18 @@ if (not df_sinistro_periodo_atualizado.empty) and (not df_geral_periodo.empty):
 <b>O que é:</b> Esta seção responde à pergunta: <i>quanto da sinistralidade que estou vendo no período veio de sinistros que aconteceram lá atrás e só foram avisados agora?</i> Em seguros, é normal o segurado demorar dias, meses (ou anos, em RC e Judicial) para comunicar um evento. Esses avisos tardios e atualizações de sinistros antigos compõem o que o mercado chama de <b>cauda histórica</b> (IBNR realizado).<br><br>
 
 <b>Cartões (KPIs):</b><br>
-• <b>Lag médio / mediano:</b> média e mediana de dias entre <i>dt_ocorrencia</i> e <i>dt_aviso</i>. A mediana é mais robusta — se ela está baixa e a média alta, há poucos sinistros muito antigos puxando a média para cima.<br>
+• <b>Defasagem média / mediana:</b> média e mediana de dias entre <i>dt_ocorrencia</i> e <i>dt_aviso</i> — ou seja, quanto tempo o segurado demorou para avisar o sinistro depois do evento. A mediana é mais robusta — se ela está baixa e a média alta, há poucos sinistros muito antigos puxando a média para cima.<br>
 • <b>Qtd. com cauda:</b> número de sinistros avisados no período cujo evento aconteceu há mais que o limite escolhido (6/12/18/24 meses), e o que isso representa em % da carteira.<br>
 • <b>R$ da cauda:</b> valor financeiro desses sinistros antigos. É aqui que o impacto real aparece — um único sinistro grande de 2 anos atrás pode pesar mais que dezenas de avisos rápidos.<br>
 • <b>Impacto na sinistralidade:</b> compara a sinistralidade do período <i>com</i> e <i>sem</i> os sinistros de cauda. Por exemplo, +4,8 pp significa que sua sinistralidade aparenta ser 4,8 pontos percentuais pior do que a do "negócio corrente". Vermelho = impacto material (&gt; 0,5 pp).<br><br>
 
-<b>Distribuição do lag (barras horizontais):</b> mostra como os sinistros se distribuem por faixa de atraso. Verde = aviso rápido (até 90 dias, esperado). Laranja = atraso intermediário (entre 3 e 12 meses, monitorar). Vermelho = cauda histórica (acima de 1 ano). A barra de quantidade revela frequência; a de R$ revela severidade — uma faixa pequena em qtd mas grande em R$ é onde mora o risco.<br><br>
+<b>Distribuição da defasagem (barras horizontais):</b> mostra como os sinistros se distribuem por faixa de atraso entre a ocorrência e o aviso. Verde = aviso rápido (até 90 dias, esperado). Laranja = atraso intermediário (entre 3 e 12 meses, monitorar). Vermelho = cauda histórica (acima de 1 ano). A barra de quantidade revela frequência; a de R$ revela severidade — uma faixa pequena em qtd mas grande em R$ é onde mora o risco.<br><br>
 
 <b>Matriz Ano de Ocorrência × Ano de Aviso (heatmap):</b> cada célula é o R$ total dos sinistros que ocorreram no ano da linha e foram avisados no ano da coluna. A <b>diagonal</b> (ano de ocorrência = ano de aviso) é o cenário ideal: aviso rápido. Tudo que está <b>abaixo da diagonal</b> é avisado depois — quanto mais "escuro" (azul mais intenso), maior o valor de cauda. Se a coluna do ano mais recente tem muito valor longe da diagonal, é sinal de que o período está sendo inflado por sinistros antigos.<br><br>
 
-<b>Top sinistros antigos:</b> lista os 15 maiores sinistros de cauda no período, com data de ocorrência, data de aviso, lag em meses e valor. Use para investigar caso a caso — pode revelar concentrações em um corretor, ramo ou tipo de cobertura específico.<br><br>
+<b>Top sinistros antigos:</b> lista os 15 maiores sinistros de cauda no período, com data de ocorrência, data de aviso, defasagem em meses e valor. Use para investigar caso a caso — pode revelar concentrações em um corretor, ramo ou tipo de cobertura específico.<br><br>
 
-<b>Como foi desenvolvido:</b> Para cada sinistro do período filtrado pelo slider, calcula-se o <i>lag</i> = dt_aviso − dt_ocorrencia (em dias). Sinistros com lag negativo ou superior a 10 anos são descartados como erro de cadastro. O limite de cauda histórica é configurável (6, 12, 18 ou 24 meses); o padrão é 12 meses. A sinistralidade "sem cauda" é recalculada subtraindo o R$ dos sinistros acima do limite, mantendo o prêmio do período inalterado.<br><br>
+<b>Como foi desenvolvido:</b> Para cada sinistro do período filtrado pelo slider, calcula-se a <i>defasagem</i> (em inglês: <i>lag</i>) = dt_aviso − dt_ocorrencia (em dias). Sinistros com defasagem negativa ou superior a 10 anos são descartados como erro de cadastro. O limite de cauda histórica é configurável (6, 12, 18 ou 24 meses); o padrão é 12 meses. A sinistralidade "sem cauda" é recalculada subtraindo o R$ dos sinistros acima do limite, mantendo o prêmio do período inalterado.<br><br>
 
 <b>Atenção:</b> A análise depende da qualidade do preenchimento da data de ocorrência. Sinistros com dt_ocorrencia em branco são descartados — se sua base tem muitos casos assim, os números aqui subestimam o problema. Além disso, atualizações de reserva em sinistros antigos (movimentações financeiras sem novo aviso) não aparecem como "cauda" por este critério; para captar esse efeito, seria necessário comparar a base atual com snapshots anteriores.
 </div>
@@ -3768,15 +3768,17 @@ else:
             _top_view = _top[_cols_top].rename(columns={'nr_sinistro': 'N° Sinistro'})
             st.dataframe(_top_view, use_container_width=True, hide_index=True)
 
-        # ── Quadro "Como entender esta análise" ──────────────────────────────
-        st.markdown("")
-        st.markdown(f"""
+    _render_movimentacao_antigos()
+
+# ── Quadro "Como entender esta análise" — sempre exibido, mesmo sem snapshots ─
+st.markdown("")
+st.markdown(f"""
 <div style="background:#F8FAFC;border-radius:10px;padding:18px;border:1px solid #E2E8F0;font-size:13px;color:#334155;">
 <b>📖 Como entender esta análise</b><br><br>
 
 <b>O que é:</b> Esta seção responde a uma pergunta diferente da Cauda Histórica: <i>quanto da sinistralidade que estou vendo hoje vem de sinistros antigos que tiveram movimentação financeira no período?</i> Cauda Histórica olha o atraso entre ocorrência e aviso. Esta seção olha o que mudou de valor em sinistros já avisados há tempos — aumentos de reserva, novos pagamentos, ajustes — usando snapshots diários da base.<br><br>
 
-<b>Como funciona:</b> Como o app roda na nuvem (Streamlit Cloud), o filesystem é efêmero — não dá pra salvar snapshots automaticamente no servidor. O fluxo é manual e cumulativo: você mantém <b>um único arquivo</b> <code>sinistros_consolidado_AAAA-MM-DD.parquet</code> no seu Drive contendo o histórico de todos os dias. Rotina diária: <b>(1)</b> abrir o app e fazer upload do consolidado anterior; <b>(2)</b> baixar o novo consolidado, que já inclui o dia de hoje automaticamente mesclado ao histórico; <b>(3)</b> substituir o arquivo no Drive pelo novo. Cada dia adiciona ~130 KB; em um ano o arquivo terá ~50 MB. O app também aceita arquivos antigos no formato individual <code>sinistros_AAAA-MM-DD.parquet</code> caso você tenha começado com aquele formato — ele detecta automaticamente e mescla tudo no consolidado. Para a análise, o app compara o snapshot escolhido com a base atual sinistro a sinistro, mostrando o que mudou apenas nos sinistros considerados antigos (segundo o limite escolhido).<br><br>
+<b>Como funciona:</b> Como o app roda na nuvem (Streamlit Cloud), o filesystem é efêmero — não dá pra salvar snapshots automaticamente no servidor. O fluxo é manual e cumulativo: você mantém <b>um único arquivo</b> <code>sinistros_consolidado_AAAA-MM-DD.parquet</code> no seu Drive contendo o histórico de todos os dias. Rotina diária: <b>(1)</b> abrir o app e fazer upload do consolidado anterior; <b>(2)</b> baixar o novo consolidado, que já inclui o dia de hoje automaticamente mesclado ao histórico; <b>(3)</b> substituir o arquivo no Drive pelo novo. Cada dia adiciona ~50-130 KB (varia conforme a base); em um ano o arquivo terá ~30-50 MB. O app também aceita arquivos antigos no formato individual <code>sinistros_AAAA-MM-DD.parquet</code> caso você tenha começado com aquele formato — ele detecta automaticamente e mescla tudo no consolidado. Para a análise, o app compara o snapshot escolhido com a base atual sinistro a sinistro, mostrando o que mudou apenas nos sinistros considerados antigos (segundo o limite escolhido).<br><br>
 
 <b>Cartões (KPIs):</b><br>
 • <b>Sinistros antigos movimentados:</b> quantos sinistros antigos tiveram variação financeira (qualquer direção) no período.<br>
@@ -3790,18 +3792,16 @@ else:
 
 <b>Top 20:</b> os sinistros com maior soma absoluta de movimentação. Use para investigação caso a caso — pode revelar acordos, sentenças judiciais ou ajustes técnicos específicos que merecem entendimento.<br><br>
 
-<b>Como foi desenvolvido:</b> Snapshot do dia gerado em memória, em formato Parquet (~50-150 KB por arquivo). Comparação por merge inner via <code>nr_sinistro</code> — só entram sinistros presentes em ambas as datas, descartando os "novos" do período (que viram da Análise de Cauda Histórica). Filtro de "antigo" é aplicado pela data de aviso em relação ao snapshot escolhido, não à data de hoje, para ser consistente. Movimentações menores que R$ 0,01 em valor absoluto são descartadas (ruído de arredondamento).<br><br>
+<b>Como foi desenvolvido:</b> Snapshot do dia gerado em memória, em formato Parquet. Comparação por merge inner via <code>nr_sinistro</code> — só entram sinistros presentes em ambas as datas, descartando os "novos" do período (que viram da Análise de Cauda Histórica). Filtro de "antigo" é aplicado pela data de aviso em relação ao snapshot escolhido, não à data de hoje, para ser consistente. Movimentações menores que R$ 0,01 em valor absoluto são descartadas (ruído de arredondamento).<br><br>
 
 <b>Atenção:</b><br>
 • A análise só fica útil após você ter pelo menos 1 dia histórico no consolidado. Para começar, baixe hoje o arquivo (terá só hoje), salve no Drive como <code>sinistros_consolidado.parquet</code> e amanhã faça o ciclo upload/download. A partir do segundo dia o painel comparativo já funciona.<br>
-• <b>Sequência crítica:</b> sempre faça <i>upload primeiro, download depois</i>. Se baixar sem ter feito upload do consolidado anterior, o novo arquivo terá só o dia de hoje e o histórico anterior fica órfão no Drive (não some — o arquivo antigo continua lá com a data anterior no nome, e você pode recuperá-lo subindo na próxima vez).<br>
+• <b>Sequência crítica diária:</b> sempre faça <i>upload primeiro, download depois</i>. Se baixar sem ter feito upload do consolidado anterior, o novo arquivo terá só o dia de hoje e o histórico anterior fica órfão no Drive (não some — o arquivo antigo continua lá com a data anterior no nome, e você pode recuperá-lo subindo na próxima vez).<br>
 • Sugestão de pasta no Drive: <code>AllSeg/snapshots/</code>. O Drive mantém histórico de versões do arquivo, então mesmo se algo der errado em um dia, dá pra restaurar.<br>
 • Se um dia for esquecido, aquela data ficará faltando — o painel pula naturalmente para a data anterior mais próxima quando você usa os atalhos "Últimos N dias".<br>
 • Snapshots ativos nesta sessão: <b>{len(_snap_anteriores)}</b>. Eles ficam carregados apenas durante a sessão atual do navegador — ao fechar a aba ou após inatividade, será necessário fazer upload novamente.
 </div>
 """, unsafe_allow_html=True)
-
-    _render_movimentacao_antigos()
 
 st.write("---")
 st.caption("Desenvolvido por Alex Sousa.")
