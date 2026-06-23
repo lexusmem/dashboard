@@ -3,9 +3,47 @@ import pandas as pd
 import io
 import base64
 import logging
+import os
+from pathlib import Path
 import plotly.graph_objects as go
 import plotly.express as px
 import streamlit_antd_components as sac
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 📁 CONFIGURAÇÃO DE CAMINHO LOCAL PARA AUTO-LOAD
+# Se os 3 arquivos existirem neste caminho, o app os carrega automaticamente,
+# evitando o upload manual. Caso contrário (ex.: rodando no Streamlit Cloud,
+# onde F:\ não existe), volta ao comportamento de uploader na sidebar.
+# Para alterar o caminho, edite a constante abaixo.
+# ─────────────────────────────────────────────────────────────────────────────
+LOCAL_DATA_DIR = Path(r"F:\Fechamento_ADMSEG\RCO\Precificacao")
+ARQUIVOS_ESPERADOS = {
+    'apolice':   "apolice_endosso.txt",
+    'cobertura': "cobertura_agrupada.txt",
+    'sinistro':  "sinistro.txt",
+}
+
+def _check_arquivos_locais():
+    """Retorna dict {chave: Path} se TODOS os arquivos existirem no caminho local;
+    retorna None caso contrário (não é máquina local, ou algum arquivo faltando)."""
+    try:
+        if not LOCAL_DATA_DIR.exists():
+            return None
+        paths = {chave: LOCAL_DATA_DIR / nome for chave, nome in ARQUIVOS_ESPERADOS.items()}
+        if all(p.is_file() for p in paths.values()):
+            return paths
+        return None
+    except Exception:
+        # Falha silenciosa: qualquer erro de permissão/SO devolve para o uploader
+        return None
+
+@st.cache_data(show_spinner=False)
+def _ler_arquivo_local_bytes(path_str, _mtime_cache_key):
+    """Lê o arquivo do disco e retorna seus bytes.
+    O parâmetro _mtime_cache_key invalida o cache automaticamente quando o
+    arquivo é atualizado (porque mtime muda → hash da chave muda → cache miss)."""
+    with open(path_str, 'rb') as _f:
+        return _f.read()
 
 # Configura a página para layout amplo
 st.set_page_config(layout='wide', page_title='Painel Allseg', page_icon='📊')
@@ -397,19 +435,66 @@ dados_ja_carregados = (
 )
 
 if not dados_ja_carregados:
-    # Mostra os uploaders apenas enquanto os dados não estiverem carregados
-    st.sidebar.header("📂 Carregar Arquivos")
-    st.sidebar.caption("Faça o upload dos três arquivos TXT para carregar o dashboard. Caminho: F:\Fechamento_ADMSEG\RCO\Precificacao")
+    # ── Tenta auto-load do disco local ───────────────────────────────────────
+    _arquivos_locais = _check_arquivos_locais()
 
-    upload_apolice   = st.sidebar.file_uploader("apolice_endosso.txt",   type=["txt", "csv"])
-    upload_cobertura = st.sidebar.file_uploader("cobertura_agrupada.txt",type=["txt", "csv"])
-    upload_sinistro  = st.sidebar.file_uploader("sinistro.txt",          type=["txt", "csv"])
+    if _arquivos_locais is not None:
+        # ── MODO LOCAL: lê os 3 arquivos automaticamente do disco ────────────
+        st.sidebar.header("📂 Arquivos da Carteira")
+        st.sidebar.success(
+            f"✅ Carregamento automático\n\n"
+            f"Origem: `{LOCAL_DATA_DIR}`"
+        )
+
+        try:
+            _mtimes = {k: os.path.getmtime(p) for k, p in _arquivos_locais.items()}
+            with st.sidebar.expander("ℹ️ Detalhes dos arquivos", expanded=False):
+                for _k, _p in _arquivos_locais.items():
+                    _dt_mod = datetime.fromtimestamp(_mtimes[_k]).strftime('%d/%m/%Y %H:%M')
+                    _tam_kb = _p.stat().st_size / 1024
+                    st.markdown(
+                        f"**{_p.name}**  \n"
+                        f"📅 {_dt_mod}  \n"
+                        f"📦 {_tam_kb:,.0f} KB".replace(',', '.')
+                    )
+
+            upload_apolice = io.BytesIO(
+                _ler_arquivo_local_bytes(str(_arquivos_locais['apolice']), _mtimes['apolice'])
+            )
+            upload_cobertura = io.BytesIO(
+                _ler_arquivo_local_bytes(str(_arquivos_locais['cobertura']), _mtimes['cobertura'])
+            )
+            upload_sinistro = io.BytesIO(
+                _ler_arquivo_local_bytes(str(_arquivos_locais['sinistro']), _mtimes['sinistro'])
+            )
+
+            if st.sidebar.button("🔄 Recarregar arquivos do disco", use_container_width=True):
+                st.cache_data.clear()
+                for _k in ['dados_calculados', 'df_sinistros', 'df_cobertura']:
+                    if _k in st.session_state:
+                        del st.session_state[_k]
+                st.rerun()
+
+        except Exception as _e:
+            st.sidebar.error(f"⚠️ Falha ao ler arquivos locais: {_e}")
+            st.sidebar.info("Caindo de volta para upload manual.")
+            upload_apolice = None
+            upload_cobertura = None
+            upload_sinistro = None
+
+    else:
+        # ── MODO UPLOAD MANUAL: usuário escolhe os arquivos ──────────────────
+        st.sidebar.header("📂 Carregar Arquivos")
+        st.sidebar.caption("Faça o upload dos três arquivos TXT para carregar o dashboard. Caminho: F:\\Fechamento_ADMSEG\\RCO\\Precificacao")
+
+        upload_apolice   = st.sidebar.file_uploader("apolice_endosso.txt",   type=["txt", "csv"])
+        upload_cobertura = st.sidebar.file_uploader("cobertura_agrupada.txt",type=["txt", "csv"])
+        upload_sinistro  = st.sidebar.file_uploader("sinistro.txt",          type=["txt", "csv"])
 
     if not upload_apolice or not upload_sinistro or not upload_cobertura:
         st.info("👈 Faça o upload dos três arquivos TXT na barra lateral para iniciar o dashboard.")
         st.stop()
 else:
-    # Dados já carregados — sidebar limpa, sem nenhuma referência aos arquivos
     upload_apolice   = None
     upload_sinistro  = None
     upload_cobertura = None
