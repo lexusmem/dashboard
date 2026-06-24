@@ -406,6 +406,15 @@ df_cobertura     = st.session_state.get('df_cobertura', pd.DataFrame())
 # ─────────────────────────────────────────────────────────────────────────────
 _HOJE_STR = pd.Timestamp.today().strftime("%Y-%m-%d")
 
+def _coage_categoria_str(_df, _cols):
+    """Garante que colunas categóricas (Ramo, Utilização) tenham tipo string consistente.
+    Resolve mistura de tipos (int + str) que quebra a serialização Parquet com PyArrow.
+    Valores nulos viram a string '(não informado)' para preservar a linha no groupby."""
+    for _c in _cols:
+        if _c in _df.columns:
+            _df[_c] = _df[_c].fillna('(não informado)').astype(str)
+    return _df
+
 def _gerar_snapshot_bytes(_df_sin, _dados_calc=None):
     """Gera bytes Parquet do snapshot consolidado (hoje + histórico em sessão).
 
@@ -439,9 +448,13 @@ def _gerar_snapshot_bytes(_df_sin, _dados_calc=None):
     if _dados_calc is not None and 'N° Apólice' in _dados_calc.columns:
         _mapa_apo = _dados_calc[['N° Apólice', 'Ramo', 'Utilização']].drop_duplicates('N° Apólice').copy()
         _mapa_apo['N° Apólice'] = _mapa_apo['N° Apólice'].astype(str)
+        # Coage Ramo/Utilização para string consistente antes do merge
+        _mapa_apo = _coage_categoria_str(_mapa_apo, ['Ramo', 'Utilização'])
         if 'N° Apólice' in _df_hoje_sin.columns:
             _df_hoje_sin['N° Apólice'] = _df_hoje_sin['N° Apólice'].astype(str)
             _df_hoje_sin = _df_hoje_sin.merge(_mapa_apo, on='N° Apólice', how='left')
+        # Após merge: linhas sem match têm NaN em Ramo/Utilização → coage de novo
+        _df_hoje_sin = _coage_categoria_str(_df_hoje_sin, ['Ramo', 'Utilização'])
 
     _df_hoje_sin['tipo_registro'] = 'SINISTRO'
     _df_hoje_sin['data_snapshot'] = pd.Timestamp(_HOJE_STR)
@@ -449,8 +462,9 @@ def _gerar_snapshot_bytes(_df_sin, _dados_calc=None):
     # ── Snapshot de hoje — AGG_CARTEIRA ─────────────────────────────────────
     _df_hoje_agg = pd.DataFrame()
     if _dados_calc is not None and not _dados_calc.empty:
-        # Garante numérico no prêmio
+        # Garante numérico no prêmio e string em Ramo/Utilização
         _dc = _dados_calc.copy()
+        _dc = _coage_categoria_str(_dc, ['Ramo', 'Utilização'])
         _dc['_premio_num'] = pd.to_numeric(
             _dc['Soma Prêmio Pago por Apolice'].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False),
             errors='coerce'
@@ -459,6 +473,8 @@ def _gerar_snapshot_bytes(_df_sin, _dados_calc=None):
             qtd_apolices_vigentes=('N° Apólice', 'nunique'),
             soma_premio=('_premio_num', 'sum'),
         ).reset_index()
+        # Coação final defensiva — garante string mesmo após groupby
+        _df_hoje_agg = _coage_categoria_str(_df_hoje_agg, ['Ramo', 'Utilização'])
         _df_hoje_agg['tipo_registro'] = 'AGG_CARTEIRA'
         _df_hoje_agg['data_snapshot'] = pd.Timestamp(_HOJE_STR)
 
@@ -3339,9 +3355,11 @@ with st.expander("📥 Baixar snapshot consolidado  /  📤 Carregar snapshots p
                         _mapa = dados_calculados[['N° Apólice', 'Ramo', 'Utilização']].drop_duplicates('N° Apólice').copy()
                         # Coage N° Apólice para string em ambos os lados (snapshots antigos podem ter int64)
                         _mapa['N° Apólice'] = _mapa['N° Apólice'].astype(str)
+                        _mapa = _coage_categoria_str(_mapa, ['Ramo', 'Utilização'])
                         _df_uploaded = _df_uploaded.copy()
                         _df_uploaded['N° Apólice'] = _df_uploaded['N° Apólice'].astype(str)
                         _df_uploaded = _df_uploaded.merge(_mapa, on='N° Apólice', how='left')
+                        _df_uploaded = _coage_categoria_str(_df_uploaded, ['Ramo', 'Utilização'])
                     except Exception:
                         pass  # silenciosa — análises por segmento simplesmente terão menos cobertura
 
@@ -3485,14 +3503,17 @@ def _construir_snap_hoje():
     if dados_calculados is not None and 'N° Apólice' in dados_calculados.columns:
         _mapa = dados_calculados[['N° Apólice', 'Ramo', 'Utilização']].drop_duplicates('N° Apólice').copy()
         _mapa['N° Apólice'] = _mapa['N° Apólice'].astype(str)
+        _mapa = _coage_categoria_str(_mapa, ['Ramo', 'Utilização'])
         if 'N° Apólice' in _sin_hoje.columns:
             _sin_hoje['N° Apólice'] = _sin_hoje['N° Apólice'].astype(str)
             _sin_hoje = _sin_hoje.merge(_mapa, on='N° Apólice', how='left')
+        _sin_hoje = _coage_categoria_str(_sin_hoje, ['Ramo', 'Utilização'])
     _sin_hoje['data_snapshot'] = pd.Timestamp(_HOJE_STR)
     # AGG_CARTEIRA de hoje
     _agg_hoje = pd.DataFrame()
     if dados_calculados is not None and not dados_calculados.empty:
         _dc = dados_calculados.copy()
+        _dc = _coage_categoria_str(_dc, ['Ramo', 'Utilização'])
         _dc['_premio_num'] = pd.to_numeric(
             _dc['Soma Prêmio Pago por Apolice'].astype(str)
                 .str.replace('.', '', regex=False).str.replace(',', '.', regex=False),
@@ -3502,6 +3523,7 @@ def _construir_snap_hoje():
             qtd_apolices_vigentes=('N° Apólice', 'nunique'),
             soma_premio=('_premio_num', 'sum'),
         ).reset_index()
+        _agg_hoje = _coage_categoria_str(_agg_hoje, ['Ramo', 'Utilização'])
         _agg_hoje['data_snapshot'] = pd.Timestamp(_HOJE_STR)
     return _sin_hoje, _agg_hoje
 
