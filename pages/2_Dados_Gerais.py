@@ -3584,6 +3584,125 @@ else:
         f"para análise temporal."
     )
 
+# ── Helpers compartilhados pelas abas (Onda 2) ───────────────────────────────
+_st_fragment_temp = getattr(st, 'fragment', None) or getattr(st, 'experimental_fragment', None)
+if _st_fragment_temp is None:
+    _st_fragment_temp = lambda _f: _f
+
+def _filtrar_janela(_snap_dias_list, _janela_dias=7):
+    """Retorna os snapshots dentro de uma janela de N dias a partir do mais recente.
+    Adaptativo: se há menos de N dias acumulados, usa todos. Retorna lista ordenada."""
+    if not _snap_dias_list:
+        return []
+    _dias_sorted = sorted(_snap_dias_list)
+    _ultimo = _dias_sorted[-1]
+    _corte = _ultimo - pd.Timedelta(days=_janela_dias)
+    _janela = [d for d in _dias_sorted if d >= _corte]
+    return _janela
+
+def _soma_componentes(_df, _cols):
+    """Soma seguramente várias colunas numéricas de um DataFrame."""
+    _total = 0.0
+    for _c in _cols:
+        if _c in _df.columns:
+            _total += pd.to_numeric(_df[_c], errors='coerce').fillna(0).sum()
+    return float(_total)
+
+def _calcular_ritmos(_sin_concat, _agg_concat, _janela_dias_list):
+    """Calcula os 6 KPIs do painel executivo entre primeiro e último snap da janela.
+    Usa método (c): variação total / diferença em dias.
+    Retorna dict com todos os indicadores ou None se não há dados suficientes."""
+    if len(_janela_dias_list) < 2:
+        return None
+    _primeiro = _janela_dias_list[0]
+    _ultimo = _janela_dias_list[-1]
+    _dias_entre = max((_ultimo - _primeiro).days, 1)
+
+    _sin_p = _sin_concat[_sin_concat['data_snapshot'] == _primeiro] if not _sin_concat.empty else pd.DataFrame()
+    _sin_u = _sin_concat[_sin_concat['data_snapshot'] == _ultimo] if not _sin_concat.empty else pd.DataFrame()
+
+    # Pagamentos (sinistro + despesa)
+    _pago_p = _soma_componentes(_sin_p, ['vl_sinistro_pago', 'vl_despesa_pago'])
+    _pago_u = _soma_componentes(_sin_u, ['vl_sinistro_pago', 'vl_despesa_pago'])
+    _delta_pago = _pago_u - _pago_p
+    _ritmo_pago = _delta_pago / _dias_entre
+
+    # Reserva pendente (sinistro + despesa)
+    _pend_p = _soma_componentes(_sin_p, ['vl_sinistro_pendente', 'vl_despesa_pendente'])
+    _pend_u = _soma_componentes(_sin_u, ['vl_sinistro_pendente', 'vl_despesa_pendente'])
+    _delta_pend = _pend_u - _pend_p
+    _ritmo_pend = _delta_pend / _dias_entre
+
+    # Net flow = variação total (passivo) por dia
+    _total_p = _soma_componentes(_sin_p, ['Total Sinistro'])
+    _total_u = _soma_componentes(_sin_u, ['Total Sinistro'])
+    _delta_total = _total_u - _total_p
+    _net_flow = _delta_total / _dias_entre
+
+    # Taxa de aviso = sinistros novos no período / dias
+    _set_p = set(_sin_p['nr_sinistro'].astype(str)) if 'nr_sinistro' in _sin_p.columns else set()
+    _set_u = set(_sin_u['nr_sinistro'].astype(str)) if 'nr_sinistro' in _sin_u.columns else set()
+    _novos = _set_u - _set_p
+    _taxa_aviso = len(_novos) / _dias_entre
+
+    # Taxa de encerramento = sinistros que mudaram para "Liquidado" no período
+    _encerrados = 0
+    if 'status_movimento' in _sin_p.columns and 'status_movimento' in _sin_u.columns:
+        _comuns = _set_p & _set_u
+        if _comuns:
+            _map_p = _sin_p.set_index(_sin_p['nr_sinistro'].astype(str))['status_movimento'].to_dict()
+            _map_u = _sin_u.set_index(_sin_u['nr_sinistro'].astype(str))['status_movimento'].to_dict()
+            for _nrs in _comuns:
+                _sp = str(_map_p.get(_nrs, '')).strip().lower()
+                _su = str(_map_u.get(_nrs, '')).strip().lower()
+                if 'liquid' not in _sp and 'liquid' in _su:
+                    _encerrados += 1
+    _taxa_encerramento = _encerrados / _dias_entre
+
+    # Score composto
+    _alertas = 0
+    if _ritmo_pend > _ritmo_pago * 1.2 and _ritmo_pend > 0:
+        _alertas += 1
+    if _taxa_aviso > _taxa_encerramento * 1.5 and _taxa_aviso > 0.5:
+        _alertas += 1
+    if _net_flow > 0:
+        _alertas += 1
+    if _alertas == 0:
+        _score_cor, _score_label = '#16A34A', '🟢 Saudável'
+    elif _alertas == 1:
+        _score_cor, _score_label = '#D97706', '🟡 Atenção'
+    else:
+        _score_cor, _score_label = '#DC2626', '🔴 Crítico'
+
+    return {
+        'ritmo_pago': _ritmo_pago,
+        'ritmo_pend': _ritmo_pend,
+        'net_flow': _net_flow,
+        'taxa_aviso': _taxa_aviso,
+        'taxa_encerramento': _taxa_encerramento,
+        'score_cor': _score_cor,
+        'score_label': _score_label,
+        'dias_entre': _dias_entre,
+        'primeiro': _primeiro,
+        'ultimo': _ultimo,
+        'qtd_dias': len(_janela_dias_list),
+    }
+
+def _card_ritmo(_titulo, _valor, _subtitulo, _cor='#0F172A'):
+    """Renderiza um card de KPI no padrão visual da página."""
+    _card_base = (
+        "background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;"
+        "padding:14px 16px;height:100%;"
+    )
+    st.markdown(
+        f'<div style="{_card_base}">'
+        f'<div style="font-size:12px;color:#64748B;">{_titulo}</div>'
+        f'<div style="font-size:20px;font-weight:600;color:{_cor};margin-top:4px;">{_valor}</div>'
+        f'<div style="font-size:11px;color:#94A3B8;margin-top:2px;">{_subtitulo}</div>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+
 # ── 5 abas ───────────────────────────────────────────────────────────────────
 _tab_visao, _tab_segmento, _tab_drill, _tab_reserva, _tab_alertas = st.tabs([
     "🎯 Visão Geral",
@@ -3595,75 +3714,709 @@ _tab_visao, _tab_segmento, _tab_drill, _tab_reserva, _tab_alertas = st.tabs([
 
 # ─── ABA 1 — VISÃO GERAL ─────────────────────────────────────────────────────
 with _tab_visao:
-    st.markdown(
-        '<p class="section-label">Painel Executivo + Evolução Temporal da Sinistralidade</p>',
-        unsafe_allow_html=True
-    )
-    st.markdown("""
-<div style="background:#EFF6FF;border-left:3px solid #1a56db;padding:14px 18px;border-radius:6px;font-size:13px;color:#1E3A8A;">
-🚧 <b>Em construção — chegará na Onda 2.</b><br><br>
+    @_st_fragment_temp
+    def _render_aba_visao_geral():
+        if len(_snap_dias) < 2:
+            st.info("⏳ Aguardando ao menos 2 dias de snapshot para calcular ritmos e tendências.")
+            return
 
-<b>Esta aba conterá:</b><br><br>
+        # ── Painel Executivo (6 cards de ritmo) ──────────────────────────────
+        st.markdown(
+            '<p class="section-label">⚡ Painel Executivo — Ritmo e Tendência</p>',
+            unsafe_allow_html=True
+        )
+        _janela = _filtrar_janela(_snap_dias, _janela_dias=7)
+        _ritmos = _calcular_ritmos(_df_snap_sin_concat, _df_snap_agg_concat, _janela)
 
-<b>Painel Executivo (6 cards de ritmo e tendência):</b><br>
-• ⚡ <b>Velocidade diária de pagamento</b> (R$/dia médio na janela de 7 dias) — caixa saindo<br>
-• 📈 <b>Velocidade diária de constituição de reserva</b> (R$/dia) — passivo crescendo<br>
-• 🔄 <b>Net flow líquido</b> (constituição − liquidação) — engorda vs. liquida<br>
-• 📌 <b>Taxa de aviso</b> (sinistros novos/dia) — exposição entrando<br>
-• ✅ <b>Taxa de encerramento</b> (sinistros liquidados/dia) — eficiência<br>
-• 🟢🟡🔴 <b>Score de saúde composto</b> — semáforo executivo<br><br>
+        if _ritmos is None:
+            st.info("Sem dados suficientes para calcular ritmos.")
+        else:
+            _aviso_janela = (
+                f"📅 Calculado entre {_ritmos['primeiro'].strftime('%d/%m/%Y')} e "
+                f"{_ritmos['ultimo'].strftime('%d/%m/%Y')} "
+                f"({_ritmos['dias_entre']} dia(s), {_ritmos['qtd_dias']} snapshot(s))."
+            )
+            if _ritmos['qtd_dias'] < 7:
+                _aviso_janela += " *Janela ainda em formação — precisão melhora com mais dias acumulados.*"
+            st.caption(_aviso_janela)
 
-<b>Evolução Temporal da Sinistralidade (2 sub-abas):</b><br>
-• <i>"Como evoluiu a sinistralidade do mesmo período"</i> — fixa o período do slider, varia o snapshot. Revela quanto a sinistralidade vai sendo ajustada pra cima com o tempo (efeito cauda).<br>
-• <i>"Sinistralidade independente por snapshot"</i> — cada ponto = sinistralidade naquele dia. Movimento imediato.
-</div>
-""", unsafe_allow_html=True)
+            _c1, _c2, _c3 = st.columns(3)
+            with _c1:
+                _cor = '#DC2626' if _ritmos['ritmo_pago'] > 50000 else '#0F172A'
+                _card_ritmo(
+                    '⚡ Velocidade de pagamento',
+                    f"R$ {formatar_valor_br(_ritmos['ritmo_pago'])}/dia",
+                    'caixa saindo (sinistro + despesa)',
+                    _cor
+                )
+            with _c2:
+                _cor = '#DC2626' if _ritmos['ritmo_pend'] > 0 else '#059669'
+                _sinal = '+' if _ritmos['ritmo_pend'] >= 0 else ''
+                _card_ritmo(
+                    '📈 Constituição de reserva',
+                    f"{_sinal}R$ {formatar_valor_br(_ritmos['ritmo_pend'])}/dia",
+                    'passivo crescendo (pendente)',
+                    _cor
+                )
+            with _c3:
+                _cor = '#DC2626' if _ritmos['net_flow'] > 0 else '#059669'
+                _sinal = '+' if _ritmos['net_flow'] >= 0 else ''
+                _card_ritmo(
+                    '🔄 Net flow (Δ Total Sinistro)',
+                    f"{_sinal}R$ {formatar_valor_br(_ritmos['net_flow'])}/dia",
+                    'positivo = passivo crescendo',
+                    _cor
+                )
+
+            _c4, _c5, _c6 = st.columns(3)
+            with _c4:
+                _card_ritmo(
+                    '📌 Taxa de aviso',
+                    f"{_ritmos['taxa_aviso']:.2f} sin/dia",
+                    'sinistros novos por dia'
+                )
+            with _c5:
+                _card_ritmo(
+                    '✅ Taxa de encerramento',
+                    f"{_ritmos['taxa_encerramento']:.2f} sin/dia",
+                    'liquidados por dia'
+                )
+            with _c6:
+                _card_ritmo(
+                    '🚦 Score de saúde',
+                    _ritmos['score_label'],
+                    'baseado em ritmo + fluxo + balanço',
+                    _ritmos['score_cor']
+                )
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("---")
+
+        # ── Evolução Temporal da Sinistralidade — 2 sub-abas ─────────────────
+        st.markdown(
+            '<p class="section-label">📊 Evolução Temporal da Sinistralidade</p>',
+            unsafe_allow_html=True
+        )
+        _sub_a, _sub_b = st.tabs([
+            "🔒 Sinistralidade do MESMO período (revisão com o tempo)",
+            "🔄 Sinistralidade INDEPENDENTE por snapshot"
+        ])
+
+        # ── Sub-aba A: Sinistralidade do mesmo período ───────────────────────
+        with _sub_a:
+            st.caption(
+                "📌 Fixa o período do slider (lado esquerdo da página) e mostra como a "
+                "sinistralidade *daquele mesmo período* foi sendo ajustada pra cima/baixo "
+                "conforme novos snapshots chegaram. Revela o efeito da cauda histórica."
+            )
+
+            # Prêmio do período do slider (fixo, não varia entre snapshots)
+            _premio_periodo_slider = df_para_soma['Soma Prêmio Pago por Apolice'].sum() if not df_para_soma.empty else 0
+
+            if _premio_periodo_slider <= 0:
+                st.info("Prêmio do período do slider é zero — impossível calcular sinistralidade.")
+            else:
+                # Filtra sinistros do período do slider (apolices visíveis no slider)
+                _apolices_periodo = set(df_geral_periodo['N° Apólice'].astype(str).unique()) if not df_geral_periodo.empty else set()
+
+                _pontos = []
+                for _data in _snap_dias:
+                    _sin_d = _df_snap_sin_concat[_df_snap_sin_concat['data_snapshot'] == _data].copy()
+                    if _sin_d.empty:
+                        continue
+                    # Filtra apenas sinistros das apólices do período do slider
+                    if 'N° Apólice' in _sin_d.columns and _apolices_periodo:
+                        _sin_d['N° Apólice'] = _sin_d['N° Apólice'].astype(str)
+                        _sin_d_filt = _sin_d[_sin_d['N° Apólice'].isin(_apolices_periodo)]
+                    else:
+                        _sin_d_filt = _sin_d
+                    _total = pd.to_numeric(_sin_d_filt.get('Total Sinistro', 0), errors='coerce').fillna(0).sum()
+                    _sinistralidade = (_total / _premio_periodo_slider) * 100
+                    _pontos.append({'data': _data, 'sinistralidade': _sinistralidade, 'total_sinistro': _total})
+
+                if not _pontos:
+                    st.info("Sem pontos suficientes.")
+                else:
+                    _df_plot = pd.DataFrame(_pontos)
+                    _fig = go.Figure()
+                    _fig.add_trace(go.Scatter(
+                        x=_df_plot['data'], y=_df_plot['sinistralidade'],
+                        mode='lines+markers+text',
+                        text=[f"{v:.1f}%" for v in _df_plot['sinistralidade']],
+                        textposition='top center',
+                        line=dict(color='#1a56db', width=2),
+                        marker=dict(size=10, color='#1a56db'),
+                        hovertemplate='<b>%{x|%d/%m/%Y}</b><br>Sinistralidade: %{y:.2f}%<br>Total Sinistro: R$ %{customdata:,.2f}<extra></extra>',
+                        customdata=_df_plot['total_sinistro']
+                    ))
+                    _fig.update_layout(
+                        title=dict(
+                            text=f'Sinistralidade do período fixo · Prêmio base: R$ {formatar_valor_br(_premio_periodo_slider)}',
+                            font=dict(size=14)
+                        ),
+                        height=380,
+                        margin=dict(l=20, r=20, t=50, b=20),
+                        plot_bgcolor='white',
+                        yaxis=dict(title='Sinistralidade (%)', gridcolor='#E2E8F0'),
+                        xaxis=dict(title='Data do snapshot', gridcolor='#E2E8F0'),
+                    )
+                    st.plotly_chart(_fig, use_container_width=True, config={'displayModeBar': False})
+
+                    if len(_pontos) >= 2:
+                        _delta_pp = _pontos[-1]['sinistralidade'] - _pontos[0]['sinistralidade']
+                        _cor_d = '#DC2626' if _delta_pp > 0 else '#059669'
+                        _sinal = '+' if _delta_pp >= 0 else ''
+                        st.markdown(
+                            f'<div style="background:#F8FAFC;border-radius:8px;padding:10px 14px;font-size:13px;">'
+                            f'<b>Variação acumulada da sinistralidade do mesmo período:</b> '
+                            f'<span style="color:{_cor_d};font-weight:600;">{_sinal}{_delta_pp:.2f} pp</span> '
+                            f'entre {_pontos[0]["data"].strftime("%d/%m/%Y")} e {_pontos[-1]["data"].strftime("%d/%m/%Y")}.'
+                            f'</div>',
+                            unsafe_allow_html=True
+                        )
+
+        # ── Sub-aba B: Sinistralidade independente ───────────────────────────
+        with _sub_b:
+            st.caption(
+                "📌 Cada ponto = sinistralidade da carteira **inteira** naquele dia, "
+                "usando toda a base do snapshot (sem filtro do slider). Numerador e "
+                "denominador mudam juntos — movimento puro da carteira."
+            )
+
+            _pontos = []
+            for _data in _snap_dias:
+                _sin_d = _df_snap_sin_concat[_df_snap_sin_concat['data_snapshot'] == _data]
+                _agg_d = _df_snap_agg_concat[_df_snap_agg_concat['data_snapshot'] == _data] if not _df_snap_agg_concat.empty else pd.DataFrame()
+                _total_sin = pd.to_numeric(_sin_d.get('Total Sinistro', 0), errors='coerce').fillna(0).sum() if not _sin_d.empty else 0
+                _premio = pd.to_numeric(_agg_d.get('soma_premio', 0), errors='coerce').fillna(0).sum() if not _agg_d.empty else 0
+                if _premio > 0:
+                    _sinistralidade = (_total_sin / _premio) * 100
+                    _pontos.append({
+                        'data': _data, 'sinistralidade': _sinistralidade,
+                        'total_sinistro': _total_sin, 'premio': _premio
+                    })
+
+            if not _pontos:
+                st.info(
+                    "ℹ️ Sem dados de prêmio (AGG_CARTEIRA) nos snapshots disponíveis. "
+                    "A sinistralidade independente requer snapshots gerados pela nova versão "
+                    "do app (após a Onda 1). Snapshots antigos só serão usados aqui após você "
+                    "rodar pelo menos um ciclo upload/download com a versão atual."
+                )
+            else:
+                _df_plot = pd.DataFrame(_pontos)
+                _fig = go.Figure()
+                _fig.add_trace(go.Scatter(
+                    x=_df_plot['data'], y=_df_plot['sinistralidade'],
+                    mode='lines+markers+text',
+                    text=[f"{v:.1f}%" for v in _df_plot['sinistralidade']],
+                    textposition='top center',
+                    line=dict(color='#7c1f4a', width=2),
+                    marker=dict(size=10, color='#7c1f4a'),
+                    hovertemplate=(
+                        '<b>%{x|%d/%m/%Y}</b><br>Sinistralidade: %{y:.2f}%<br>'
+                        'Total Sinistro: R$ %{customdata[0]:,.2f}<br>'
+                        'Prêmio: R$ %{customdata[1]:,.2f}<extra></extra>'
+                    ),
+                    customdata=list(zip(_df_plot['total_sinistro'], _df_plot['premio']))
+                ))
+                _fig.update_layout(
+                    title=dict(text='Sinistralidade da carteira inteira por snapshot', font=dict(size=14)),
+                    height=380,
+                    margin=dict(l=20, r=20, t=50, b=20),
+                    plot_bgcolor='white',
+                    yaxis=dict(title='Sinistralidade (%)', gridcolor='#E2E8F0'),
+                    xaxis=dict(title='Data do snapshot', gridcolor='#E2E8F0'),
+                )
+                st.plotly_chart(_fig, use_container_width=True, config={'displayModeBar': False})
+
+    _render_aba_visao_geral()
 
 # ─── ABA 2 — POR SEGMENTO ────────────────────────────────────────────────────
 with _tab_segmento:
-    st.markdown(
-        '<p class="section-label">Análise por Ramo / Utilização ao longo do tempo</p>',
-        unsafe_allow_html=True
-    )
-    st.markdown("""
-<div style="background:#EFF6FF;border-left:3px solid #1a56db;padding:14px 18px;border-radius:6px;font-size:13px;color:#1E3A8A;">
-🚧 <b>Em construção — chegará na Onda 2.</b><br><br>
+    @_st_fragment_temp
+    def _render_aba_segmento():
+        if len(_snap_dias) < 2:
+            st.info("⏳ Aguardando ao menos 2 dias de snapshot para análise por segmento.")
+            return
 
-<b>Esta aba conterá:</b><br><br>
+        # Verifica cobertura de Ramo/Utilização nos snapshots
+        _tem_ramo = 'Ramo' in _df_snap_sin_concat.columns and _df_snap_sin_concat['Ramo'].notna().any()
+        if not _tem_ramo:
+            st.warning(
+                "Os snapshots disponíveis não contêm Ramo/Utilização. Faça o ciclo "
+                "upload/download uma vez com a versão atual do app para enriquecer "
+                "automaticamente o histórico via merge com dados_calculados."
+            )
+            return
 
-• <b>Linha do tempo por Ramo</b> — uma curva por ramo (RCO, RCFV, APP...) mostrando Total Sinistro ao longo dos snapshots. Identifica qual ramo puxa o crescimento.<br><br>
+        # Seletor de dimensão
+        _dim = st.radio(
+            "Agrupar por:",
+            options=['Ramo', 'Utilização'],
+            horizontal=True,
+            key='seg_agrupar_radio'
+        )
 
-• <b>Linha do tempo por Utilização</b> — turismo, urbano, fretamento, escolar. Qual segmento concentra deterioração?<br><br>
+        # ── 1. Evolução por segmento — Total Sinistro ────────────────────────
+        st.markdown(
+            f'<p class="section-label">📈 Evolução do Total Sinistro por {_dim}</p>',
+            unsafe_allow_html=True
+        )
+        _evol = _df_snap_sin_concat.groupby(['data_snapshot', _dim], as_index=False, dropna=False).agg(
+            Total_Sinistro=('Total Sinistro', 'sum'),
+            qtd_sinistros=('nr_sinistro', 'nunique')
+        )
+        _evol[_dim] = _evol[_dim].fillna('(não informado)').astype(str)
 
-• <b>Heatmap Ramo × Período</b> — matriz colorida com variação % ao longo do tempo. Identifica padrões rapidamente (ex: "RCO em outubro").<br><br>
+        _fig_evol = go.Figure()
+        for _seg in sorted(_evol[_dim].unique()):
+            _d = _evol[_evol[_dim] == _seg].sort_values('data_snapshot')
+            _fig_evol.add_trace(go.Scatter(
+                x=_d['data_snapshot'], y=_d['Total_Sinistro'],
+                mode='lines+markers', name=_seg,
+                hovertemplate=f'<b>{_seg}</b><br>%{{x|%d/%m/%Y}}<br>R$ %{{y:,.2f}}<br>%{{customdata}} sinistros<extra></extra>',
+                customdata=_d['qtd_sinistros']
+            ))
+        _fig_evol.update_layout(
+            height=420, margin=dict(l=20, r=20, t=30, b=20),
+            plot_bgcolor='white',
+            yaxis=dict(title='Total Sinistro (R$)', gridcolor='#E2E8F0'),
+            xaxis=dict(title='Data do snapshot', gridcolor='#E2E8F0'),
+            legend=dict(orientation='h', yanchor='bottom', y=-0.35, xanchor='center', x=0.5),
+        )
+        st.plotly_chart(_fig_evol, use_container_width=True, config={'displayModeBar': False})
 
-• <b>Composição da carteira ao longo do tempo</b> — stacked area mostrando como a mistura de Ramo/Utilização muda (qtd apólices e prêmio).<br><br>
+        # ── 2. Variação % entre primeiro e último snapshot ───────────────────
+        st.markdown(
+            f'<p class="section-label">📊 Variação % do Total Sinistro por {_dim}</p>',
+            unsafe_allow_html=True
+        )
+        _primeiro_dia = _snap_dias[0]
+        _ultimo_dia = _snap_dias[-1]
+        _evol_p = _evol[_evol['data_snapshot'] == _primeiro_dia].set_index(_dim)['Total_Sinistro']
+        _evol_u = _evol[_evol['data_snapshot'] == _ultimo_dia].set_index(_dim)['Total_Sinistro']
+        _var = pd.DataFrame({'Inicial': _evol_p, 'Final': _evol_u}).fillna(0)
+        _var['Delta_R$'] = _var['Final'] - _var['Inicial']
+        _var['Var_%'] = ((_var['Final'] - _var['Inicial']) / _var['Inicial'].replace(0, float('nan')) * 100).fillna(0)
+        _var = _var.sort_values('Delta_R$', ascending=True)
 
-• <b>Sinistralidade por segmento ao longo do tempo</b> — sinistro ÷ prêmio por Ramo, evoluindo. Usa numerador E denominador dos snapshots.
-</div>
-""", unsafe_allow_html=True)
+        _fig_var = go.Figure()
+        _fig_var.add_trace(go.Bar(
+            x=_var['Delta_R$'], y=_var.index,
+            orientation='h',
+            marker_color=['#DC2626' if v > 0 else '#059669' for v in _var['Delta_R$']],
+            text=[f"{'+' if v >= 0 else ''}R$ {formatar_valor_br(v)} ({p:+.1f}%)"
+                  for v, p in zip(_var['Delta_R$'], _var['Var_%'])],
+            textposition='outside',
+            hovertemplate='<b>%{y}</b><br>Δ R$: %{x:,.2f}<extra></extra>',
+        ))
+        _fig_var.update_layout(
+            title=dict(
+                text=f"Δ Total Sinistro entre {_primeiro_dia.strftime('%d/%m/%Y')} e {_ultimo_dia.strftime('%d/%m/%Y')}",
+                font=dict(size=13)
+            ),
+            height=max(300, 60 + 35 * len(_var)),
+            margin=dict(l=20, r=120, t=50, b=20),
+            plot_bgcolor='white',
+            xaxis=dict(title='Variação (R$)', gridcolor='#E2E8F0'),
+        )
+        st.plotly_chart(_fig_var, use_container_width=True, config={'displayModeBar': False})
+
+        # ── 3. Composição da carteira ao longo do tempo (AGG_CARTEIRA) ───────
+        if not _df_snap_agg_concat.empty and _dim in _df_snap_agg_concat.columns:
+            st.markdown(
+                f'<p class="section-label">🏛️ Composição da Carteira por {_dim} ao longo do tempo</p>',
+                unsafe_allow_html=True
+            )
+            _col_a, _col_b = st.columns(2)
+            with _col_a:
+                _comp_qtd = _df_snap_agg_concat.groupby(['data_snapshot', _dim], as_index=False).agg(
+                    qtd=('qtd_apolices_vigentes', 'sum')
+                )
+                _fig_cq = go.Figure()
+                for _seg in sorted(_comp_qtd[_dim].unique()):
+                    _d = _comp_qtd[_comp_qtd[_dim] == _seg].sort_values('data_snapshot')
+                    _fig_cq.add_trace(go.Scatter(
+                        x=_d['data_snapshot'], y=_d['qtd'],
+                        mode='lines', name=_seg, stackgroup='one',
+                        hovertemplate=f'<b>{_seg}</b><br>%{{y:,.0f}} apólices<extra></extra>'
+                    ))
+                _fig_cq.update_layout(
+                    title=dict(text='Quantidade de apólices vigentes', font=dict(size=13)),
+                    height=320, margin=dict(l=20, r=20, t=40, b=20),
+                    plot_bgcolor='white', showlegend=False,
+                    yaxis=dict(title='Qtd apólices', gridcolor='#E2E8F0'),
+                )
+                st.plotly_chart(_fig_cq, use_container_width=True, config={'displayModeBar': False})
+            with _col_b:
+                _comp_pre = _df_snap_agg_concat.groupby(['data_snapshot', _dim], as_index=False).agg(
+                    premio=('soma_premio', 'sum')
+                )
+                _fig_cp = go.Figure()
+                for _seg in sorted(_comp_pre[_dim].unique()):
+                    _d = _comp_pre[_comp_pre[_dim] == _seg].sort_values('data_snapshot')
+                    _fig_cp.add_trace(go.Scatter(
+                        x=_d['data_snapshot'], y=_d['premio'],
+                        mode='lines', name=_seg, stackgroup='one',
+                        hovertemplate=f'<b>{_seg}</b><br>R$ %{{y:,.2f}}<extra></extra>'
+                    ))
+                _fig_cp.update_layout(
+                    title=dict(text='Soma de prêmio', font=dict(size=13)),
+                    height=320, margin=dict(l=20, r=20, t=40, b=20),
+                    plot_bgcolor='white', showlegend=False,
+                    yaxis=dict(title='Prêmio (R$)', gridcolor='#E2E8F0'),
+                )
+                st.plotly_chart(_fig_cp, use_container_width=True, config={'displayModeBar': False})
+        else:
+            st.info(
+                f"ℹ️ Composição da carteira por {_dim} requer snapshots da Onda 1+ "
+                "(com AGG_CARTEIRA). Após um ciclo upload/download com a versão atual, "
+                "este gráfico passa a funcionar."
+            )
+
+        # ── 4. Sinistralidade por segmento ao longo do tempo ─────────────────
+        if not _df_snap_agg_concat.empty and _dim in _df_snap_agg_concat.columns:
+            st.markdown(
+                f'<p class="section-label">📐 Sinistralidade por {_dim} ao longo do tempo</p>',
+                unsafe_allow_html=True
+            )
+            # Numerador (Total Sinistro por seg×data) + Denominador (soma_premio por seg×data)
+            _num = _df_snap_sin_concat.groupby(['data_snapshot', _dim], as_index=False, dropna=False)['Total Sinistro'].sum()
+            _den = _df_snap_agg_concat.groupby(['data_snapshot', _dim], as_index=False, dropna=False)['soma_premio'].sum()
+            _num[_dim] = _num[_dim].fillna('(não informado)').astype(str)
+            _den[_dim] = _den[_dim].fillna('(não informado)').astype(str)
+            _sin_seg = _num.merge(_den, on=['data_snapshot', _dim], how='inner')
+            _sin_seg['sinistralidade'] = (_sin_seg['Total Sinistro'] / _sin_seg['soma_premio'].replace(0, float('nan'))) * 100
+            _sin_seg = _sin_seg.dropna(subset=['sinistralidade'])
+
+            if _sin_seg.empty:
+                st.info("Sem dados suficientes para calcular sinistralidade por segmento.")
+            else:
+                _fig_sin = go.Figure()
+                for _seg in sorted(_sin_seg[_dim].unique()):
+                    _d = _sin_seg[_sin_seg[_dim] == _seg].sort_values('data_snapshot')
+                    _fig_sin.add_trace(go.Scatter(
+                        x=_d['data_snapshot'], y=_d['sinistralidade'],
+                        mode='lines+markers', name=_seg,
+                        hovertemplate=f'<b>{_seg}</b><br>%{{x|%d/%m/%Y}}<br>Sin: %{{y:.2f}}%<extra></extra>'
+                    ))
+                _fig_sin.update_layout(
+                    height=400, margin=dict(l=20, r=20, t=30, b=20),
+                    plot_bgcolor='white',
+                    yaxis=dict(title='Sinistralidade (%)', gridcolor='#E2E8F0'),
+                    xaxis=dict(title='Data do snapshot', gridcolor='#E2E8F0'),
+                    legend=dict(orientation='h', yanchor='bottom', y=-0.35, xanchor='center', x=0.5),
+                )
+                st.plotly_chart(_fig_sin, use_container_width=True, config={'displayModeBar': False})
+
+    _render_aba_segmento()
 
 # ─── ABA 3 — DRILL-DOWN ──────────────────────────────────────────────────────
 with _tab_drill:
-    st.markdown(
-        '<p class="section-label">Drill-down individual + Top sinistros movimentados</p>',
-        unsafe_allow_html=True
-    )
-    st.markdown("""
-<div style="background:#EFF6FF;border-left:3px solid #1a56db;padding:14px 18px;border-radius:6px;font-size:13px;color:#1E3A8A;">
-🚧 <b>Em construção — chegará na Onda 2.</b><br><br>
+    @_st_fragment_temp
+    def _render_aba_drill():
+        if len(_snap_dias) < 2:
+            st.info("⏳ Aguardando ao menos 2 dias de snapshot para análise de drill-down.")
+            return
 
-<b>Esta aba conterá:</b><br><br>
+        if _df_snap_sin_concat.empty:
+            st.info("Sem dados de sinistros nos snapshots.")
+            return
 
-• <b>Seletor de sinistro individual</b> — busca por <code>nr_sinistro</code> com auto-complete (mostra nº + nome do cliente + Ramo + data de aviso). Após selecionar, abre um <b>histórico temporal completo</b>: linha do tempo de vl_pago, vl_pendente, vl_total e status.<br><br>
+        # ── Calcula deltas por sinistro (entre primeiro e último snapshot) ───
+        _primeiro_dia = _snap_dias[0]
+        _ultimo_dia = _snap_dias[-1]
 
-• <b>Top sinistros que mais CRESCERAM no período</b> — ranking por variação absoluta e percentual. Os "engordadores" da carteira.<br><br>
+        _sin_p = _df_snap_sin_concat[_df_snap_sin_concat['data_snapshot'] == _primeiro_dia].copy()
+        _sin_u = _df_snap_sin_concat[_df_snap_sin_concat['data_snapshot'] == _ultimo_dia].copy()
+        _sin_p['nr_sinistro'] = _sin_p['nr_sinistro'].astype(str)
+        _sin_u['nr_sinistro'] = _sin_u['nr_sinistro'].astype(str)
 
-• <b>Top sinistros que mais REDUZIRAM no período</b> — encerramentos favoráveis, salvados, recuperações de resseguro.<br><br>
+        # Merge para calcular deltas (sinistros em comum)
+        _cols_merge = ['nr_sinistro']
+        for _c in ['vl_sinistro_pago', 'vl_sinistro_pendente', 'vl_despesa_pago',
+                   'vl_despesa_pendente', 'Total Sinistro']:
+            if _c in _sin_p.columns and _c in _sin_u.columns:
+                _cols_merge.append(_c)
+        _cols_extra = []
+        for _c in ['Ramo', 'Utilização', 'dt_aviso', 'N° Apólice']:
+            if _c in _sin_u.columns:
+                _cols_extra.append(_c)
 
-• <b>Sinistros mais voláteis</b> — alto coeficiente de variação (sobe e desce muito). Casos instáveis = atenção.
-</div>
-""", unsafe_allow_html=True)
+        _m = _sin_p[_cols_merge].merge(
+            _sin_u[_cols_merge + _cols_extra].drop_duplicates('nr_sinistro'),
+            on='nr_sinistro', how='inner', suffixes=('_old', '_now')
+        )
+        if 'Total Sinistro_old' in _m.columns and 'Total Sinistro_now' in _m.columns:
+            _m['delta_total'] = _m['Total Sinistro_now'] - _m['Total Sinistro_old']
+            _m['var_pct'] = ((_m['Total Sinistro_now'] - _m['Total Sinistro_old']) /
+                             _m['Total Sinistro_old'].replace(0, float('nan')) * 100).fillna(0)
+        else:
+            _m['delta_total'] = 0
+            _m['var_pct'] = 0
+
+        # ── Sub-abas: Histórico individual + Rankings ────────────────────────
+        _sub_h, _sub_c, _sub_r, _sub_v = st.tabs([
+            "🔍 Histórico individual",
+            "📈 Top que cresceram",
+            "📉 Top que reduziram",
+            "🌪️ Mais voláteis",
+        ])
+
+        # ── Sub-aba H: histórico individual ──────────────────────────────────
+        with _sub_h:
+            st.caption(
+                "Selecione um sinistro e veja sua trajetória completa de vl_pago, "
+                "vl_pendente e Total Sinistro através dos snapshots."
+            )
+
+            # Lista de opções com label informativo
+            _sin_unicos = _df_snap_sin_concat.drop_duplicates('nr_sinistro').copy()
+            _sin_unicos['nr_sinistro'] = _sin_unicos['nr_sinistro'].astype(str)
+
+            def _format_opt(_nr):
+                _row = _sin_unicos[_sin_unicos['nr_sinistro'] == _nr]
+                if _row.empty:
+                    return _nr
+                _r = _row.iloc[0]
+                _ramo = str(_r.get('Ramo', '')) if pd.notna(_r.get('Ramo', None)) else '-'
+                _aviso = str(_r.get('dt_aviso', '')) if pd.notna(_r.get('dt_aviso', None)) else '-'
+                return f"{_nr} · {_ramo} · {_aviso[:10] if _aviso else '-'}"
+
+            _opcoes_nrs = sorted(_sin_unicos['nr_sinistro'].unique().tolist())
+            _escolha_nr = st.selectbox(
+                "Buscar sinistro:",
+                options=_opcoes_nrs,
+                format_func=_format_opt,
+                key='drill_seletor_sinistro',
+                help="Digite para filtrar por nr_sinistro. Mostra Ramo e data de aviso."
+            )
+
+            if _escolha_nr:
+                _hist = _df_snap_sin_concat[
+                    _df_snap_sin_concat['nr_sinistro'].astype(str) == _escolha_nr
+                ].copy().sort_values('data_snapshot')
+
+                if _hist.empty:
+                    st.info("Sem histórico nos snapshots para esse sinistro.")
+                else:
+                    # Garante colunas numéricas
+                    for _c in ['vl_sinistro_pago', 'vl_sinistro_pendente', 'Total Sinistro']:
+                        if _c in _hist.columns:
+                            _hist[_c] = pd.to_numeric(_hist[_c], errors='coerce').fillna(0)
+
+                    # Cards de info do sinistro
+                    _r0 = _hist.iloc[-1]
+                    _col_a, _col_b, _col_c = st.columns(3)
+                    with _col_a:
+                        _ramo = _r0.get('Ramo', '-') if pd.notna(_r0.get('Ramo', None)) else '-'
+                        _uti = _r0.get('Utilização', '-') if pd.notna(_r0.get('Utilização', None)) else '-'
+                        st.markdown(
+                            f'<div style="background:#F8FAFC;border:1px solid #E2E8F0;'
+                            f'border-radius:10px;padding:14px;">'
+                            f'<div style="font-size:11px;color:#64748B;">SINISTRO</div>'
+                            f'<div style="font-size:18px;font-weight:600;">{_escolha_nr}</div>'
+                            f'<div style="font-size:11px;color:#94A3B8;margin-top:6px;">'
+                            f'{_ramo} · {_uti}</div>'
+                            f'</div>',
+                            unsafe_allow_html=True
+                        )
+                    with _col_b:
+                        _aviso_s = str(_r0.get('dt_aviso', '-'))
+                        st.markdown(
+                            f'<div style="background:#F8FAFC;border:1px solid #E2E8F0;'
+                            f'border-radius:10px;padding:14px;">'
+                            f'<div style="font-size:11px;color:#64748B;">DATA DE AVISO</div>'
+                            f'<div style="font-size:18px;font-weight:600;">{_aviso_s[:10]}</div>'
+                            f'<div style="font-size:11px;color:#94A3B8;margin-top:6px;">'
+                            f'{len(_hist)} snapshot(s) com este sinistro</div>'
+                            f'</div>',
+                            unsafe_allow_html=True
+                        )
+                    with _col_c:
+                        _total_atual = _hist.iloc[-1].get('Total Sinistro', 0)
+                        _total_inicial = _hist.iloc[0].get('Total Sinistro', 0)
+                        _delta = _total_atual - _total_inicial
+                        _cor = '#DC2626' if _delta > 0 else ('#059669' if _delta < 0 else '#0F172A')
+                        _sinal = '+' if _delta >= 0 else ''
+                        st.markdown(
+                            f'<div style="background:#F8FAFC;border:1px solid #E2E8F0;'
+                            f'border-radius:10px;padding:14px;">'
+                            f'<div style="font-size:11px;color:#64748B;">Δ TOTAL NO PERÍODO</div>'
+                            f'<div style="font-size:18px;font-weight:600;color:{_cor};">'
+                            f'{_sinal}R$ {formatar_valor_br(_delta)}</div>'
+                            f'<div style="font-size:11px;color:#94A3B8;margin-top:6px;">'
+                            f'Atual: R$ {formatar_valor_br(_total_atual)}</div>'
+                            f'</div>',
+                            unsafe_allow_html=True
+                        )
+
+                    st.markdown("<br>", unsafe_allow_html=True)
+
+                    # Gráfico de evolução
+                    _fig_h = go.Figure()
+                    if 'vl_sinistro_pago' in _hist.columns:
+                        _fig_h.add_trace(go.Scatter(
+                            x=_hist['data_snapshot'], y=_hist['vl_sinistro_pago'],
+                            mode='lines+markers', name='Pago (sinistro)',
+                            line=dict(color='#059669', width=2),
+                            hovertemplate='Pago: R$ %{y:,.2f}<extra></extra>'
+                        ))
+                    if 'vl_sinistro_pendente' in _hist.columns:
+                        _fig_h.add_trace(go.Scatter(
+                            x=_hist['data_snapshot'], y=_hist['vl_sinistro_pendente'],
+                            mode='lines+markers', name='Pendente (reserva)',
+                            line=dict(color='#D97706', width=2),
+                            hovertemplate='Pendente: R$ %{y:,.2f}<extra></extra>'
+                        ))
+                    if 'Total Sinistro' in _hist.columns:
+                        _fig_h.add_trace(go.Scatter(
+                            x=_hist['data_snapshot'], y=_hist['Total Sinistro'],
+                            mode='lines+markers', name='Total Sinistro',
+                            line=dict(color='#1a56db', width=3),
+                            hovertemplate='Total: R$ %{y:,.2f}<extra></extra>'
+                        ))
+                    _fig_h.update_layout(
+                        title=dict(text=f"Trajetória do sinistro {_escolha_nr}", font=dict(size=14)),
+                        height=400, margin=dict(l=20, r=20, t=50, b=20),
+                        plot_bgcolor='white',
+                        yaxis=dict(title='Valor (R$)', gridcolor='#E2E8F0'),
+                        xaxis=dict(title='Data do snapshot', gridcolor='#E2E8F0'),
+                        hovermode='x unified',
+                        legend=dict(orientation='h', yanchor='bottom', y=-0.25, xanchor='center', x=0.5),
+                    )
+                    st.plotly_chart(_fig_h, use_container_width=True, config={'displayModeBar': False})
+
+                    # Tabela com snapshots numéricos
+                    with st.expander("📋 Tabela com valores de cada snapshot", expanded=False):
+                        _cols_tab = ['data_snapshot']
+                        for _c in ['vl_sinistro_pago', 'vl_sinistro_pendente',
+                                   'vl_despesa_pago', 'vl_despesa_pendente', 'Total Sinistro',
+                                   'status_processo', 'status_movimento']:
+                            if _c in _hist.columns:
+                                _cols_tab.append(_c)
+                        _hist_view = _hist[_cols_tab].copy()
+                        _hist_view['data_snapshot'] = _hist_view['data_snapshot'].dt.strftime('%d/%m/%Y')
+                        for _c in _cols_tab:
+                            if _c.startswith('vl_') or _c == 'Total Sinistro':
+                                _hist_view[_c] = _hist_view[_c].apply(lambda v: f"R$ {formatar_valor_br(v)}")
+                        st.dataframe(_hist_view, use_container_width=True, hide_index=True)
+
+        # ── Sub-aba C: Top que CRESCERAM ─────────────────────────────────────
+        with _sub_c:
+            st.caption(
+                f"Sinistros com maior aumento de Total Sinistro entre "
+                f"{_primeiro_dia.strftime('%d/%m/%Y')} e {_ultimo_dia.strftime('%d/%m/%Y')}."
+            )
+            if _m.empty or 'delta_total' not in _m.columns:
+                st.info("Sem dados de delta calculáveis.")
+            else:
+                _cresceram = _m[_m['delta_total'] > 0.01].sort_values('delta_total', ascending=False).head(20).copy()
+                if _cresceram.empty:
+                    st.info("Nenhum sinistro com aumento detectado no período.")
+                else:
+                    _cols_show = ['nr_sinistro']
+                    if 'Ramo' in _cresceram.columns: _cols_show.append('Ramo')
+                    if 'Utilização' in _cresceram.columns: _cols_show.append('Utilização')
+                    _cresceram['Δ Total R$'] = _cresceram['delta_total'].apply(
+                        lambda v: f"+R$ {formatar_valor_br(v)}"
+                    )
+                    _cresceram['Var %'] = _cresceram['var_pct'].apply(lambda v: f"{v:+.1f}%")
+                    if 'Total Sinistro_now' in _cresceram.columns:
+                        _cresceram['Total Atual'] = _cresceram['Total Sinistro_now'].apply(
+                            lambda v: f"R$ {formatar_valor_br(v)}"
+                        )
+                    _cols_show += ['Δ Total R$', 'Var %', 'Total Atual']
+                    _cols_show = [c for c in _cols_show if c in _cresceram.columns]
+                    st.dataframe(
+                        _cresceram[_cols_show].rename(columns={'nr_sinistro': 'N° Sinistro'}),
+                        use_container_width=True, hide_index=True
+                    )
+
+        # ── Sub-aba R: Top que REDUZIRAM ─────────────────────────────────────
+        with _sub_r:
+            st.caption(
+                "Sinistros com maior redução de Total Sinistro no período "
+                "(encerramentos favoráveis, salvados, recuperações)."
+            )
+            if _m.empty or 'delta_total' not in _m.columns:
+                st.info("Sem dados de delta calculáveis.")
+            else:
+                _reduziram = _m[_m['delta_total'] < -0.01].sort_values('delta_total', ascending=True).head(20).copy()
+                if _reduziram.empty:
+                    st.info("Nenhum sinistro com redução detectada no período.")
+                else:
+                    _cols_show = ['nr_sinistro']
+                    if 'Ramo' in _reduziram.columns: _cols_show.append('Ramo')
+                    if 'Utilização' in _reduziram.columns: _cols_show.append('Utilização')
+                    _reduziram['Δ Total R$'] = _reduziram['delta_total'].apply(
+                        lambda v: f"R$ {formatar_valor_br(v)}"
+                    )
+                    _reduziram['Var %'] = _reduziram['var_pct'].apply(lambda v: f"{v:+.1f}%")
+                    if 'Total Sinistro_now' in _reduziram.columns:
+                        _reduziram['Total Atual'] = _reduziram['Total Sinistro_now'].apply(
+                            lambda v: f"R$ {formatar_valor_br(v)}"
+                        )
+                    _cols_show += ['Δ Total R$', 'Var %', 'Total Atual']
+                    _cols_show = [c for c in _cols_show if c in _reduziram.columns]
+                    st.dataframe(
+                        _reduziram[_cols_show].rename(columns={'nr_sinistro': 'N° Sinistro'}),
+                        use_container_width=True, hide_index=True
+                    )
+
+        # ── Sub-aba V: Mais VOLÁTEIS ─────────────────────────────────────────
+        with _sub_v:
+            st.caption(
+                "Sinistros que oscilaram mais ao longo dos snapshots. "
+                "Calculado por coeficiente de variação (desvio padrão / média) "
+                "do Total Sinistro. Requer pelo menos 3 snapshots com o mesmo sinistro."
+            )
+            if 'Total Sinistro' not in _df_snap_sin_concat.columns:
+                st.info("Sem coluna Total Sinistro nos snapshots.")
+            else:
+                _por_sin = _df_snap_sin_concat.copy()
+                _por_sin['nr_sinistro'] = _por_sin['nr_sinistro'].astype(str)
+                _por_sin['Total Sinistro'] = pd.to_numeric(_por_sin['Total Sinistro'], errors='coerce').fillna(0)
+                _stats = _por_sin.groupby('nr_sinistro').agg(
+                    n_pontos=('data_snapshot', 'nunique'),
+                    media=('Total Sinistro', 'mean'),
+                    desvio=('Total Sinistro', 'std'),
+                    min_v=('Total Sinistro', 'min'),
+                    max_v=('Total Sinistro', 'max'),
+                ).reset_index()
+                _stats = _stats[(_stats['n_pontos'] >= 3) & (_stats['media'] > 0)]
+                _stats['CV'] = (_stats['desvio'] / _stats['media']).fillna(0)
+                _stats['Range R$'] = _stats['max_v'] - _stats['min_v']
+
+                if _stats.empty:
+                    st.info(
+                        "ℹ️ Volatilidade requer sinistros presentes em pelo menos 3 snapshots. "
+                        "Você precisa de mais dias de histórico acumulado."
+                    )
+                else:
+                    _stats = _stats.sort_values('CV', ascending=False).head(20).copy()
+                    # Enriquece com Ramo/Utilização do último snapshot
+                    if 'Ramo' in _sin_u.columns:
+                        _info = _sin_u[['nr_sinistro', 'Ramo', 'Utilização']].drop_duplicates('nr_sinistro')
+                        _stats = _stats.merge(_info, on='nr_sinistro', how='left')
+
+                    _stats['CV (%)'] = (_stats['CV'] * 100).apply(lambda v: f"{v:.1f}%")
+                    _stats['Range R$'] = _stats['Range R$'].apply(lambda v: f"R$ {formatar_valor_br(v)}")
+                    _stats['Média R$'] = _stats['media'].apply(lambda v: f"R$ {formatar_valor_br(v)}")
+                    _cols_show = ['nr_sinistro']
+                    if 'Ramo' in _stats.columns: _cols_show.append('Ramo')
+                    if 'Utilização' in _stats.columns: _cols_show.append('Utilização')
+                    _cols_show += ['n_pontos', 'CV (%)', 'Range R$', 'Média R$']
+                    st.dataframe(
+                        _stats[_cols_show].rename(columns={
+                            'nr_sinistro': 'N° Sinistro',
+                            'n_pontos': 'Snapshots'
+                        }),
+                        use_container_width=True, hide_index=True
+                    )
+
+    _render_aba_drill()
 
 # ─── ABA 4 — RESERVA & ATUARIAL ──────────────────────────────────────────────
 with _tab_reserva:
