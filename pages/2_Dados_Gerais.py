@@ -885,7 +885,7 @@ with st.container(border=True):
         st.plotly_chart(fig_sin_ano, use_container_width=True, config={'displayModeBar': False})
 
 # --- Exibição dos Resultados ---
-col_final_1, col_final_2 = st.columns(2)
+col_final_1, col_final_2, col_final_3 = st.columns(3)
 
 with col_final_1:
     st.markdown('<p class="section-label">Sinistros</p>', unsafe_allow_html=True)
@@ -937,9 +937,111 @@ with col_final_2:
     st.markdown('<p class="section-label">Prêmios e Sinistros Apólices</p>', unsafe_allow_html=True)
     # Usamos o df_geral_periodo que contém o filtro do Slider de Ano
     if not df_geral_periodo.empty:
-        st.dataframe(df_geral_periodo, hide_index=True)
+        # --- Adiciona coluna Qtd. Sinistros por apólice ---
+        # Conta sinistros únicos (nr_sinistro) por N° Apólice na base de sinistros do período
+        qtd_sin_por_apolice = (
+            df_sinistro_periodo_atualizado.groupby('N° Apólice')['nr_sinistro']
+            .nunique()
+            .reset_index()
+            .rename(columns={'nr_sinistro': 'Qtd. Sinistros'})
+        )
+
+        df_geral_periodo_exibicao = df_geral_periodo.merge(
+            qtd_sin_por_apolice, on='N° Apólice', how='left'
+        )
+        df_geral_periodo_exibicao['Qtd. Sinistros'] = (
+            df_geral_periodo_exibicao['Qtd. Sinistros'].fillna(0).astype(int)
+        )
+
+        # Reordena: posiciona Qtd. Sinistros logo após Soma Sinistro Por Apolice
+        cols = list(df_geral_periodo_exibicao.columns)
+        cols.remove('Qtd. Sinistros')
+        if 'Soma Sinistro Por Apolice' in cols:
+            idx = cols.index('Soma Sinistro Por Apolice') + 1
+            cols.insert(idx, 'Qtd. Sinistros')
+        else:
+            cols.append('Qtd. Sinistros')
+        df_geral_periodo_exibicao = df_geral_periodo_exibicao[cols]
+
+        st.dataframe(df_geral_periodo_exibicao, hide_index=True)
     else:
         st.info("Nenhum dado encontrado com os filtros selecionados.")
+
+with col_final_3:
+    st.markdown('<p class="section-label">Dados de Segurado</p>', unsafe_allow_html=True)
+    if not df_geral_periodo.empty:
+        # 1. Converte as colunas de valor (string BR) de volta para float para somar
+        df_seg_calc = df_geral_periodo.copy()
+        df_seg_calc['Premio_Num'] = (
+            df_seg_calc['Soma Prêmio Pago por Apolice']
+            .str.replace('.', '', regex=False)
+            .str.replace(',', '.', regex=False)
+            .astype(float)
+        )
+        df_seg_calc['Sinistro_Num'] = (
+            df_seg_calc['Soma Sinistro Por Apolice']
+            .str.replace('.', '', regex=False)
+            .str.replace(',', '.', regex=False)
+            .astype(float)
+        )
+
+        # 2. Agrupamento por Segurado — soma de prêmio/sinistro e contagem de apólices únicas
+        df_segurado = df_seg_calc.groupby('Segurado').agg(
+            Premio=('Premio_Num', 'sum'),
+            Sinistro=('Sinistro_Num', 'sum'),
+            Qtd_Apolice=('N° Apólice', 'nunique')
+        ).reset_index()
+
+        # 3. Quantidade de sinistros por Segurado
+        # Mapeia N° Apólice → Segurado a partir do df_geral_periodo
+        mapa_apolice_seg = df_seg_calc[['N° Apólice', 'Segurado']].drop_duplicates('N° Apólice')
+        df_sin_seg = df_sinistro_periodo_atualizado.merge(
+            mapa_apolice_seg, on='N° Apólice', how='left'
+        )
+        qtd_sin_por_seg = (
+            df_sin_seg.groupby('Segurado')['nr_sinistro'].nunique().reset_index()
+            .rename(columns={'nr_sinistro': 'Qtd_Sinistros'})
+        )
+
+        df_segurado = df_segurado.merge(qtd_sin_por_seg, on='Segurado', how='left').fillna({'Qtd_Sinistros': 0})
+        df_segurado['Qtd_Sinistros'] = df_segurado['Qtd_Sinistros'].astype(int)
+
+        # 4. Sinistralidade do Segurado
+        df_segurado['Sinistralidade do Segurado %'] = df_segurado.apply(
+            lambda r: '{:.2%}'.format(r['Sinistro'] / r['Premio']) if r['Premio'] > 0 else '0,00%',
+            axis=1
+        )
+
+        # 5. Formatação de valores no padrão BR
+        df_segurado['Premio']   = df_segurado['Premio'].map(formatar_valor_br)
+        df_segurado['Sinistro'] = df_segurado['Sinistro'].map(formatar_valor_br)
+
+        # 6. Renomeação e ordenação das colunas conforme solicitado
+        df_segurado = df_segurado.rename(columns={
+            'Segurado': 'Nm. Segurado',
+            'Qtd_Apolice': 'Qtd. Apólice',
+            'Qtd_Sinistros': 'Qtd. Sinistros'
+        })
+        df_segurado = df_segurado[[
+            'Nm. Segurado', 'Premio', 'Sinistro',
+            'Sinistralidade do Segurado %', 'Qtd. Apólice', 'Qtd. Sinistros'
+        ]].sort_values(by='Qtd. Apólice', ascending=False)
+
+        st.dataframe(
+            df_segurado,
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                "Nm. Segurado":                  st.column_config.Column(width=200),
+                "Premio":                        st.column_config.Column(width=110),
+                "Sinistro":                      st.column_config.Column(width=110),
+                "Sinistralidade do Segurado %":  st.column_config.Column(width=90),
+                "Qtd. Apólice":                  st.column_config.Column(width=60),
+                "Qtd. Sinistros":                st.column_config.Column(width=60),
+            }
+        )
+    else:
+        st.info("Nenhum dado de segurado disponível.")
 
 # --- Dados de Prêmio e Sinistro por Tipo de Emissão (Dados Gerais) ---
 st.markdown('<p class="section-label">Prêmio e Sinistro por Tipo de Emissão</p>', unsafe_allow_html=True)
