@@ -4420,49 +4420,586 @@ with _tab_drill:
 
 # ─── ABA 4 — RESERVA & ATUARIAL ──────────────────────────────────────────────
 with _tab_reserva:
-    st.markdown(
-        '<p class="section-label">Aging de Reservas + Run-off Realizado vs Projetado</p>',
-        unsafe_allow_html=True
-    )
-    st.markdown("""
-<div style="background:#FEF3C7;border-left:3px solid #D97706;padding:14px 18px;border-radius:6px;font-size:13px;color:#78350F;">
-🚧 <b>Em construção — chegará na Onda 3.</b><br><br>
+    @_st_fragment_temp
+    def _render_aba_reserva():
+        if _df_snap_sin_concat.empty:
+            st.info("Sem dados de sinistros nos snapshots.")
+            return
 
-<b>Esta aba conterá:</b><br><br>
+        _ultimo_dia = _snap_dias[-1]
+        _sin_u = _df_snap_sin_concat[_df_snap_sin_concat['data_snapshot'] == _ultimo_dia].copy()
+        _sin_u['nr_sinistro'] = _sin_u['nr_sinistro'].astype(str)
 
-• <b>Aging das reservas pendentes</b> — distribuição de há quanto tempo cada bloco de reserva está vivo. Pendentes &gt; 2 anos sem movimentação são red flags operacionais.<br><br>
+        # ── 1. Aging das reservas pendentes ──────────────────────────────────
+        st.markdown(
+            '<p class="section-label">📅 Aging das Reservas Pendentes</p>',
+            unsafe_allow_html=True
+        )
+        st.caption(
+            f"Distribuição da reserva ativa hoje ({_ultimo_dia.strftime('%d/%m/%Y')}) "
+            f"por idade do sinistro (dt_aviso → hoje). Reservas em sinistros antigos sem "
+            f"movimentação são red flags operacionais."
+        )
 
-• <b>Ticket médio de pagamento ao longo do tempo</b> — evolução do desembolso médio por sinistro. Subindo = severidade aumentando.<br><br>
+        if 'dt_aviso' not in _sin_u.columns:
+            st.info("Sem coluna dt_aviso — não é possível calcular o aging.")
+        else:
+            _sin_u['dt_aviso_dt'] = pd.to_datetime(_sin_u['dt_aviso'], dayfirst=True, errors='coerce')
+            _sin_u['vl_pendente_total'] = (
+                pd.to_numeric(_sin_u.get('vl_sinistro_pendente', 0), errors='coerce').fillna(0)
+                + pd.to_numeric(_sin_u.get('vl_despesa_pendente', 0), errors='coerce').fillna(0)
+            )
+            # Apenas sinistros com pendente > 0
+            _sin_pend = _sin_u[_sin_u['vl_pendente_total'] > 0.01].copy()
+            _sin_pend['idade_dias'] = (_ultimo_dia - _sin_pend['dt_aviso_dt']).dt.days
+            _sin_pend = _sin_pend.dropna(subset=['idade_dias'])
 
-• <b>Loss development triangle realizado</b> — versão real (populada pelos snapshots) do triângulo de run-off. Compara com a projeção do Chain Ladder existente em outras seções para calibrar fatores.<br><br>
+            if _sin_pend.empty:
+                st.info("Nenhum sinistro com reserva pendente ativa.")
+            else:
+                _faixas_idade = [
+                    ('0–3 meses',    0,   90,    '#059669'),
+                    ('3–6 meses',    91,  180,   '#10B981'),
+                    ('6–12 meses',   181, 365,   '#D97706'),
+                    ('1–2 anos',     366, 730,   '#F59E0B'),
+                    ('2–3 anos',     731, 1095,  '#DC2626'),
+                    ('3–5 anos',     1096,1825,  '#991B1B'),
+                    ('> 5 anos',     1826,99999, '#7F1D1D'),
+                ]
+                _rows = []
+                for _lab, _lo, _hi, _cor in _faixas_idade:
+                    _mask = (_sin_pend['idade_dias'] >= _lo) & (_sin_pend['idade_dias'] <= _hi)
+                    _rows.append({
+                        'Faixa': _lab,
+                        'Qtd':   int(_mask.sum()),
+                        'Pendente R$': float(_sin_pend.loc[_mask, 'vl_pendente_total'].sum()),
+                        'cor':   _cor,
+                    })
+                _df_aging = pd.DataFrame(_rows)
+                _df_aging['Pct R$'] = (_df_aging['Pendente R$'] / max(_df_aging['Pendente R$'].sum(), 1)) * 100
 
-• <b>Taxa de adequação de reserva</b> — quanto da reserva inicial efetivamente virou pagamento. Mede se a área técnica está super-reservando ou sub-reservando.
-</div>
-""", unsafe_allow_html=True)
+                _col_a, _col_b = st.columns(2)
+                with _col_a:
+                    _fig_aq = go.Figure(go.Bar(
+                        x=_df_aging['Qtd'], y=_df_aging['Faixa'],
+                        orientation='h', marker_color=_df_aging['cor'],
+                        text=_df_aging['Qtd'].apply(lambda v: f'{int(v):,}'.replace(',', '.')),
+                        textposition='outside',
+                        hovertemplate='<b>%{y}</b><br>Qtd: %{x}<extra></extra>',
+                    ))
+                    _fig_aq.update_layout(
+                        title=dict(text='Quantidade de sinistros por idade', font=dict(size=13)),
+                        height=320, margin=dict(l=10, r=30, t=40, b=10),
+                        plot_bgcolor='white', yaxis=dict(autorange='reversed'),
+                        xaxis_title='Quantidade',
+                    )
+                    st.plotly_chart(_fig_aq, use_container_width=True, config={'displayModeBar': False})
+                with _col_b:
+                    _fig_av = go.Figure(go.Bar(
+                        x=_df_aging['Pendente R$'], y=_df_aging['Faixa'],
+                        orientation='h', marker_color=_df_aging['cor'],
+                        text=_df_aging.apply(lambda r: f'R$ {formatar_valor_br(r["Pendente R$"])} ({r["Pct R$"]:.1f}%)', axis=1),
+                        textposition='outside',
+                        hovertemplate='<b>%{y}</b><br>R$ %{x:,.2f}<extra></extra>',
+                    ))
+                    _fig_av.update_layout(
+                        title=dict(text='Valor R$ de reserva pendente por idade', font=dict(size=13)),
+                        height=320, margin=dict(l=10, r=30, t=40, b=10),
+                        plot_bgcolor='white', yaxis=dict(autorange='reversed'),
+                        xaxis_title='Valor (R$)',
+                    )
+                    st.plotly_chart(_fig_av, use_container_width=True, config={'displayModeBar': False})
+
+                # Alerta: % da reserva em sinistros antigos (> 2 anos)
+                _antigos_pct = _df_aging[_df_aging['Faixa'].isin(['2–3 anos', '3–5 anos', '> 5 anos'])]['Pct R$'].sum()
+                _cor_a = '#DC2626' if _antigos_pct > 20 else ('#D97706' if _antigos_pct > 10 else '#059669')
+                st.markdown(
+                    f'<div style="background:#F8FAFC;border-left:3px solid {_cor_a};'
+                    f'padding:10px 14px;border-radius:6px;font-size:13px;">'
+                    f'🎯 <b>{_antigos_pct:.1f}%</b> da reserva pendente total está em sinistros com mais de 2 anos. '
+                    f'{"Acima de 20% é red flag operacional — esses casos merecem investigação direta." if _antigos_pct > 20 else "Patamar saudável." if _antigos_pct < 10 else "Atenção: monitorar tendência."}'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("---")
+
+        # ── 2. Ticket médio de pagamento ao longo do tempo ───────────────────
+        st.markdown(
+            '<p class="section-label">💰 Ticket Médio de Pagamento ao Longo do Tempo</p>',
+            unsafe_allow_html=True
+        )
+        st.caption(
+            "Desembolso médio por sinistro pago em cada snapshot. Tendência crescente "
+            "indica aumento de severidade (sinistros mais caros, mesmo com frequência estável)."
+        )
+
+        _pontos_tk = []
+        for _dia in _snap_dias:
+            _sd = _df_snap_sin_concat[_df_snap_sin_concat['data_snapshot'] == _dia].copy()
+            if _sd.empty:
+                continue
+            _sd['pago_total'] = (
+                pd.to_numeric(_sd.get('vl_sinistro_pago', 0), errors='coerce').fillna(0)
+                + pd.to_numeric(_sd.get('vl_despesa_pago', 0), errors='coerce').fillna(0)
+            )
+            _com_pago = _sd[_sd['pago_total'] > 0.01]
+            if len(_com_pago) == 0:
+                continue
+            _pontos_tk.append({
+                'data': _dia,
+                'ticket_medio': _com_pago['pago_total'].sum() / len(_com_pago),
+                'qtd_com_pago': len(_com_pago),
+                'total_pago': _com_pago['pago_total'].sum(),
+            })
+
+        if len(_pontos_tk) < 2:
+            st.info("Sem snapshots suficientes para calcular evolução do ticket médio.")
+        else:
+            _df_tk = pd.DataFrame(_pontos_tk)
+            _fig_tk = go.Figure()
+            _fig_tk.add_trace(go.Scatter(
+                x=_df_tk['data'], y=_df_tk['ticket_medio'],
+                mode='lines+markers+text',
+                text=[f"R$ {formatar_valor_br(v)}" for v in _df_tk['ticket_medio']],
+                textposition='top center',
+                line=dict(color='#1a56db', width=2),
+                marker=dict(size=10, color='#1a56db'),
+                hovertemplate='<b>%{x|%d/%m/%Y}</b><br>Ticket médio: R$ %{y:,.2f}<br>'
+                              'Sinistros com pgto: %{customdata[0]:,}<br>'
+                              'Total pago: R$ %{customdata[1]:,.2f}<extra></extra>',
+                customdata=list(zip(_df_tk['qtd_com_pago'], _df_tk['total_pago']))
+            ))
+            _fig_tk.update_layout(
+                height=380, margin=dict(l=20, r=20, t=20, b=20),
+                plot_bgcolor='white',
+                yaxis=dict(title='Ticket médio (R$)', gridcolor='#E2E8F0'),
+                xaxis=dict(title='Data do snapshot', gridcolor='#E2E8F0'),
+            )
+            st.plotly_chart(_fig_tk, use_container_width=True, config={'displayModeBar': False})
+
+            _delta_tk_pct = ((_df_tk.iloc[-1]['ticket_medio'] - _df_tk.iloc[0]['ticket_medio']) /
+                             max(_df_tk.iloc[0]['ticket_medio'], 1)) * 100
+            _cor_tk = '#DC2626' if _delta_tk_pct > 2 else ('#059669' if _delta_tk_pct < -2 else '#0F172A')
+            st.markdown(
+                f'<div style="background:#F8FAFC;border-radius:8px;padding:10px 14px;font-size:13px;">'
+                f'<b>Variação acumulada do ticket médio:</b> '
+                f'<span style="color:{_cor_tk};font-weight:600;">{_delta_tk_pct:+.2f}%</span> '
+                f'entre {_df_tk.iloc[0]["data"].strftime("%d/%m/%Y")} e {_df_tk.iloc[-1]["data"].strftime("%d/%m/%Y")}.'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("---")
+
+        # ── 3. Run-off realizado por safra de aviso ──────────────────────────
+        st.markdown(
+            '<p class="section-label">📐 Run-off Realizado por Safra (Ano de Aviso)</p>',
+            unsafe_allow_html=True
+        )
+        st.caption(
+            "Triângulo de run-off populado pelos snapshots. Para cada safra (Ano de Aviso), "
+            "mostra como o Total Sinistro evoluiu em cada data de snapshot. Curva crescente "
+            "= safra ainda desenvolvendo; estável = madura. Compare com a projeção do "
+            "Chain Ladder em outras seções."
+        )
+
+        if 'dt_aviso' not in _df_snap_sin_concat.columns:
+            st.info("Sem coluna dt_aviso — não é possível calcular o run-off.")
+        else:
+            _runoff = _df_snap_sin_concat.copy()
+            _runoff['dt_aviso_dt'] = pd.to_datetime(_runoff['dt_aviso'], dayfirst=True, errors='coerce')
+            _runoff['Safra'] = _runoff['dt_aviso_dt'].dt.year
+            _runoff = _runoff.dropna(subset=['Safra'])
+            _runoff['Total Sinistro'] = pd.to_numeric(_runoff['Total Sinistro'], errors='coerce').fillna(0)
+
+            _evol_safra = _runoff.groupby(['data_snapshot', 'Safra'], as_index=False).agg(
+                Total_Sin=('Total Sinistro', 'sum'),
+                qtd=('nr_sinistro', 'nunique')
+            )
+            _evol_safra['Safra'] = _evol_safra['Safra'].astype(int)
+
+            # Limita às 8 safras mais recentes pra não poluir o gráfico
+            _safras_top = sorted(_evol_safra['Safra'].unique())[-8:]
+            _evol_safra = _evol_safra[_evol_safra['Safra'].isin(_safras_top)]
+
+            _fig_ro = go.Figure()
+            for _safra in sorted(_evol_safra['Safra'].unique()):
+                _d = _evol_safra[_evol_safra['Safra'] == _safra].sort_values('data_snapshot')
+                _fig_ro.add_trace(go.Scatter(
+                    x=_d['data_snapshot'], y=_d['Total_Sin'],
+                    mode='lines+markers', name=str(_safra),
+                    hovertemplate=f'<b>Safra {_safra}</b><br>%{{x|%d/%m/%Y}}<br>'
+                                  f'R$ %{{y:,.2f}}<br>%{{customdata}} sinistros<extra></extra>',
+                    customdata=_d['qtd']
+                ))
+            _fig_ro.update_layout(
+                height=420, margin=dict(l=20, r=20, t=30, b=20),
+                plot_bgcolor='white',
+                yaxis=dict(title='Total Sinistro acumulado (R$)', gridcolor='#E2E8F0'),
+                xaxis=dict(title='Data do snapshot', gridcolor='#E2E8F0'),
+                legend=dict(orientation='h', yanchor='bottom', y=-0.35, xanchor='center', x=0.5,
+                            title='Safra (Ano de Aviso)'),
+            )
+            st.plotly_chart(_fig_ro, use_container_width=True, config={'displayModeBar': False})
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("---")
+
+        # ── 4. Taxa de adequação de reserva ──────────────────────────────────
+        st.markdown(
+            '<p class="section-label">⚖️ Taxa de Adequação de Reserva</p>',
+            unsafe_allow_html=True
+        )
+        st.caption(
+            "Para cada sinistro presente no primeiro e no último snapshot, compara a "
+            "reserva inicial (1º snap) com o que foi efetivamente pago no período. "
+            "Adequação = pago acumulado ÷ reserva inicial. Próximo de 100% = bem reservado; "
+            "abaixo = super-reserva; muito acima = sub-reserva."
+        )
+
+        if len(_snap_dias) < 2:
+            st.info("Precisa de pelo menos 2 snapshots para análise de adequação.")
+        else:
+            _primeiro_dia = _snap_dias[0]
+            _sin_p = _df_snap_sin_concat[_df_snap_sin_concat['data_snapshot'] == _primeiro_dia].copy()
+            _sin_p['nr_sinistro'] = _sin_p['nr_sinistro'].astype(str)
+            _sin_p['pendente_inicial'] = (
+                pd.to_numeric(_sin_p.get('vl_sinistro_pendente', 0), errors='coerce').fillna(0)
+                + pd.to_numeric(_sin_p.get('vl_despesa_pendente', 0), errors='coerce').fillna(0)
+            )
+            _sin_p['pago_inicial'] = (
+                pd.to_numeric(_sin_p.get('vl_sinistro_pago', 0), errors='coerce').fillna(0)
+                + pd.to_numeric(_sin_p.get('vl_despesa_pago', 0), errors='coerce').fillna(0)
+            )
+            _sin_u_copy = _sin_u.copy()
+            _sin_u_copy['pago_atual'] = (
+                pd.to_numeric(_sin_u_copy.get('vl_sinistro_pago', 0), errors='coerce').fillna(0)
+                + pd.to_numeric(_sin_u_copy.get('vl_despesa_pago', 0), errors='coerce').fillna(0)
+            )
+            _ad = _sin_p[['nr_sinistro', 'pendente_inicial', 'pago_inicial']].merge(
+                _sin_u_copy[['nr_sinistro', 'pago_atual']], on='nr_sinistro', how='inner'
+            )
+            _ad['pago_no_periodo'] = _ad['pago_atual'] - _ad['pago_inicial']
+            _ad_relevante = _ad[(_ad['pendente_inicial'] > 0) & (_ad['pago_no_periodo'] > 0)]
+
+            if _ad_relevante.empty:
+                st.info(
+                    "Nenhum sinistro teve, simultaneamente, reserva inicial > 0 e pagamento no período. "
+                    "Análise de adequação requer mais snapshots acumulados."
+                )
+            else:
+                _ad_relevante = _ad_relevante.copy()
+                _ad_relevante['taxa_adeq'] = (_ad_relevante['pago_no_periodo'] /
+                                              _ad_relevante['pendente_inicial']) * 100
+
+                _media_geral = (_ad_relevante['pago_no_periodo'].sum() /
+                                _ad_relevante['pendente_inicial'].sum()) * 100
+                _mediana = _ad_relevante['taxa_adeq'].median()
+                _super_reserva = (_ad_relevante['taxa_adeq'] < 80).sum()
+                _bem_reservado = ((_ad_relevante['taxa_adeq'] >= 80) & (_ad_relevante['taxa_adeq'] <= 120)).sum()
+                _sub_reserva = (_ad_relevante['taxa_adeq'] > 120).sum()
+
+                _ck1, _ck2, _ck3, _ck4 = st.columns(4)
+                with _ck1:
+                    _card_ritmo('🎯 Taxa média ponderada',
+                                f"{_media_geral:.1f}%",
+                                f'(pago no período / reserva inicial)')
+                with _ck2:
+                    _card_ritmo('📊 Taxa mediana',
+                                f"{_mediana:.1f}%",
+                                f'{len(_ad_relevante):,} sinistros analisados'.replace(',', '.'))
+                with _ck3:
+                    _card_ritmo('🟢 Super-reservados (<80%)',
+                                f"{_super_reserva:,}".replace(',', '.'),
+                                'reserva folgada para o que foi pago',
+                                '#059669')
+                with _ck4:
+                    _card_ritmo('🔴 Sub-reservados (>120%)',
+                                f"{_sub_reserva:,}".replace(',', '.'),
+                                'pagamento acima da reserva — atenção',
+                                '#DC2626')
+
+    _render_aba_reserva()
 
 # ─── ABA 5 — ALERTAS ─────────────────────────────────────────────────────────
 with _tab_alertas:
-    st.markdown(
-        '<p class="section-label">Detecção automática de movimentações atípicas</p>',
-        unsafe_allow_html=True
-    )
-    st.markdown("""
-<div style="background:#FEF3C7;border-left:3px solid #D97706;padding:14px 18px;border-radius:6px;font-size:13px;color:#78350F;">
-🚧 <b>Em construção — chegará na Onda 3.</b><br><br>
+    @_st_fragment_temp
+    def _render_aba_alertas():
+        if len(_snap_dias) < 2:
+            st.info("⏳ Aguardando ao menos 2 dias de snapshot para detecção de alertas.")
+            return
 
-<b>Esta aba conterá:</b><br><br>
+        _ultimo_dia = _snap_dias[-1]
+        _penultimo_dia = _snap_dias[-2]
+        _dias_entre = max((_ultimo_dia - _penultimo_dia).days, 1)
 
-• <b>Spike detector</b> — lista de sinistros com variação anormal no último dia (threshold configurável: &gt; 30% ou &gt; R$ 50k em 24h).<br><br>
+        st.markdown(
+            f'<div style="background:#EFF6FF;border-left:3px solid #1a56db;padding:10px 14px;'
+            f'border-radius:6px;font-size:13px;color:#1E3A8A;margin-bottom:14px;">'
+            f'🔍 <b>Comparando:</b> snapshot de <b>{_penultimo_dia.strftime("%d/%m/%Y")}</b> '
+            f'com o de <b>{_ultimo_dia.strftime("%d/%m/%Y")}</b> '
+            f'(intervalo de {_dias_entre} dia{"s" if _dias_entre > 1 else ""}).'
+            f'</div>',
+            unsafe_allow_html=True
+        )
 
-• <b>Mudanças de status</b> — quem mudou <code>status_processo</code> ou <code>status_movimento</code> desde o snapshot anterior. Ex.: "ontem em análise, hoje liquidado".<br><br>
+        _sin_p = _df_snap_sin_concat[_df_snap_sin_concat['data_snapshot'] == _penultimo_dia].copy()
+        _sin_u = _df_snap_sin_concat[_df_snap_sin_concat['data_snapshot'] == _ultimo_dia].copy()
+        _sin_p['nr_sinistro'] = _sin_p['nr_sinistro'].astype(str)
+        _sin_u['nr_sinistro'] = _sin_u['nr_sinistro'].astype(str)
 
-• <b>Sinistros novos no período</b> — quais <code>nr_sinistro</code> aparecem no snapshot atual e não estavam no anterior. Taxa de aviso recente.<br><br>
+        # Garante numérico
+        for _df_, _c in [(_sin_p, 'Total Sinistro'), (_sin_u, 'Total Sinistro'),
+                         (_sin_p, 'vl_sinistro_pendente'), (_sin_u, 'vl_sinistro_pendente'),
+                         (_sin_p, 'vl_despesa_pendente'), (_sin_u, 'vl_despesa_pendente')]:
+            if _c in _df_.columns:
+                _df_[_c] = pd.to_numeric(_df_[_c], errors='coerce').fillna(0)
 
-• <b>Sinistros sumidos</b> — quais existiam e desapareceram (cancelados, deletados). Auditoria de integridade.<br><br>
+        _set_p = set(_sin_p['nr_sinistro'])
+        _set_u = set(_sin_u['nr_sinistro'])
 
-• <b>Reservas constituídas recentemente</b> — sinistros que tiveram reserva criada/aumentada nas últimas 24h.
-</div>
-""", unsafe_allow_html=True)
+        # ── 1. Spike detector (variação anormal entre últimos 2 snapshots) ───
+        st.markdown(
+            '<p class="section-label">🚨 Spike Detector — Variações Anormais</p>',
+            unsafe_allow_html=True
+        )
+        _col_t1, _col_t2 = st.columns(2)
+        with _col_t1:
+            _thr_pct = st.number_input(
+                "Threshold de variação %:",
+                min_value=5, max_value=100, value=30, step=5,
+                key='spike_thr_pct',
+                help='Sinistros com variação acima desse % entram no alerta.'
+            )
+        with _col_t2:
+            _thr_rs = st.number_input(
+                "Threshold de variação R$:",
+                min_value=1000, max_value=1_000_000, value=50_000, step=5_000,
+                key='spike_thr_rs',
+                help='Sinistros com variação absoluta acima desse R$ entram no alerta.'
+            )
+
+        if 'Total Sinistro' in _sin_p.columns and 'Total Sinistro' in _sin_u.columns:
+            _m_spike = _sin_p[['nr_sinistro', 'Total Sinistro']].merge(
+                _sin_u[['nr_sinistro', 'Total Sinistro'] +
+                       [c for c in ['Ramo', 'Utilização', 'dt_aviso'] if c in _sin_u.columns]],
+                on='nr_sinistro', how='inner', suffixes=('_p', '_u')
+            )
+            _m_spike['delta'] = _m_spike['Total Sinistro_u'] - _m_spike['Total Sinistro_p']
+            _m_spike['var_pct'] = (_m_spike['delta'] / _m_spike['Total Sinistro_p'].replace(0, float('nan')) * 100).fillna(0)
+
+            # Aciona se var > thr_pct E |delta| > thr_rs (ambas as condições)
+            _spike = _m_spike[
+                (_m_spike['var_pct'].abs() >= _thr_pct) &
+                (_m_spike['delta'].abs() >= _thr_rs)
+            ].copy()
+
+            if _spike.empty:
+                st.success(
+                    f"✅ Nenhum sinistro com variação ≥ {_thr_pct}% **e** "
+                    f"≥ R$ {formatar_valor_br(_thr_rs)} entre os últimos 2 snapshots."
+                )
+            else:
+                _spike = _spike.sort_values('delta', key=lambda c: c.abs(), ascending=False).head(20)
+                st.markdown(
+                    f'<div style="background:#FEF2F2;border-left:3px solid #DC2626;'
+                    f'padding:10px 14px;border-radius:6px;font-size:13px;">'
+                    f'⚠️ <b>{len(_spike)} sinistro(s)</b> com variação anormal detectada.'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+                _spike['Δ R$'] = _spike['delta'].apply(
+                    lambda v: f"{'+' if v > 0 else ''}R$ {formatar_valor_br(v)}"
+                )
+                _spike['Var %'] = _spike['var_pct'].apply(lambda v: f"{v:+.1f}%")
+                _spike['Total Atual'] = _spike['Total Sinistro_u'].apply(
+                    lambda v: f"R$ {formatar_valor_br(v)}"
+                )
+                _cols_spike = ['nr_sinistro']
+                for _c in ['Ramo', 'Utilização', 'dt_aviso']:
+                    if _c in _spike.columns:
+                        _cols_spike.append(_c)
+                _cols_spike += ['Δ R$', 'Var %', 'Total Atual']
+                st.dataframe(
+                    _spike[_cols_spike].rename(columns={'nr_sinistro': 'N° Sinistro'}),
+                    use_container_width=True, hide_index=True
+                )
+
+        st.markdown("---")
+
+        # ── 2. Mudanças de status ────────────────────────────────────────────
+        st.markdown(
+            '<p class="section-label">🔄 Mudanças de Status</p>',
+            unsafe_allow_html=True
+        )
+        st.caption(
+            "Sinistros que mudaram status_processo ou status_movimento entre o "
+            "snapshot anterior e o atual. Útil pra acompanhar liquidações em curso "
+            "e mudanças operacionais."
+        )
+
+        if 'status_movimento' in _sin_p.columns and 'status_movimento' in _sin_u.columns:
+            _cols_st = ['nr_sinistro', 'status_movimento']
+            if 'status_processo' in _sin_p.columns: _cols_st.append('status_processo')
+
+            _m_st = _sin_p[_cols_st].merge(
+                _sin_u[_cols_st + [c for c in ['Ramo', 'Total Sinistro'] if c in _sin_u.columns]],
+                on='nr_sinistro', how='inner', suffixes=('_antes', '_depois')
+            )
+            _mask_mudou = _m_st['status_movimento_antes'].astype(str) != _m_st['status_movimento_depois'].astype(str)
+            if 'status_processo_antes' in _m_st.columns:
+                _mask_mudou |= (_m_st['status_processo_antes'].astype(str) != _m_st['status_processo_depois'].astype(str))
+            _st_changes = _m_st[_mask_mudou].copy()
+
+            if _st_changes.empty:
+                st.info("Nenhuma mudança de status detectada entre os últimos 2 snapshots.")
+            else:
+                _st_changes['Status Movimento'] = (
+                    _st_changes['status_movimento_antes'].astype(str) + ' → ' +
+                    _st_changes['status_movimento_depois'].astype(str)
+                )
+                _cols_show = ['nr_sinistro', 'Status Movimento']
+                if 'status_processo_antes' in _st_changes.columns:
+                    _st_changes['Status Processo'] = (
+                        _st_changes['status_processo_antes'].astype(str) + ' → ' +
+                        _st_changes['status_processo_depois'].astype(str)
+                    )
+                    _cols_show.append('Status Processo')
+                if 'Ramo' in _st_changes.columns:
+                    _cols_show.append('Ramo')
+                if 'Total Sinistro' in _st_changes.columns:
+                    _st_changes['Total R$'] = _st_changes['Total Sinistro'].apply(
+                        lambda v: f"R$ {formatar_valor_br(v)}"
+                    )
+                    _cols_show.append('Total R$')
+                st.dataframe(
+                    _st_changes[_cols_show].head(30).rename(columns={'nr_sinistro': 'N° Sinistro'}),
+                    use_container_width=True, hide_index=True
+                )
+                if len(_st_changes) > 30:
+                    st.caption(f"Mostrando 30 de {len(_st_changes)} mudanças no total.")
+        else:
+            st.info("Sem coluna status_movimento nos snapshots.")
+
+        st.markdown("---")
+
+        # ── 3. Sinistros novos ───────────────────────────────────────────────
+        _novos = _set_u - _set_p
+        _sumidos = _set_p - _set_u
+
+        _col_n, _col_s = st.columns(2)
+        with _col_n:
+            st.markdown(
+                f'<p class="section-label">🆕 Sinistros Novos ({len(_novos)})</p>',
+                unsafe_allow_html=True
+            )
+            if not _novos:
+                st.info("Nenhum sinistro novo desde o último snapshot.")
+            else:
+                _df_novos = _sin_u[_sin_u['nr_sinistro'].isin(_novos)].copy()
+                _cols_n = ['nr_sinistro']
+                for _c in ['Ramo', 'dt_aviso', 'Total Sinistro']:
+                    if _c in _df_novos.columns:
+                        _cols_n.append(_c)
+                if 'Total Sinistro' in _df_novos.columns:
+                    _df_novos['Total R$'] = _df_novos['Total Sinistro'].apply(
+                        lambda v: f"R$ {formatar_valor_br(v)}"
+                    )
+                    _cols_n = [c if c != 'Total Sinistro' else 'Total R$' for c in _cols_n]
+                st.dataframe(
+                    _df_novos[_cols_n].head(15).rename(columns={'nr_sinistro': 'N° Sinistro'}),
+                    use_container_width=True, hide_index=True
+                )
+                if len(_df_novos) > 15:
+                    st.caption(f"Mostrando 15 de {len(_df_novos)} no total.")
+
+        with _col_s:
+            st.markdown(
+                f'<p class="section-label">👻 Sinistros Sumidos ({len(_sumidos)})</p>',
+                unsafe_allow_html=True
+            )
+            if not _sumidos:
+                st.info("Nenhum sinistro desapareceu da base.")
+            else:
+                _df_sumidos = _sin_p[_sin_p['nr_sinistro'].isin(_sumidos)].copy()
+                _cols_s = ['nr_sinistro']
+                for _c in ['Ramo', 'dt_aviso', 'Total Sinistro']:
+                    if _c in _df_sumidos.columns:
+                        _cols_s.append(_c)
+                if 'Total Sinistro' in _df_sumidos.columns:
+                    _df_sumidos['Total R$'] = _df_sumidos['Total Sinistro'].apply(
+                        lambda v: f"R$ {formatar_valor_br(v)}"
+                    )
+                    _cols_s = [c if c != 'Total Sinistro' else 'Total R$' for c in _cols_s]
+                st.dataframe(
+                    _df_sumidos[_cols_s].head(15).rename(columns={'nr_sinistro': 'N° Sinistro'}),
+                    use_container_width=True, hide_index=True
+                )
+                if len(_df_sumidos) > 15:
+                    st.caption(f"Mostrando 15 de {len(_df_sumidos)} no total.")
+
+        st.markdown("---")
+
+        # ── 4. Reservas constituídas recentemente (aumento de pendente) ──────
+        st.markdown(
+            '<p class="section-label">📈 Reservas Constituídas/Aumentadas Recentemente</p>',
+            unsafe_allow_html=True
+        )
+        st.caption(
+            "Sinistros que tiveram aumento de vl_pendente (sinistro + despesa) entre os "
+            "últimos 2 snapshots. Indica avaliação técnica de que ainda há custo a vir — "
+            "sinal antecipado de pressão futura na carteira."
+        )
+
+        _cols_pend = ['nr_sinistro', 'vl_sinistro_pendente', 'vl_despesa_pendente']
+        _cols_pend = [c for c in _cols_pend if c in _sin_p.columns and c in _sin_u.columns]
+        if len(_cols_pend) >= 2:
+            _m_p = _sin_p[_cols_pend].merge(
+                _sin_u[_cols_pend + [c for c in ['Ramo', 'dt_aviso'] if c in _sin_u.columns]],
+                on='nr_sinistro', how='inner', suffixes=('_p', '_u')
+            )
+            _m_p['pendente_total_p'] = (
+                _m_p.get('vl_sinistro_pendente_p', 0) + _m_p.get('vl_despesa_pendente_p', 0)
+            )
+            _m_p['pendente_total_u'] = (
+                _m_p.get('vl_sinistro_pendente_u', 0) + _m_p.get('vl_despesa_pendente_u', 0)
+            )
+            _m_p['delta_pend'] = _m_p['pendente_total_u'] - _m_p['pendente_total_p']
+            _aumentou = _m_p[_m_p['delta_pend'] > 0.01].sort_values('delta_pend', ascending=False).head(15).copy()
+            if _aumentou.empty:
+                st.success("✅ Nenhuma constituição/aumento de reserva detectado no período.")
+            else:
+                _aumentou['Δ Reserva R$'] = _aumentou['delta_pend'].apply(
+                    lambda v: f"+R$ {formatar_valor_br(v)}"
+                )
+                _aumentou['Reserva Atual'] = _aumentou['pendente_total_u'].apply(
+                    lambda v: f"R$ {formatar_valor_br(v)}"
+                )
+                _cols_show = ['nr_sinistro']
+                for _c in ['Ramo', 'dt_aviso']:
+                    if _c in _aumentou.columns:
+                        _cols_show.append(_c)
+                _cols_show += ['Δ Reserva R$', 'Reserva Atual']
+                st.dataframe(
+                    _aumentou[_cols_show].rename(columns={'nr_sinistro': 'N° Sinistro'}),
+                    use_container_width=True, hide_index=True
+                )
+                _total_constituido = _m_p[_m_p['delta_pend'] > 0]['delta_pend'].sum()
+                st.markdown(
+                    f'<div style="background:#FEF3C7;border-left:3px solid #D97706;'
+                    f'padding:10px 14px;border-radius:6px;font-size:13px;">'
+                    f'📊 <b>Total constituído/aumentado no período:</b> R$ {formatar_valor_br(_total_constituido)} '
+                    f'({(_m_p["delta_pend"] > 0.01).sum()} sinistros).'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+        else:
+            st.info("Sem colunas de pendente nos snapshots para este alerta.")
+
+    _render_aba_alertas()
 
 st.write("---")
 st.caption("Desenvolvido por Alex Sousa.")
