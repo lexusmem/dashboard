@@ -415,6 +415,21 @@ def _coage_categoria_str(_df, _cols):
             _df[_c] = _df[_c].fillna('(não informado)').astype(str)
     return _df
 
+def _sanitize_para_parquet(_df):
+    """Sanitiza TODAS as colunas 'object' do DataFrame para tipo string consistente.
+    Resolve o problema sistêmico de PyArrow rejeitar colunas com tipos mistos
+    (str + int + None na mesma coluna), comum em bases brutas de sistemas legados
+    onde alguns valores vêm como número e outros como string. Não toca em
+    colunas numéricas, datetime ou outras com tipo já consistente."""
+    _df = _df.copy()
+    for _col in _df.columns:
+        if _df[_col].dtype == 'object':
+            # Coage para string. fillna primeiro para que NaN/None viram '' e não 'nan'
+            _df[_col] = _df[_col].fillna('').astype(str)
+            # Substitui 'nan' textual (caso astype tenha gerado isso) por vazio
+            _df[_col] = _df[_col].replace({'nan': '', 'None': '', 'NaT': ''})
+    return _df
+
 def _gerar_snapshot_bytes(_df_sin, _dados_calc=None):
     """Gera bytes Parquet do snapshot consolidado (hoje + histórico em sessão).
 
@@ -507,6 +522,11 @@ def _gerar_snapshot_bytes(_df_sin, _dados_calc=None):
     if not _agg.empty and 'Ramo' in _agg.columns and 'Utilização' in _agg.columns:
         _agg = _agg.drop_duplicates(subset=['Ramo', 'Utilização', 'data_snapshot'], keep='last')
     _consolidado = pd.concat([_sin, _agg], ignore_index=True, sort=False)
+
+    # ── Sanitização final: TODA coluna object é forçada para string consistente.
+    # Necessário porque bases brutas frequentemente têm colunas com tipos mistos
+    # (str+int+None na mesma coluna), o que PyArrow rejeita ao serializar Parquet.
+    _consolidado = _sanitize_para_parquet(_consolidado)
 
     _buf = _io.BytesIO()
     _consolidado.to_parquet(_buf, index=False)
