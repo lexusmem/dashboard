@@ -454,7 +454,11 @@ def _gerar_snapshot_bytes(_df_sin, _dados_calc=None):
             _df_hoje_sin['N° Apólice'] = _df_hoje_sin['N° Apólice'].astype(str)
             _df_hoje_sin = _df_hoje_sin.merge(_mapa_apo, on='N° Apólice', how='left')
         # Após merge: linhas sem match têm NaN em Ramo/Utilização → coage de novo
-        _df_hoje_sin = _coage_categoria_str(_df_hoje_sin, ['Ramo', 'Utilização'])
+        # Inclui dt_aviso/dt_ocorrencia: datas inválidas viram object misto que quebra Parquet
+        _df_hoje_sin = _coage_categoria_str(_df_hoje_sin, ['Ramo', 'Utilização', 'dt_aviso', 'dt_ocorrencia'])
+
+    # Coerção defensiva: mesmo sem merge, datas podem ter tipos mistos vindos de df_sinistros
+    _df_hoje_sin = _coage_categoria_str(_df_hoje_sin, ['dt_aviso', 'dt_ocorrencia'])
 
     _df_hoje_sin['tipo_registro'] = 'SINISTRO'
     _df_hoje_sin['data_snapshot'] = pd.Timestamp(_HOJE_STR)
@@ -2564,7 +2568,7 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
         _df_full['dt_aviso_dt'] = pd.to_datetime(_df_full['dt_aviso'], dayfirst=True, errors='coerce')
 
     # Remove linhas com data de aviso inválida (NaT) — senão Ano/Trimestre viram
-    # NaN e produzem strings 'nan T nan' que quebram o sorted() lá embaixo.
+    # NaN e produzem strings 'nan T nan' / '2024.0 T2.0' que quebram o sorted().
     _df_full = _df_full.dropna(subset=['dt_aviso_dt']).copy()
 
     _df_full['Ano']       = _df_full['dt_aviso_dt'].dt.year.astype(int)
@@ -3368,7 +3372,7 @@ with st.expander("📥 Baixar snapshot consolidado  /  📤 Carregar snapshots p
                         _df_uploaded = _df_uploaded.copy()
                         _df_uploaded['N° Apólice'] = _df_uploaded['N° Apólice'].astype(str)
                         _df_uploaded = _df_uploaded.merge(_mapa, on='N° Apólice', how='left')
-                        _df_uploaded = _coage_categoria_str(_df_uploaded, ['Ramo', 'Utilização'])
+                        _df_uploaded = _coage_categoria_str(_df_uploaded, ['Ramo', 'Utilização', 'dt_aviso', 'dt_ocorrencia'])
                     except Exception:
                         pass  # silenciosa — análises por segmento simplesmente terão menos cobertura
 
@@ -3516,7 +3520,9 @@ def _construir_snap_hoje():
         if 'N° Apólice' in _sin_hoje.columns:
             _sin_hoje['N° Apólice'] = _sin_hoje['N° Apólice'].astype(str)
             _sin_hoje = _sin_hoje.merge(_mapa, on='N° Apólice', how='left')
-        _sin_hoje = _coage_categoria_str(_sin_hoje, ['Ramo', 'Utilização'])
+        _sin_hoje = _coage_categoria_str(_sin_hoje, ['Ramo', 'Utilização', 'dt_aviso', 'dt_ocorrencia'])
+    # Coerção defensiva: protege caso merge não tenha rodado
+    _sin_hoje = _coage_categoria_str(_sin_hoje, ['dt_aviso', 'dt_ocorrencia'])
     _sin_hoje['data_snapshot'] = pd.Timestamp(_HOJE_STR)
     # AGG_CARTEIRA de hoje
     _agg_hoje = pd.DataFrame()
