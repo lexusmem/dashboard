@@ -430,6 +430,23 @@ def _sanitize_para_parquet(_df):
             _df[_col] = _df[_col].replace({'nan': '', 'None': '', 'NaT': ''})
     return _df
 
+def _parse_premio_safe(_serie):
+    """Converte coluna de prêmio para numérico, lidando com AMBOS os formatos:
+    - Numérico (já é float/int): usa direto com pd.to_numeric
+    - String em formato brasileiro ('1.234,56'): remove '.' (milhar), troca ',' por '.'
+
+    BUG corrigido: a versão anterior aplicava a conversão BR mesmo em valores já
+    numéricos. Para um float 1234.56, str() dá '1234.56', remove '.' → '123456',
+    resultando em valor inflado por ~100x. Isso quebrava o cálculo de sinistralidade
+    (denominador errado fazia sinistralidade aparecer como 0%)."""
+    if pd.api.types.is_numeric_dtype(_serie):
+        return pd.to_numeric(_serie, errors='coerce').fillna(0)
+    # String — assume formato BR (R$ 1.234,56)
+    return pd.to_numeric(
+        _serie.astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False),
+        errors='coerce'
+    ).fillna(0)
+
 def _gerar_snapshot_bytes(_df_sin, _dados_calc=None):
     """Gera bytes Parquet do snapshot consolidado (hoje + histórico em sessão).
 
@@ -484,10 +501,7 @@ def _gerar_snapshot_bytes(_df_sin, _dados_calc=None):
         # Garante numérico no prêmio e string em Ramo/Utilização
         _dc = _dados_calc.copy()
         _dc = _coage_categoria_str(_dc, ['Ramo', 'Utilização'])
-        _dc['_premio_num'] = pd.to_numeric(
-            _dc['Soma Prêmio Pago por Apolice'].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False),
-            errors='coerce'
-        ).fillna(0)
+        _dc['_premio_num'] = _parse_premio_safe(_dc['Soma Prêmio Pago por Apolice'])
         _df_hoje_agg = _dc.groupby(['Ramo', 'Utilização'], dropna=False).agg(
             qtd_apolices_vigentes=('N° Apólice', 'nunique'),
             soma_premio=('_premio_num', 'sum'),
@@ -3549,11 +3563,7 @@ def _construir_snap_hoje():
     if dados_calculados is not None and not dados_calculados.empty:
         _dc = dados_calculados.copy()
         _dc = _coage_categoria_str(_dc, ['Ramo', 'Utilização'])
-        _dc['_premio_num'] = pd.to_numeric(
-            _dc['Soma Prêmio Pago por Apolice'].astype(str)
-                .str.replace('.', '', regex=False).str.replace(',', '.', regex=False),
-            errors='coerce'
-        ).fillna(0)
+        _dc['_premio_num'] = _parse_premio_safe(_dc['Soma Prêmio Pago por Apolice'])
         _agg_hoje = _dc.groupby(['Ramo', 'Utilização'], dropna=False).agg(
             qtd_apolices_vigentes=('N° Apólice', 'nunique'),
             soma_premio=('_premio_num', 'sum'),
@@ -3755,6 +3765,99 @@ with _tab_visao:
             st.info("⏳ Aguardando ao menos 2 dias de snapshot para calcular ritmos e tendências.")
             return
 
+        # ── Painel comparativo: como estava no penúltimo vs como está no último ──
+        # Responde à pergunta: "como tem se comportado a sinistralidade geral?"
+        st.markdown(
+            '<p class="section-label">🔎 Onde estamos: estado atual vs estado anterior</p>',
+            unsafe_allow_html=True
+        )
+
+        _ultimo_dia_vg = _snap_dias[-1]
+        _penultimo_dia_vg = _snap_dias[-2]
+        _sin_atu = _df_snap_sin_concat[_df_snap_sin_concat['data_snapshot'] == _ultimo_dia_vg]
+        _sin_ant = _df_snap_sin_concat[_df_snap_sin_concat['data_snapshot'] == _penultimo_dia_vg]
+        _agg_atu = _df_snap_agg_concat[_df_snap_agg_concat['data_snapshot'] == _ultimo_dia_vg] if not _df_snap_agg_concat.empty else pd.DataFrame()
+        _agg_ant = _df_snap_agg_concat[_df_snap_agg_concat['data_snapshot'] == _penultimo_dia_vg] if not _df_snap_agg_concat.empty else pd.DataFrame()
+
+        _total_sin_atu = pd.to_numeric(_sin_atu.get('Total Sinistro', 0), errors='coerce').fillna(0).sum() if not _sin_atu.empty else 0
+        _total_sin_ant = pd.to_numeric(_sin_ant.get('Total Sinistro', 0), errors='coerce').fillna(0).sum() if not _sin_ant.empty else 0
+        _qtd_sin_atu = _sin_atu['nr_sinistro'].nunique() if not _sin_atu.empty else 0
+        _qtd_sin_ant = _sin_ant['nr_sinistro'].nunique() if not _sin_ant.empty else 0
+
+        # Sinistralidade independente (numerador e denominador do dia)
+        _premio_atu = pd.to_numeric(_agg_atu.get('soma_premio', 0), errors='coerce').fillna(0).sum() if not _agg_atu.empty else 0
+        _premio_ant = pd.to_numeric(_agg_ant.get('soma_premio', 0), errors='coerce').fillna(0).sum() if not _agg_ant.empty else 0
+        _sin_pct_atu = (_total_sin_atu / _premio_atu * 100) if _premio_atu > 0 else None
+        _sin_pct_ant = (_total_sin_ant / _premio_ant * 100) if _premio_ant > 0 else None
+
+        st.caption(
+            f"📅 Comparando snapshot de **{_penultimo_dia_vg.strftime('%d/%m/%Y')}** (anterior) "
+            f"com **{_ultimo_dia_vg.strftime('%d/%m/%Y')}** (atual)."
+        )
+
+        _ce1, _ce2, _ce3 = st.columns(3)
+        with _ce1:
+            _delta_total = _total_sin_atu - _total_sin_ant
+            _cor_t = '#DC2626' if _delta_total > 0 else ('#059669' if _delta_total < 0 else '#0F172A')
+            _sinal_t = '+' if _delta_total >= 0 else ''
+            st.markdown(
+                f'<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:14px 16px;">'
+                f'<div style="font-size:12px;color:#64748B;">💰 Total Sinistro da carteira</div>'
+                f'<div style="font-size:18px;font-weight:600;color:#0F172A;margin-top:4px;">'
+                f'R$ {formatar_valor_br(_total_sin_atu)}</div>'
+                f'<div style="font-size:11px;color:#64748B;margin-top:2px;">'
+                f'Anterior: R$ {formatar_valor_br(_total_sin_ant)}</div>'
+                f'<div style="font-size:12px;color:{_cor_t};font-weight:600;margin-top:6px;">'
+                f'Δ {_sinal_t}R$ {formatar_valor_br(_delta_total)}</div>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+        with _ce2:
+            _delta_q = _qtd_sin_atu - _qtd_sin_ant
+            _cor_q = '#DC2626' if _delta_q > 0 else ('#059669' if _delta_q < 0 else '#0F172A')
+            _sinal_q = '+' if _delta_q >= 0 else ''
+            st.markdown(
+                f'<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:14px 16px;">'
+                f'<div style="font-size:12px;color:#64748B;">📌 Qtd de sinistros na carteira</div>'
+                f'<div style="font-size:18px;font-weight:600;color:#0F172A;margin-top:4px;">'
+                f'{_qtd_sin_atu:,}</div>'.replace(',', '.') +
+                f'<div style="font-size:11px;color:#64748B;margin-top:2px;">'
+                f'Anterior: {_qtd_sin_ant:,}</div>'.replace(',', '.') +
+                f'<div style="font-size:12px;color:{_cor_q};font-weight:600;margin-top:6px;">'
+                f'Δ {_sinal_q}{_delta_q}</div>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+        with _ce3:
+            if _sin_pct_atu is not None and _sin_pct_ant is not None:
+                _delta_sin = _sin_pct_atu - _sin_pct_ant
+                _cor_s = '#DC2626' if _delta_sin > 0 else ('#059669' if _delta_sin < 0 else '#0F172A')
+                _sinal_s = '+' if _delta_sin >= 0 else ''
+                st.markdown(
+                    f'<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:14px 16px;">'
+                    f'<div style="font-size:12px;color:#64748B;">📊 Sinistralidade da carteira</div>'
+                    f'<div style="font-size:18px;font-weight:600;color:#0F172A;margin-top:4px;">'
+                    f'{_sin_pct_atu:.2f}%</div>'
+                    f'<div style="font-size:11px;color:#64748B;margin-top:2px;">'
+                    f'Anterior: {_sin_pct_ant:.2f}%</div>'
+                    f'<div style="font-size:12px;color:{_cor_s};font-weight:600;margin-top:6px;">'
+                    f'Δ {_sinal_s}{_delta_sin:.2f} pp</div>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+            else:
+                st.markdown(
+                    f'<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:14px 16px;">'
+                    f'<div style="font-size:12px;color:#64748B;">📊 Sinistralidade da carteira</div>'
+                    f'<div style="font-size:13px;color:#94A3B8;margin-top:4px;">'
+                    f'Sem prêmio disponível nos snapshots para cálculo.</div>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("---")
+
         # ── Painel Executivo (6 cards de ritmo) ──────────────────────────────
         st.markdown(
             '<p class="section-label">⚡ Painel Executivo — Ritmo e Tendência</p>',
@@ -3803,6 +3906,7 @@ with _tab_visao:
                     _cor
                 )
 
+            st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
             _c4, _c5, _c6 = st.columns(3)
             with _c4:
                 _card_ritmo(
@@ -3895,7 +3999,11 @@ with _tab_visao:
                         yaxis=dict(title='Sinistralidade (%)', gridcolor='#E2E8F0'),
                         xaxis=dict(title='Data do snapshot', gridcolor='#E2E8F0'),
                     )
+                    # Margem extra no topo evita que labels do último ponto saiam da área;
+                    # margem inferior maior evita sobreposição com o card de variação
+                    _fig.update_layout(margin=dict(l=20, r=20, t=70, b=60))
                     st.plotly_chart(_fig, use_container_width=True, config={'displayModeBar': False})
+                    st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
 
                     if len(_pontos) >= 2:
                         _delta_pp = _pontos[-1]['sinistralidade'] - _pontos[0]['sinistralidade']
@@ -3966,6 +4074,37 @@ with _tab_visao:
                 st.plotly_chart(_fig, use_container_width=True, config={'displayModeBar': False})
 
     _render_aba_visao_geral()
+
+    # ── Quadro "Como entender esta aba" — sempre exibido ─────────────────────
+    st.markdown("")
+    st.markdown("""
+<div style="background:#F8FAFC;border-radius:10px;padding:18px;border:1px solid #E2E8F0;font-size:13px;color:#334155;">
+<b>📖 Como entender esta aba</b><br><br>
+
+<b>O que é:</b> Esta aba responde a três perguntas-chave de gestão a partir do histórico de snapshots: <i>(1) onde a carteira está hoje vs ontem? (2) em que ritmo ela está mudando? (3) a sinistralidade aparente está sendo revisada ao longo do tempo?</i><br><br>
+
+<b>🔎 Onde estamos (estado atual vs estado anterior):</b> compara o último snapshot com o penúltimo, exibindo Total Sinistro, qtd de sinistros e sinistralidade da carteira. O Δ em cada card mostra quanto mudou de um dia pro outro. Vermelho = piora (aumento de passivo); verde = melhora.<br><br>
+
+<b>⚡ Painel Executivo — Ritmo e Tendência (6 cards):</b><br>
+• <b>Velocidade de pagamento (R$/dia):</b> caixa saindo. Calculado como (vl_pago final − vl_pago inicial) / dias da janela. Para 16k sinistros ativos, valores na casa dos milhões/dia são normais (cada sinistro contribui com pagamentos parciais).<br>
+• <b>Constituição de reserva (R$/dia):</b> crescimento líquido do vl_pendente. Positivo (vermelho) = área técnica reservando mais do que liquidando = sinal antecipado de pressão futura.<br>
+• <b>Net flow (Δ Total Sinistro/dia):</b> variação do Total Sinistro (pago + pendente + honorário − salvado) por dia. Positivo = passivo da carteira está crescendo no agregado.<br>
+• <b>Taxa de aviso (sin/dia):</b> sinistros novos entrando na base por dia.<br>
+• <b>Taxa de encerramento (sin/dia):</b> sinistros sendo liquidados por dia. Se aviso &gt; encerramento, o backlog cresce.<br>
+• <b>Score de saúde:</b> resumo semafórico avaliando 3 critérios: (a) constituição de reserva &gt; 1,2× velocidade de pagamento; (b) taxa de aviso &gt; 1,5× taxa de encerramento; (c) net flow positivo. 0 critérios = 🟢 Saudável; 1 = 🟡 Atenção; 2+ = 🔴 Crítico.<br><br>
+
+<b>📊 Evolução Temporal da Sinistralidade (2 sub-abas):</b><br>
+• <b>"Sinistralidade do MESMO período"</b> — fixa o período do slider (lado esquerdo da página) e mostra como a sinistralidade <i>daquele mesmo período</i> foi sendo recalculada conforme novos snapshots chegaram. O prêmio do período é fixo (não muda), só o numerador (Total Sinistro) varia. Uma curva crescente revela o <b>efeito da cauda histórica</b>: novos avisos e atualizações de reservas elevam a sinistralidade do passado ao longo do tempo. A variação acumulada em pp resume o tamanho desse efeito.<br>
+• <b>"Sinistralidade INDEPENDENTE por snapshot"</b> — cada ponto é a sinistralidade da carteira <b>inteira</b> calculada no dia, usando Total Sinistro ÷ soma_premio de cada snapshot. Numerador e denominador mudam juntos. Mostra o estado puro da carteira sem filtro.<br><br>
+
+<b>Como foi desenvolvido:</b> os ritmos usam o método (c) — variação total entre primeiro e último snapshot da janela de 7 dias, dividida pelos dias entre eles. Auto-ajusta a dias faltando. A janela é adaptativa: se houver menos de 7 dias acumulados, usa todos os disponíveis com aviso explícito. A sinistralidade do mesmo período usa o prêmio acumulado pelo slider; a independente usa o prêmio total agregado por Ramo×Utilização salvo no snapshot.<br><br>
+
+<b>Atenção:</b><br>
+• A precisão dos cards de ritmo aumenta com mais dias acumulados. Com 2-3 dias, eventos pontuais podem dominar a média.<br>
+• A sinistralidade "MESMO período" só calcula sobre apólices visíveis no slider — se você mudar o slider, a curva muda.<br>
+• Se a sinistralidade INDEPENDENTE aparecer com valores muito baixos ou zerada, pode ser que os snapshots antigos foram gerados antes da versão atual (sem AGG_CARTEIRA). Rode um ciclo upload/download com a versão atual para enriquecer.
+</div>
+""", unsafe_allow_html=True)
 
 # ─── ABA 2 — POR SEGMENTO ────────────────────────────────────────────────────
 with _tab_segmento:
