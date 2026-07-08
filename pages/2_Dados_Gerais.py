@@ -2548,8 +2548,12 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
     if 'dt_aviso_dt' not in _df_full.columns:
         _df_full['dt_aviso_dt'] = pd.to_datetime(_df_full['dt_aviso'], dayfirst=True, errors='coerce')
 
-    _df_full['Ano']       = _df_full['dt_aviso_dt'].dt.year
-    _df_full['Trimestre'] = _df_full['dt_aviso_dt'].dt.quarter
+    # Remove sinistros sem data de aviso válida (NaT) — evita 'nan Tnan' e
+    # anos como float ('2024.0'), que quebram a ordenação dos trimestres
+    _df_full = _df_full.dropna(subset=['dt_aviso_dt'])
+
+    _df_full['Ano']       = _df_full['dt_aviso_dt'].dt.year.astype(int)
+    _df_full['Trimestre'] = _df_full['dt_aviso_dt'].dt.quarter.astype(int)
     _df_full['AnoTri']    = _df_full['Ano'].astype(str) + ' T' + _df_full['Trimestre'].astype(str)
     _df_full['AnoMes']    = _df_full['dt_aviso_dt'].dt.to_period('M').astype(str)
 
@@ -2750,9 +2754,14 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
             ).fillna(0)
             _grp_tri['_label'] = _grp_tri[_dim].astype(str)
 
-            # Ordena períodos corretamente
-            _periodos_tri = sorted(_grp_tri['AnoTri'].unique(),
-                                   key=lambda x: (int(x.split(' T')[0]), int(x.split(' T')[1])))
+            # Ordena períodos corretamente (ignora rótulos malformados, ex.: 'nan Tnan')
+            def _chave_tri(x):
+                try:
+                    _a, _t = str(x).split(' T')
+                    return (int(float(_a)), int(float(_t)))
+                except (ValueError, IndexError):
+                    return (0, 0)  # rótulos inválidos vão para o início
+            _periodos_tri = sorted(_grp_tri['AnoTri'].unique(), key=_chave_tri)
 
             _fig_tri = go.Figure()
             for _grp_val in sorted(_grp_tri['_label'].unique()):
