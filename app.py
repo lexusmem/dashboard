@@ -792,35 +792,13 @@ st.sidebar.header('Filtro Apólice')
 # Filtro por Apólice - Obtém as apólices únicas
 apolices_filtro_apolice = sorted(dados_exibicao['N° Apólice'].unique())
 
-# ── Busca de apólice do lado do servidor ─────────────────────────────────────
-# O filtro nativo do selectbox (client-side) mudou de comportamento nas versões
-# recentes do Streamlit e funciona mal com IDs numéricos longos. Aqui a busca é
-# feita em pandas: digite parte do número + Enter e a lista abaixo é filtrada.
-busca_apolice = st.sidebar.text_input(
-    '🔍 Buscar apólice',
-    key='busca_apolice_app',
-    placeholder='Digite parte do número e Enter'
-)
-
-_lista_apolices = apolices_filtro_apolice
-if busca_apolice.strip():
-    _termo = ''.join(ch for ch in busca_apolice if ch.isdigit())
-    if _termo:
-        _lista_apolices = [a for a in apolices_filtro_apolice if _termo in str(a)]
-    if not _lista_apolices:
-        st.sidebar.warning('Nenhuma apólice contém esse número. Mostrando todas.')
-        _lista_apolices = apolices_filtro_apolice
-    elif len(_lista_apolices) < len(apolices_filtro_apolice):
-        st.sidebar.caption(f'{len(_lista_apolices)} apólice(s) encontrada(s)')
-
 # Define o índice padrão para selectbox
-default_index_apolice = 0 if _lista_apolices else None
+default_index_apolice = 0 if apolices_filtro_apolice else None
 
 apolices_selecionadas_filtro_apolice = st.sidebar.selectbox(
     'Apólice',
-    options=_lista_apolices,
-    index=default_index_apolice,  # Selecionar o primeiro registro por padrão
-    key='sel_apolice_app'
+    options=apolices_filtro_apolice,
+    index=default_index_apolice  # Selecionar o primeiro registro por padrão
 )
 
 st.markdown('<div id="topo-pagina" style="margin-top:-60px;padding-top:60px;"></div>', unsafe_allow_html=True)
