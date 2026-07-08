@@ -792,23 +792,24 @@ st.sidebar.header('Filtro Apólice')
 # Filtro por Apólice - Obtém as apólices únicas
 apolices_filtro_apolice = sorted(dados_exibicao['N° Apólice'].unique())
 
-# Mesmo widget usado no filtro de Apólice da página Dados Gerais (que funciona
-# corretamente): multiselect com max_selections=1 mantém a busca fluida por
-# digitação parcial e a semântica de apólice única exigida pelo resto da página.
-_sel_apolice = st.sidebar.multiselect(
+# Define o índice padrão para selectbox
+default_index_apolice = 0 if apolices_filtro_apolice else None
+
+# filter_mode='contains' (Streamlit >= 1.57): busca por trecho exato do número.
+# O padrão 'fuzzy' das versões novas funciona mal com IDs numéricos parecidos
+# (números de apólice), retornando resultados irrelevantes ao digitar parte
+# do número. Em versões antigas (sem o parâmetro), usa o comportamento padrão.
+import inspect as _inspect
+_kwargs_sb = {}
+if 'filter_mode' in _inspect.signature(st.selectbox).parameters:
+    _kwargs_sb['filter_mode'] = 'contains'
+
+apolices_selecionadas_filtro_apolice = st.sidebar.selectbox(
     'Apólice',
     options=apolices_filtro_apolice,
-    default=[apolices_filtro_apolice[0]] if apolices_filtro_apolice else [],
-    max_selections=1,
+    index=default_index_apolice,  # Selecionar o primeiro registro por padrão
     key='filtro_apolice_app',
-    placeholder='Digite parte do número da apólice'
-)
-
-# Mantém compatibilidade com o restante do código (valor escalar):
-# se o usuário limpar a seleção, recai na primeira apólice da lista.
-apolices_selecionadas_filtro_apolice = (
-    _sel_apolice[0] if _sel_apolice
-    else (apolices_filtro_apolice[0] if apolices_filtro_apolice else None)
+    **_kwargs_sb
 )
 
 st.markdown('<div id="topo-pagina" style="margin-top:-60px;padding-top:60px;"></div>', unsafe_allow_html=True)
