@@ -8,17 +8,10 @@ import plotly.express as px
 import streamlit_antd_components as sac
 from datetime import datetime
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Helper de normalização de nomes (para filtros case-insensitive)
-# ─────────────────────────────────────────────────────────────────────────────
-# Aplicado APENAS nos filtros de Segurado/Corretor/Representante para evitar
-# duplicidades por variação de caixa (maiúsculo/minúsculo) e espaços.
-# NÃO altera os dados subjacentes — os dataframes originais permanecem intactos,
-# a normalização acontece só na geração das opções e no filtro. Isso é mais
-# seguro do que normalizar na carga: preserva integridade dos dados brutos
-# e evita quebras em joins/comparações em outros pontos do código.
+# Helper para normalização de nomes nos filtros (case-insensitive + espaços).
+# Não altera dados subjacentes — usado só ao listar opções e filtrar.
 def _norm_nome(serie):
-    """Strip + colapsa espaços + Title Case. 'REAL MAIA'/'Real Maia'/'real maia' → 'Real Maia'."""
+    """'REAL MAIA', 'Real Maia', 'real maia' → todos 'Real Maia'"""
     return (
         serie.astype(str)
              .str.strip()
@@ -411,7 +404,35 @@ if 'dados_calculados' not in st.session_state or st.session_state['dados_calcula
     st.stop()
 
 dados_calculados = st.session_state['dados_calculados']
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sanitização defensiva de colunas com tipos mistos (Utilização, Ramo, status...)
+# ─────────────────────────────────────────────────────────────────────────────
+# Contexto: st.dataframe() renderiza via Arrow internamente. Quando encontra uma
+# coluna 'object' com tipos mistos (str + int + None), o pyarrow FALHA na
+# conversão. O Streamlit então aplica um "automatic fix" — mas em Python 3.14
+# esse fix pode ter bug em código nativo que provoca segmentation fault.
+# Sanitizando as colunas ANTES, evitamos que o fix seja acionado.
+def _sanitizar_colunas_display(_df, _cols=None):
+    """Força colunas object para string consistente antes de serialização Arrow.
+    Preserva colunas numéricas e datetime intactas."""
+    if _cols is None:
+        # Se cols não especificado, sanitiza TODAS as colunas object
+        _cols = [c for c in _df.columns if _df[c].dtype == 'object']
+    for _c in _cols:
+        if _c in _df.columns and _df[_c].dtype == 'object':
+            _df[_c] = _df[_c].fillna('').astype(str).replace(
+                {'nan': '', 'None': '', 'NaT': ''}
+            )
+    return _df
+
+# Aplica sanitização em dados_calculados (que é a raiz da maioria dos DFs derivados)
+# Todos os DataFrames que herdam de dados_calculados via .copy() ficam limpos.
+dados_calculados = _sanitizar_colunas_display(dados_calculados)
 df_sinistros     = st.session_state['df_sinistros']
+# Sanitiza df_sinistros pela mesma razão (evita segfault em Python 3.14 via fix
+# automático do Arrow no st.dataframe)
+df_sinistros = _sanitizar_colunas_display(df_sinistros)
 df_cobertura     = st.session_state.get('df_cobertura', pd.DataFrame())
 
 # ─────────────────────────────────────────────────────────────────────────────
