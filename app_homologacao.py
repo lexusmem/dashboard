@@ -883,7 +883,12 @@ default_index_apolice = 0 if apolices_filtro_apolice else None
 apolices_selecionadas_filtro_apolice = st.sidebar.selectbox(
     'Apólice',
     options=apolices_filtro_apolice,
-    index=default_index_apolice  # Selecionar o primeiro registro por padrão
+    index=default_index_apolice,  # Selecionar o primeiro registro por padrão
+    # A partir do Streamlit 1.56.0 (abr/2026), o padrão de busca virou "fuzzy",
+    # que para números de apólice gera dezenas de matches simultâneos e trava
+    # a UI. Forçamos "contains" (substring case-insensitive) para voltar ao
+    # comportamento de busca anterior — ideal para IDs numéricos.
+    filter_mode="contains"
 )
 
 st.markdown('<div id="topo-pagina" style="margin-top:-60px;padding-top:60px;"></div>', unsafe_allow_html=True)
