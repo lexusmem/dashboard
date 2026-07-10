@@ -522,31 +522,39 @@ def _normalizar_nome(serie):
              .str.title()
     )
 
-# Função para processar os dados de sinistro.
-# DF com dados de Sinistros por apólice:
-@st.cache_data
 # ─────────────────────────────────────────────────────────────────────────────
-# Sanitização defensiva de colunas 'object' com tipos mistos
+# Sanitização cirúrgica de colunas 'object' com tipos mistos
 # ─────────────────────────────────────────────────────────────────────────────
-# Contexto: st.dataframe() renderiza via Arrow internamente. Quando encontra uma
-# coluna 'object' com tipos mistos (str + int + None na mesma coluna), pyarrow
-# FALHA na conversão. Streamlit então aplica um "automatic fix" — mas em
-# Python 3.14 esse fix tem bug em código nativo que provoca segmentation fault.
-# Sanitizando as colunas ANTES, o Arrow serializa direto sem precisar do fix.
+# Contexto: st.dataframe() renderiza via Arrow. Colunas 'object' com tipos
+# mistos (str + int + None) fazem pyarrow falhar. Streamlit tenta um "automatic
+# fix" que em Python 3.14 tem bug nativo → segmentation fault.
+#
+# Estratégia: sanitiza APENAS as colunas conhecidamente problemáticas (aquelas
+# categóricas que aparecem nos erros de log). Colunas numéricas, datetime e
+# IDs (nr_sinistro, N° Apólice) ficam intocadas.
+_COLUNAS_A_SANITIZAR = {
+    'Utilização', 'Ramo', 'Corretor', 'Representante', 'Segurado',
+    'status_processo', 'status_movimento', 'dt_aviso', 'dt_ocorrencia',
+    'Cobertura', 'nm_causa', 'nm_cliente', 'Tipo de Apólice',
+    'Tipo de Cobrança', 'Região de Circulação', 'Estado', 'Cidade', 'Produto',
+}
+
 def _sanitizar_colunas_display(_df):
-    """Força TODAS as colunas 'object' para string consistente. Preserva
-    colunas numéricas e datetime intactas. Aplicado antes de gravar no
-    session_state para que qualquer st.dataframe() downstream funcione."""
+    """Força colunas categóricas conhecidas para string consistente.
+    Preserva IDs, colunas numéricas e datetime intactas."""
     if _df is None or _df.empty:
         return _df
     _df = _df.copy()
     for _col in _df.columns:
-        if _df[_col].dtype == 'object':
+        if _col in _COLUNAS_A_SANITIZAR and _df[_col].dtype == 'object':
             _df[_col] = _df[_col].fillna('').astype(str).replace(
                 {'nan': '', 'None': '', 'NaT': ''}
             )
     return _df
 
+# Função para processar os dados de sinistro.
+# DF com dados de Sinistros por apólice:
+@st.cache_data
 def carregar_e_processar_dados_sinistro(arquivo):
     try:
         # Aceita BytesIO já preparado, objeto de upload ou caminho local (string)
