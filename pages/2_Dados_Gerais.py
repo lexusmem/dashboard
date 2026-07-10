@@ -8,6 +8,24 @@ import plotly.express as px
 import streamlit_antd_components as sac
 from datetime import datetime
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper de normalização de nomes (para filtros case-insensitive)
+# ─────────────────────────────────────────────────────────────────────────────
+# Aplicado APENAS nos filtros de Segurado/Corretor/Representante para evitar
+# duplicidades por variação de caixa (maiúsculo/minúsculo) e espaços.
+# NÃO altera os dados subjacentes — os dataframes originais permanecem intactos,
+# a normalização acontece só na geração das opções e no filtro. Isso é mais
+# seguro do que normalizar na carga: preserva integridade dos dados brutos
+# e evita quebras em joins/comparações em outros pontos do código.
+def _norm_nome(serie):
+    """Strip + colapsa espaços + Title Case. 'REAL MAIA'/'Real Maia'/'real maia' → 'Real Maia'."""
+    return (
+        serie.astype(str)
+             .str.strip()
+             .str.replace(r'\s+', ' ', regex=True)
+             .str.title()
+    )
+
 st.set_page_config(layout='wide', page_title='Dados Gerais — Allseg', page_icon='📊')
 
 ALLSEG_CSS = """
@@ -586,29 +604,29 @@ if st.sidebar.button('Limpar Todos os Filtros'):
     st.session_state['resetar_slider'] = True
     st.rerun()
 
-# 1. Filtro por Representante
-representantes_unicos = sorted(dados_exibicao['Representante'].astype(str).unique())
+# 1. Filtro por Representante (case-insensitive)
+representantes_unicos = sorted(_norm_nome(dados_exibicao['Representante']).unique())
 representantes_selecionados = st.sidebar.multiselect('Representante(s)', options=representantes_unicos, default=[], key='filtro_rep')
 
 dados_filtrados_rep = dados_exibicao.copy()
 if representantes_selecionados:
-    dados_filtrados_rep = dados_filtrados_rep[dados_filtrados_rep['Representante'].astype(str).isin(representantes_selecionados)]
+    dados_filtrados_rep = dados_filtrados_rep[_norm_nome(dados_filtrados_rep['Representante']).isin(representantes_selecionados)]
 
-# 2. Filtro por Corretor
-corretores_unicos = sorted(dados_filtrados_rep['Corretor'].astype(str).unique())
+# 2. Filtro por Corretor (case-insensitive)
+corretores_unicos = sorted(_norm_nome(dados_filtrados_rep['Corretor']).unique())
 corretores_selecionados = st.sidebar.multiselect('Corretor(es)', options=corretores_unicos, default=[], key='filtro_cor')
 
 dados_filtrados_corr = dados_filtrados_rep.copy()
 if corretores_selecionados:
-    dados_filtrados_corr = dados_filtrados_corr[dados_filtrados_corr['Corretor'].astype(str).isin(corretores_selecionados)]
+    dados_filtrados_corr = dados_filtrados_corr[_norm_nome(dados_filtrados_corr['Corretor']).isin(corretores_selecionados)]
 
-# 3. Filtro por Segurado
-segurados_unicos = sorted(dados_filtrados_corr['Segurado'].astype(str).unique())
+# 3. Filtro por Segurado (case-insensitive)
+segurados_unicos = sorted(_norm_nome(dados_filtrados_corr['Segurado']).unique())
 segurados_selecionados = st.sidebar.multiselect('Segurado(s)', options=segurados_unicos, default=[], key='filtro_seg')
 
 dados_filtrados_segurado = dados_filtrados_corr.copy()
 if segurados_selecionados:
-    dados_filtrados_segurado = dados_filtrados_segurado[dados_filtrados_segurado['Segurado'].astype(str).isin(segurados_selecionados)]
+    dados_filtrados_segurado = dados_filtrados_segurado[_norm_nome(dados_filtrados_segurado['Segurado']).isin(segurados_selecionados)]
 
 # 4. Filtro por Ramo
 ramos_unicos = sorted(dados_filtrados_segurado['Ramo'].unique())
