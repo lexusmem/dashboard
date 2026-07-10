@@ -525,6 +525,28 @@ def _normalizar_nome(serie):
 # Função para processar os dados de sinistro.
 # DF com dados de Sinistros por apólice:
 @st.cache_data
+# ─────────────────────────────────────────────────────────────────────────────
+# Sanitização defensiva de colunas 'object' com tipos mistos
+# ─────────────────────────────────────────────────────────────────────────────
+# Contexto: st.dataframe() renderiza via Arrow internamente. Quando encontra uma
+# coluna 'object' com tipos mistos (str + int + None na mesma coluna), pyarrow
+# FALHA na conversão. Streamlit então aplica um "automatic fix" — mas em
+# Python 3.14 esse fix tem bug em código nativo que provoca segmentation fault.
+# Sanitizando as colunas ANTES, o Arrow serializa direto sem precisar do fix.
+def _sanitizar_colunas_display(_df):
+    """Força TODAS as colunas 'object' para string consistente. Preserva
+    colunas numéricas e datetime intactas. Aplicado antes de gravar no
+    session_state para que qualquer st.dataframe() downstream funcione."""
+    if _df is None or _df.empty:
+        return _df
+    _df = _df.copy()
+    for _col in _df.columns:
+        if _df[_col].dtype == 'object':
+            _df[_col] = _df[_col].fillna('').astype(str).replace(
+                {'nan': '', 'None': '', 'NaT': ''}
+            )
+    return _df
+
 def carregar_e_processar_dados_sinistro(arquivo):
     try:
         # Aceita BytesIO já preparado, objeto de upload ou caminho local (string)
@@ -800,6 +822,12 @@ else:
     fonte_cobertura = io.BytesIO(bytes_cobertura) if bytes_cobertura is not None else upload_cobertura
     df_cobertura = carregar_cobertura(fonte_cobertura)
     # Salva no session_state e força rerun para esconder os uploaders imediatamente
+    # Sanitiza colunas 'object' com tipos mistos ANTES de gravar — evita crash
+    # (segfault Python 3.14) quando qualquer st.dataframe() for renderizado nesta
+    # página ou na Dados Gerais.
+    dados_calculados = _sanitizar_colunas_display(dados_calculados)
+    df_sinistros = _sanitizar_colunas_display(df_sinistros)
+    df_cobertura = _sanitizar_colunas_display(df_cobertura)
     st.session_state['dados_calculados'] = dados_calculados
     st.session_state['df_sinistros']     = df_sinistros
     st.session_state['df_cobertura']     = df_cobertura
