@@ -499,6 +499,29 @@ else:
     upload_sinistro  = None
     upload_cobertura = None
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper de normalização de nomes (Segurado, Corretor, Representante, nm_cliente)
+# ─────────────────────────────────────────────────────────────────────────────
+# Objetivo: tratar variações de caixa (maiúscula/minúscula) e espaços como o
+# mesmo registro. Sem isso, 'REAL MAIA', 'Real Maia' e 'real maia' apareciam
+# como 3 segurados distintos nos filtros, poluindo listas e distorcendo agregações.
+#
+# Regras aplicadas:
+#   1. Remove espaços das pontas
+#   2. Colapsa múltiplos espaços internos em um só
+#   3. Aplica Title Case (capitaliza cada palavra)
+#
+# Resultado: 'REAL MAIA', 'Real Maia', 'real maia' e '  Real  Maia  '
+# viram todos 'Real Maia' — um único registro.
+def _normalizar_nome(serie):
+    """Padroniza nomes para evitar duplicidade por variação de caixa/espaços."""
+    return (
+        serie.astype(str)
+             .str.strip()
+             .str.replace(r'\s+', ' ', regex=True)
+             .str.title()
+    )
+
 # Função para processar os dados de sinistro.
 # DF com dados de Sinistros por apólice:
 @st.cache_data
@@ -539,6 +562,10 @@ def carregar_e_processar_dados_sinistro(arquivo):
         # Limpeza e Renomeação
         aba_sinistro.reset_index(drop=True, inplace=True)
         aba_sinistro.rename(columns={'cd_apolice': 'N° Apólice'}, inplace=True)
+
+        # Normaliza nm_cliente (case-insensitive + espaços) para casar com Segurado
+        if 'nm_cliente' in aba_sinistro.columns:
+            aba_sinistro['nm_cliente'] = _normalizar_nome(aba_sinistro['nm_cliente'])
 
         return aba_sinistro.fillna(0)
 
@@ -614,6 +641,14 @@ def carregar_e_processar_dados(arquivo_apolice, arquivo_sinistro):
             'nm_regiao_circulacao': 'Região de Circulação', 'nm_auto_utilizacao': 'Utilização', 'dt_ini_vig_apo': 'Inicio Vigência Apólice',
             'dt_fim_vig_apo' : 'Fim Vigência Apólice', 'nm_uf_cliente': 'Estado', 'nm_cidade': 'Cidade', 'nm_estipulante': 'Segurado',
             'nm_produto': 'Produto', 'nm_corretor':'Corretor', 'nm_representante':'Representante','nr_ramo':'Ramo'}, inplace=True)
+
+        # Normalização de nomes (case-insensitive + limpeza de espaços)
+        # Evita que 'REAL MAIA', 'Real Maia' e 'real maia' sejam tratados como
+        # segurados distintos nos filtros e agregações. Mesma coisa para Corretor
+        # e Representante — os três campos herdam a mesma regra.
+        for _col in ['Segurado', 'Corretor', 'Representante']:
+            if _col in dados_adicionais.columns:
+                dados_adicionais[_col] = _normalizar_nome(dados_adicionais[_col])
 
         # Garante que a coluna é do tipo data
         dados_adicionais['Inicio Vigência Apólice'] = pd.to_datetime(dados_adicionais['Inicio Vigência Apólice'], dayfirst=True)
