@@ -387,6 +387,20 @@ st.markdown(
 # --- Upload dos arquivos na Sidebar ---
 from datetime import datetime
 
+# Helper para normalização de nomes (case-insensitive + limpeza de espaços).
+# Usado nas comparações entre 'Segurado' (tabela de apólices) e 'nm_cliente'
+# (tabela de sinistros) — as duas bases podem gravar o mesmo cliente com
+# variações de caixa ('REAL MAIA' vs 'Real Maia'), o que fazia a comparação
+# direta retornar vazio. Não altera dados subjacentes.
+def _norm_nome(serie):
+    """'REAL MAIA', 'Real Maia', 'real maia' → todos 'Real Maia'"""
+    return (
+        serie.astype(str)
+             .str.strip()
+             .str.replace(r'\s+', ' ', regex=True)
+             .str.title()
+    )
+
 # Verifica se os dados já estão carregados no session_state
 dados_ja_carregados = (
     'dados_calculados' in st.session_state and
@@ -1005,8 +1019,11 @@ st.subheader(f'Dados do Segurado - {str(segurado[0]).title()}')
 
 
 # 1. Preparação dos Dados do Segurado (Filtro inicial numérico)
-df_segurado_calculo = dados_calculados[dados_calculados['Segurado'] == segurado[0]].copy()
-df_sinistro_segurado = df_sinistros[df_sinistros['nm_cliente'] == segurado[0]].copy()
+# Normalização case-insensitive: 'REAL MAIA' na apólice e 'Real Maia' em
+# sinistro passam a casar (antes o filtro retornava vazio nesses casos).
+_seg_alvo_norm = _norm_nome(pd.Series([segurado[0]])).iloc[0]
+df_segurado_calculo = dados_calculados[_norm_nome(dados_calculados['Segurado']) == _seg_alvo_norm].copy()
+df_sinistro_segurado = df_sinistros[_norm_nome(df_sinistros['nm_cliente']) == _seg_alvo_norm].copy()
 
 # 2. Criar a coluna de percentual de sinistro (MANTENDO COMO NÚMERO para cálculos)
 df_segurado_calculo['% Sin'] = df_segurado_calculo.apply(
@@ -1682,7 +1699,8 @@ st.markdown('<p class="section-label">Desempenho por Tipo de Emissão do Segurad
 
 # Usa df_segurado_calculo (ainda numérico — a formatação ocorreu em df_segurado_exibicao)
 # Precisamos de uma cópia numérica antes das formatações de display
-df_seg_tp_emissao = dados_calculados[dados_calculados['Segurado'] == segurado[0]].copy()
+# Normalização case-insensitive para casar variações de caixa
+df_seg_tp_emissao = dados_calculados[_norm_nome(dados_calculados['Segurado']) == _seg_alvo_norm].copy()
 
 # Agrupamento por Tipo de Apólice
 df_tp_emissao_seg = df_seg_tp_emissao.groupby('Tipo de Apólice').agg(
@@ -1692,7 +1710,7 @@ df_tp_emissao_seg = df_seg_tp_emissao.groupby('Tipo de Apólice').agg(
 ).reset_index()
 
 # Cruzamento com sinistros para obter Qtd_Sinistros
-df_sin_seg_tp = df_sinistros[df_sinistros['nm_cliente'] == segurado[0]].copy()
+df_sin_seg_tp = df_sinistros[_norm_nome(df_sinistros['nm_cliente']) == _seg_alvo_norm].copy()
 qtd_sin_tp_seg = df_seg_tp_emissao.merge(
     df_sin_seg_tp[['N° Apólice', 'nr_sinistro']],
     on='N° Apólice', how='left'
