@@ -1,13 +1,6 @@
-# Versão pinada — não atualizar sem verificar antes.
-# A partir de 1.56.0 (abr/2026), o Streamlit introduziu uma regressão no
-# comportamento do st.selectbox que causa travamento durante a digitação,
-# especialmente com listas grandes de IDs numéricos (como nº de apólice).
-# 1.55.0 é a última versão estável antes dessa regressão.
 streamlit==1.55.0
-
-# Dependências principais do painel Allseg
 pandas
 plotly
 streamlit-antd-components
-pyarrow
 fpdf2
+pyarrow
