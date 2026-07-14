@@ -2927,9 +2927,10 @@ else:
 # BLOCO: PERFIL DE RISCO POR UTILIZAÇÃO — VISÃO RESSEGURADOR
 # Frequência × severidade × potencial catastrófico por Utilização.
 # - Sinistros com valor consolidado zerado são desconsiderados de toda a seção.
-# - A classificação do perfil (Baixa/Média/Alta) usa REFERÊNCIA FIXA: medianas
-#   calculadas sobre a base completa (sem filtros/slider), para que o rótulo de
-#   cada utilização não mude conforme os filtros aplicados.
+# - Frequência: classificada contra REFERÊNCIA FIXA (mediana da base completa,
+#   sem filtros/slider) — o rótulo não muda conforme os filtros aplicados.
+# - Severidade: classificada pela razão média/mediana da PRÓPRIA utilização
+#   (índice de cauda) — média muito acima da mediana indica cauda pesada.
 # ══════════════════════════════════════════════════════════════════════════════
 import numpy as np
 
@@ -2938,8 +2939,8 @@ st.subheader("🛡️ Perfil de Risco por Utilização — Visão Ressegurador")
 st.caption(
     "Frequência, severidade e potencial catastrófico por segmento de utilização. "
     "Sinistros sem movimentação financeira (valor zerado) são desconsiderados. "
-    "As métricas respeitam os filtros aplicados; a classificação do perfil usa "
-    "referência fixa da base completa."
+    "As métricas respeitam os filtros aplicados. Frequência é classificada contra "
+    "referência fixa da base completa; severidade, pela razão média/mediana da própria utilização."
 )
 
 # ── Base de sinistros com valor consolidado por sinistro (período filtrado) ──
@@ -2993,11 +2994,12 @@ if not df_para_soma.empty and not _sin_valor.empty:
         _mask_graves = _sin_valor['Valor_Sinistro'] >= _corte_valor
 
     # ══════════════════════════════════════════════════════════════════════
-    # REFERÊNCIA FIXA PARA CLASSIFICAÇÃO DO PERFIL
-    # Medianas de frequência e severidade calculadas sobre a BASE COMPLETA
-    # (dados_calculados + df_sinistros — sem filtros de sidebar nem slider).
-    # Assim, o rótulo de perfil de cada utilização é estável e não muda
-    # conforme os filtros aplicados na tela.
+    # REFERÊNCIA FIXA PARA CLASSIFICAÇÃO DA FREQUÊNCIA
+    # Mediana de frequência calculada sobre a BASE COMPLETA (dados_calculados
+    # + df_sinistros — sem filtros de sidebar nem slider). Assim, o rótulo de
+    # frequência de cada utilização é estável e não muda conforme os filtros.
+    # A mediana de severidade da base completa é mantida apenas como linha de
+    # referência visual no mapa de risco.
     # ══════════════════════════════════════════════════════════════════════
     _apo_ref = dados_calculados.groupby('Utilização').agg(
         Qtd_Apolices=('N° Apólice', 'nunique')
@@ -3027,7 +3029,7 @@ if not df_para_soma.empty and not _sin_valor.empty:
     _med_freq = _ref['Frequência'].median()     if not _ref.empty else 0
     _med_sev  = _ref['Sinistro_Medio'].median() if not _ref.empty else 0
 
-    # Bandas de classificação: Alta ≥ 150% da mediana | Baixa ≤ 67% da mediana
+    # Bandas de frequência: Alta ≥ 150% da mediana | Baixa ≤ 67% da mediana
     _LIM_ALTA, _LIM_BAIXA = 1.50, 0.67
 
     def _nivel(valor, mediana):
@@ -3039,17 +3041,33 @@ if not df_para_soma.empty and not _sin_valor.empty:
             return 'Baixa'
         return 'Média'
 
+    # Bandas de severidade: razão média/mediana da PRÓPRIA utilização
+    # (índice de cauda: média muito acima da mediana = poucos sinistros
+    # grandes puxando o valor — cauda pesada)
+    _LIM_SEV_ALTA, _LIM_SEV_BAIXA = 3.0, 2.0
+
+    def _nivel_severidade(media, mediana):
+        if media <= 0 or mediana <= 0:
+            return 'Baixa'
+        razao = media / mediana
+        if razao >= _LIM_SEV_ALTA:
+            return 'Alta'
+        if razao <= _LIM_SEV_BAIXA:
+            return 'Baixa'
+        return 'Média'
+
     # ── Transparência: exibe a régua de classificação usada ─────────────────
     _fmt_pct = lambda v: f"{v:.2%}".replace('.', ',')
     st.markdown(f"""
 <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px 16px;font-size:0.8rem;color:#374151;margin-bottom:10px;">
-<b>Critério do perfil</b> (referência fixa — base completa, independe dos filtros):
-<b>Frequência</b> — mediana da carteira: {_fmt_pct(_med_freq)} ·
+<b>Critério do perfil:</b>
+<b>Frequência</b> (referência fixa — base completa, independe dos filtros) —
+mediana da carteira: {_fmt_pct(_med_freq)} ·
 Alta ≥ {_fmt_pct(_med_freq * _LIM_ALTA)} ·
 Baixa ≤ {_fmt_pct(_med_freq * _LIM_BAIXA)} &nbsp;|&nbsp;
-<b>Severidade média</b> — mediana da carteira: R$ {formatar_valor_br(_med_sev)} ·
-Alta ≥ R$ {formatar_valor_br(_med_sev * _LIM_ALTA)} ·
-Baixa ≤ R$ {formatar_valor_br(_med_sev * _LIM_BAIXA)}
+<b>Severidade</b> (razão média ÷ mediana da própria utilização — índice de cauda) —
+Alta ≥ {_LIM_SEV_ALTA:.2f} ·
+Baixa ≤ {_LIM_SEV_BAIXA:.2f}
 </div>
 """, unsafe_allow_html=True)
 
@@ -3084,9 +3102,14 @@ Baixa ≤ R$ {formatar_valor_br(_med_sev * _LIM_BAIXA)}
     _perfil_util['Sinistralidade'] = _perfil_util.apply(
         lambda r: r['Total_Sinistro'] / r['Total_Premio'] if r['Total_Premio'] > 0 else 0, axis=1)
 
-    # ── Classificação contra a referência FIXA da base completa ──────────────
+    # ── Classificação ─────────────────────────────────────────────────────────
+    # Frequência: contra a referência fixa da base completa
+    # Severidade: razão média/mediana da própria utilização (índice de cauda)
     _perfil_util['Nível Frequência'] = _perfil_util['Frequência'].map(lambda v: _nivel(v, _med_freq))
-    _perfil_util['Nível Severidade'] = _perfil_util['Sinistro_Medio'].map(lambda v: _nivel(v, _med_sev))
+    _perfil_util['Media_Mediana'] = _perfil_util.apply(
+        lambda r: r['Sinistro_Medio'] / r['Sinistro_Mediano'] if r['Sinistro_Mediano'] > 0 else 0, axis=1)
+    _perfil_util['Nível Severidade'] = _perfil_util.apply(
+        lambda r: _nivel_severidade(r['Sinistro_Medio'], r['Sinistro_Mediano']), axis=1)
 
     def _descricao_perfil(row):
         f, s = row['Nível Frequência'], row['Nível Severidade']
@@ -3107,15 +3130,17 @@ Baixa ≤ R$ {formatar_valor_br(_med_sev * _LIM_BAIXA)}
         _exib[_c] = _exib[_c].map(formatar_valor_br)
     _exib['Qtd_Sinistros'] = _exib['Qtd_Sinistros'].astype(int)
     _exib['Qtd_Graves']    = _exib['Qtd_Graves'].astype(int)
+    _exib['Media_Mediana'] = _exib['Media_Mediana'].map(lambda x: f"{x:.2f}".replace('.', ','))
 
     _cols_exib = ['Utilização', 'Qtd_Apolices', 'Qtd_Sinistros', 'Frequência',
-                  'Sinistro_Medio', 'Sinistro_Mediano', 'Sinistro_Maximo',
+                  'Sinistro_Medio', 'Sinistro_Mediano', 'Media_Mediana', 'Sinistro_Maximo',
                   'Qtd_Graves', '% Graves', 'Sinistralidade', 'Perfil']
     st.markdown('<p class="section-label">Perfil de Risco por Utilização (frequência × severidade)</p>', unsafe_allow_html=True)
     st.dataframe(
         _exib[_cols_exib].rename(columns={
             'Sinistro_Medio':   'Severidade Média (R$)',
             'Sinistro_Mediano': 'Severidade Mediana (R$)',
+            'Media_Mediana':    'Média/Mediana (cauda)',
             'Sinistro_Maximo':  'Maior Sinistro (R$)',
             'Qtd_Graves':       'Sin. ≥ corte',
             '% Graves':         '% ≥ corte',
@@ -3155,7 +3180,8 @@ Baixa ≤ R$ {formatar_valor_br(_med_sev * _LIM_BAIXA)}
             "Quadrante superior direito = alta frequência e alta severidade (pior perfil). "
             "Superior esquerdo = baixa frequência com severidade alta (perfil de cauda/catastrófico). "
             "Tamanho da bolha = prêmio (exposição). As linhas tracejadas são as medianas da base completa — "
-            "a mesma régua da coluna Perfil."
+            "a vertical é a régua da frequência na coluna Perfil; a horizontal é apenas referência visual "
+            "(a severidade do Perfil é classificada pela razão média/mediana de cada utilização)."
         )
 else:
     st.info("Sem dados suficientes para montar o perfil de risco por Utilização.")
@@ -3167,7 +3193,8 @@ st.markdown("""
 <b>Base:</b> sinistros com valor consolidado (pagos + reservas) maior que zero no período filtrado. Sinistros avisados sem movimentação financeira são desconsiderados de toda a seção (frequência e severidade).<br><br>
 <b>Frequência</b> = sinistros únicos com valor ÷ apólices únicas do segmento, no período filtrado (slider). Não é frequência anualizada por veículo-exposto — informe isso ao ressegurador se solicitado.<br><br>
 <b>Severidade</b> = valor consolidado por sinistro, incluindo todas as coberturas acionadas.<br><br>
-<b>Classificação do perfil (Baixa/Média/Alta):</b> comparação contra a mediana da <b>base completa</b> (todas as apólices e sinistros carregados, sem filtros nem slider), com bandas Alta ≥ 150% da mediana e Baixa ≤ 67% da mediana. Por usar referência fixa, o rótulo de cada utilização é estável e não muda conforme os filtros — as métricas exibidas, porém, refletem o período/filtros selecionados.<br><br>
+<b>Classificação de frequência (Baixa/Média/Alta):</b> comparação contra a mediana da <b>base completa</b> (todas as apólices e sinistros carregados, sem filtros nem slider), com bandas Alta ≥ 150% da mediana e Baixa ≤ 67% da mediana. Por usar referência fixa, o rótulo é estável e não muda conforme os filtros.<br><br>
+<b>Classificação de severidade (Baixa/Média/Alta):</b> razão <b>média ÷ mediana</b> dos sinistros da própria utilização (índice de cauda). Razão elevada indica que poucos sinistros de grande valor puxam a média para cima — distribuição de cauda pesada, com maior potencial de perdas severas. Bandas: Alta ≥ 3,00 · Baixa ≤ 2,00. Como usa apenas os dados da própria utilização, o rótulo independe do mix da carteira e dos filtros aplicados (desde que o período contenha os mesmos sinistros).<br><br>
 <b>Corte de sinistro grave:</b> valores fixos de R$ 100 mil a R$ 5 milhões (critério: valor ≥ corte) e "Acima de 7.000.000,00" (critério: valor > R$ 7 milhões). Sugerido alinhar o corte com a prioridade/retenção do contrato de resseguro.
 </div>
 """, unsafe_allow_html=True)
