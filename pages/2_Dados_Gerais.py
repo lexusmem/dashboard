@@ -2924,67 +2924,79 @@ else:
     st.info("Nenhum dado disponível para análise de variação.")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# BLOCO: PERFIL DE RISCO — VISÃO RESSEGURADOR
-# Responde aos questionamentos do ressegurador:
-#   Q1 — Perfil por capacidade de passageiros (ativa quando a coluna existir na base)
-#   Q2 — Perfil por Utilização (frequência × severidade × potencial catastrófico)
-#   Q3 — Custo esperado por gravidade da lesão (proxy via Cobertura acionada)
+# BLOCO: PERFIL DE RISCO POR UTILIZAÇÃO — VISÃO RESSEGURADOR
+# Frequência × severidade × potencial catastrófico por Utilização.
+# Sinistros com valor consolidado zerado (avisados sem movimentação financeira)
+# são desconsiderados de toda a análise desta seção.
 # ══════════════════════════════════════════════════════════════════════════════
 import numpy as np
 
 st.write("---")
-st.subheader("🛡️ Perfil de Risco — Visão Ressegurador")
+st.subheader("🛡️ Perfil de Risco por Utilização — Visão Ressegurador")
 st.caption(
-    "Visões construídas para responder aos questionamentos de resseguro: "
-    "perfil de risco por utilização, custo esperado por gravidade da lesão e "
-    "perfil por capacidade de passageiros."
+    "Frequência, severidade e potencial catastrófico por segmento de utilização. "
+    "Sinistros sem movimentação financeira (valor zerado) são desconsiderados."
 )
 
 # ── Base de sinistros com valor consolidado por sinistro ─────────────────────
-# Consolida o valor total por sinistro (uma linha por nr_sinistro), preservando
-# a apólice para cruzar com Utilização, e a Cobertura para o proxy de gravidade.
+# Consolida o valor total por sinistro (uma linha por nr_sinistro) e cruza com
+# a Utilização da apólice. Sinistros com valor consolidado <= 0 são excluídos.
 if not df_sinistro_periodo_atualizado.empty:
     _df_sin_pr = df_sinistro_periodo_atualizado.copy()
     _df_sin_pr['Total Sinistro'] = pd.to_numeric(_df_sin_pr['Total Sinistro'], errors='coerce').fillna(0.0)
 
-    # Valor consolidado por sinistro (soma de todas as linhas/coberturas do sinistro)
     _sin_valor = _df_sin_pr.groupby('nr_sinistro').agg(
         Valor_Sinistro=('Total Sinistro', 'sum'),
         Apolice=('N° Apólice', 'first')
     ).reset_index()
 
-    # Cruza com Utilização da apólice
+    # Desconsidera sinistros com valor consolidado zerado
+    _sin_valor = _sin_valor[_sin_valor['Valor_Sinistro'] > 0].copy()
+
     _map_util = df_para_soma[['N° Apólice', 'Utilização']].drop_duplicates(subset=['N° Apólice'])
     _sin_valor = _sin_valor.merge(_map_util, left_on='Apolice', right_on='N° Apólice', how='left')
     _sin_valor['Utilização'] = _sin_valor['Utilização'].fillna('Não identificada')
 else:
     _sin_valor = pd.DataFrame(columns=['nr_sinistro', 'Valor_Sinistro', 'Apolice', 'Utilização'])
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Q2 — PERFIL DE RISCO POR UTILIZAÇÃO
-# ══════════════════════════════════════════════════════════════════════════════
-st.markdown('<p class="section-label">Q2 · Perfil de Risco por Utilização (frequência × severidade)</p>', unsafe_allow_html=True)
-
 if not df_para_soma.empty and not _sin_valor.empty:
-    # Corte de severidade catastrófica configurável
+    # ── Corte de sinistro grave: lista fixa de valores ───────────────────────
+    _OPCOES_CORTE = {
+        '100.000,00':            (100_000.0,   '>='),
+        '200.000,00':            (200_000.0,   '>='),
+        '300.000,00':            (300_000.0,   '>='),
+        '400.000,00':            (400_000.0,   '>='),
+        '500.000,00':            (500_000.0,   '>='),
+        '1.000.000,00':          (1_000_000.0, '>='),
+        '2.000.000,00':          (2_000_000.0, '>='),
+        '3.000.000,00':          (3_000_000.0, '>='),
+        '4.000.000,00':          (4_000_000.0, '>='),
+        '5.000.000,00':          (5_000_000.0, '>='),
+        'Acima de 7.000.000,00': (7_000_000.0, '>'),
+    }
     col_corte_1, col_corte_2 = st.columns([1, 3])
     with col_corte_1:
-        corte_catastrofico = st.number_input(
+        _corte_label = st.selectbox(
             'Corte de sinistro grave (R$)',
-            min_value=0.0, value=500_000.0, step=50_000.0,
-            help='Sinistros com valor consolidado igual ou acima deste corte são '
+            options=list(_OPCOES_CORTE.keys()),
+            index=4,  # padrão: 500.000,00
+            help='Sinistros com valor consolidado a partir deste corte são '
                  'classificados como de alta severidade / potencial catastrófico.',
             key='corte_catastrofico_ressegurador'
         )
+    _corte_valor, _corte_op = _OPCOES_CORTE[_corte_label]
+    if _corte_op == '>':
+        _mask_graves = _sin_valor['Valor_Sinistro'] > _corte_valor
+    else:
+        _mask_graves = _sin_valor['Valor_Sinistro'] >= _corte_valor
 
-    # Exposição por Utilização
+    # ── Exposição por Utilização ─────────────────────────────────────────────
     _perfil_util = df_para_soma.groupby('Utilização').agg(
         Qtd_Apolices=('N° Apólice', 'nunique'),
-        Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
-        Total_Sinistro_Apo=('Soma Sinistro Por Apolice', 'sum')
+        Total_Premio=('Soma Prêmio Pago por Apolice', 'sum')
     ).reset_index()
 
-    # Sinistros por Utilização (frequência, severidade, cauda)
+    # ── Sinistros por Utilização (frequência, severidade, cauda) ─────────────
     _sin_util = _sin_valor.groupby('Utilização').agg(
         Qtd_Sinistros=('nr_sinistro', 'nunique'),
         Total_Sinistro=('Valor_Sinistro', 'sum'),
@@ -2993,7 +3005,7 @@ if not df_para_soma.empty and not _sin_valor.empty:
         Sinistro_Maximo=('Valor_Sinistro', 'max')
     ).reset_index()
 
-    _graves = _sin_valor[_sin_valor['Valor_Sinistro'] >= corte_catastrofico]\
+    _graves = _sin_valor[_mask_graves]\
         .groupby('Utilização')['nr_sinistro'].nunique().reset_index()\
         .rename(columns={'nr_sinistro': 'Qtd_Graves'})
 
@@ -3009,8 +3021,7 @@ if not df_para_soma.empty and not _sin_valor.empty:
     _perfil_util['Sinistralidade'] = _perfil_util.apply(
         lambda r: r['Total_Sinistro'] / r['Total_Premio'] if r['Total_Premio'] > 0 else 0, axis=1)
 
-    # Classificação qualitativa (Baixa/Média/Alta) vs. mediana da carteira,
-    # considerando apenas utilizações com sinistro para não distorcer a mediana
+    # ── Classificação qualitativa (Baixa/Média/Alta) vs. mediana da carteira ─
     _com_sin = _perfil_util[_perfil_util['Qtd_Sinistros'] > 0]
     _med_freq = _com_sin['Frequência'].median()     if not _com_sin.empty else 0
     _med_sev  = _com_sin['Sinistro_Medio'].median() if not _com_sin.empty else 0
@@ -3030,14 +3041,14 @@ if not df_para_soma.empty and not _sin_valor.empty:
     def _descricao_perfil(row):
         f, s = row['Nível Frequência'], row['Nível Severidade']
         if row['Qtd_Sinistros'] == 0:
-            return 'Sem sinistros no período'
+            return 'Sem sinistros com valor no período'
         if row['Qtd_Graves'] > 0 and s == 'Alta':
             return f'{f} frequência, {s.lower()} severidade — potencial catastrófico'
         return f'{f} frequência, {s.lower()} severidade'
 
     _perfil_util['Perfil'] = _perfil_util.apply(_descricao_perfil, axis=1)
 
-    # Tabela de exibição (formatação BR, padrão do app)
+    # ── Tabela de exibição (formatação BR, padrão do app) ────────────────────
     _exib = _perfil_util.sort_values('Total_Premio', ascending=False).copy()
     _exib['Frequência']       = _exib['Frequência'].map(lambda x: f"{x:.2f}".replace('.', ','))
     _exib['% Graves']         = _exib['% Graves'].map(lambda x: f"{x:.1%}".replace('.', ','))
@@ -3050,12 +3061,13 @@ if not df_para_soma.empty and not _sin_valor.empty:
     _cols_exib = ['Utilização', 'Qtd_Apolices', 'Qtd_Sinistros', 'Frequência',
                   'Sinistro_Medio', 'Sinistro_Mediano', 'Sinistro_Maximo',
                   'Qtd_Graves', '% Graves', 'Sinistralidade', 'Perfil']
+    st.markdown('<p class="section-label">Perfil de Risco por Utilização (frequência × severidade)</p>', unsafe_allow_html=True)
     st.dataframe(
         _exib[_cols_exib].rename(columns={
             'Sinistro_Medio':   'Severidade Média (R$)',
             'Sinistro_Mediano': 'Severidade Mediana (R$)',
             'Sinistro_Maximo':  'Maior Sinistro (R$)',
-            'Qtd_Graves':       f'Sin. ≥ corte',
+            'Qtd_Graves':       'Sin. ≥ corte',
             '% Graves':         '% ≥ corte',
         }),
         hide_index=True,
@@ -3065,7 +3077,7 @@ if not df_para_soma.empty and not _sin_valor.empty:
             "Perfil":     st.column_config.Column(width=280),
         })
 
-    # Mapa de risco: Frequência × Severidade (bolha = prêmio)
+    # ── Mapa de risco: Frequência × Severidade (bolha = prêmio) ──────────────
     _plot = _perfil_util[(_perfil_util['Qtd_Sinistros'] > 0) &
                          (_perfil_util['Utilização'].astype(str) != '0')].copy()
     if not _plot.empty:
@@ -3096,183 +3108,14 @@ if not df_para_soma.empty and not _sin_valor.empty:
 else:
     st.info("Sem dados suficientes para montar o perfil de risco por Utilização.")
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Q3 — CUSTO ESPERADO POR GRAVIDADE DA LESÃO (PROXY VIA COBERTURA)
-# ══════════════════════════════════════════════════════════════════════════════
-st.write("---")
-st.markdown('<p class="section-label">Q3 · Custo Esperado por Gravidade da Lesão (proxy via cobertura acionada)</p>', unsafe_allow_html=True)
-st.caption(
-    "A base de sinistros não registra a gravidade clínica da lesão. A cobertura acionada "
-    "é utilizada como proxy: DMH ≈ lesão leve/moderada · Invalidez ≈ lesão grave · Morte ≈ fatal. "
-    "Valide o mapeamento no expander abaixo antes de reportar ao ressegurador."
-)
-
-def _classificar_gravidade(cobertura):
-    c = str(cobertura).upper()
-    if 'MORTE' in c or 'FATAL' in c:
-        return '4. Fatal (Morte)'
-    if 'INVALIDEZ' in c:
-        return '3. Grave (Invalidez Permanente)'
-    if 'DMH' in c or 'MEDIC' in c or 'MÉDIC' in c or 'HOSPITAL' in c or 'DESPESA' in c:
-        return '2. Leve/Moderada (DMH)'
-    if 'MORAL' in c or 'ESTÉTIC' in c or 'ESTETIC' in c:
-        return '5. Dano Moral/Estético'
-    if 'MATERIAL' in c:
-        return '1. Dano Material (não corporal)'
-    return '6. Outros / Não classificado'
-
-if not df_sinistro_periodo_atualizado.empty:
-    _df_grav = df_sinistro_periodo_atualizado.copy()
-    _df_grav['Total Sinistro'] = pd.to_numeric(_df_grav['Total Sinistro'], errors='coerce').fillna(0.0)
-    _df_grav['Gravidade'] = _df_grav['Cobertura'].map(_classificar_gravidade)
-
-    # Consolida por sinistro DENTRO de cada gravidade (um sinistro pode acionar
-    # mais de uma cobertura — ex.: DMH + Morte — e conta em cada categoria acionada)
-    _sin_grav = _df_grav.groupby(['Gravidade', 'nr_sinistro'])['Total Sinistro']\
-                        .sum().reset_index()
-    _sin_grav = _sin_grav[_sin_grav['Total Sinistro'] > 0]
-
-    if not _sin_grav.empty:
-        _tab_grav = _sin_grav.groupby('Gravidade').agg(
-            Qtd_Sinistros=('nr_sinistro', 'nunique'),
-            Custo_Total=('Total Sinistro', 'sum'),
-            Custo_Medio=('Total Sinistro', 'mean'),
-            Custo_Mediano=('Total Sinistro', 'median'),
-            Custo_Maximo=('Total Sinistro', 'max')
-        ).reset_index().sort_values('Gravidade')
-
-        _tab_grav_exib = _tab_grav.copy()
-        for _c in ['Custo_Total', 'Custo_Medio', 'Custo_Mediano', 'Custo_Maximo']:
-            _tab_grav_exib[_c] = _tab_grav_exib[_c].map(formatar_valor_br)
-
-        col_grav_1, col_grav_2 = st.columns(2)
-        with col_grav_1:
-            st.dataframe(
-                _tab_grav_exib.rename(columns={
-                    'Gravidade':     'Categoria de Gravidade',
-                    'Qtd_Sinistros': 'Qtd',
-                    'Custo_Total':   'Custo Total (R$)',
-                    'Custo_Medio':   'Custo Esperado / Lesão (R$)',
-                    'Custo_Mediano': 'Mediana (R$)',
-                    'Custo_Maximo':  'Máximo (R$)',
-                }),
-                hide_index=True,
-                use_container_width=True,
-                column_config={
-                    "Categoria de Gravidade": st.column_config.Column(width=230),
-                    "Qtd": st.column_config.Column(width=50),
-                })
-            st.caption(
-                "Custo esperado = custo médio por sinistro na categoria (pagos + reservas do período filtrado). "
-                "A mediana é mais robusta a outliers — reporte as duas ao ressegurador."
-            )
-
-        with col_grav_2:
-            fig_grav = px.bar(
-                _tab_grav, x='Gravidade', y='Custo_Medio',
-                text=_tab_grav['Custo_Medio'].map(lambda v: 'R$ ' + formatar_valor_br(v)),
-                labels={'Custo_Medio': 'Custo médio por lesão (R$)'},
-                height=380
-            )
-            fig_grav.update_traces(marker_color='#1a56db', textposition='outside', textfont_size=10)
-            fig_grav.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                                   xaxis_title=None)
-            st.plotly_chart(fig_grav, use_container_width=True)
-
-        # Expander de validação do mapeamento cobertura → gravidade
-        with st.expander("🔍 Validar mapeamento Cobertura → Gravidade"):
-            _map_check = _df_grav.groupby(['Gravidade', 'Cobertura'])['nr_sinistro']\
-                                 .nunique().reset_index()\
-                                 .rename(columns={'nr_sinistro': 'Qtd Sinistros'})\
-                                 .sort_values(['Gravidade', 'Qtd Sinistros'], ascending=[True, False])
-            st.dataframe(_map_check, hide_index=True, use_container_width=True)
-            st.caption(
-                "Coberturas em '6. Outros / Não classificado' não foram reconhecidas pelas "
-                "palavras-chave — ajuste a função _classificar_gravidade() se necessário."
-            )
-    else:
-        st.info("Nenhum sinistro com valor no período para calcular custo por gravidade.")
-else:
-    st.info("Sem sinistros no período filtrado.")
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Q1 — PERFIL DE RISCO POR CAPACIDADE DE PASSAGEIROS
-# Ativa automaticamente quando a base passar a conter a coluna de lotação.
-# ══════════════════════════════════════════════════════════════════════════════
-st.write("---")
-st.markdown('<p class="section-label">Q1 · Perfil de Risco por Capacidade de Passageiros</p>', unsafe_allow_html=True)
-
-_CANDIDATAS_CAPACIDADE = ['Lotação', 'Lotacao', 'Capacidade', 'Capacidade Passageiros',
-                          'Qtd Passageiros', 'qt_passageiros', 'nr_lotacao', 'nr_capacidade']
-_col_capacidade = next((c for c in _CANDIDATAS_CAPACIDADE if c in df_para_soma.columns), None)
-
-if _col_capacidade is None:
-    st.warning(
-        "⚠️ A base atual (`apolice_endosso.txt`) não contém a lotação/capacidade de passageiros "
-        "por veículo. Para habilitar esta visão, inclua na extração a **lotação declarada por "
-        "item/veículo** (disponível na emissão do RCO — registro do veículo/ANTT) em uma coluna "
-        "chamada `Lotação`. A seção será ativada automaticamente e gerará o perfil "
-        "frequência × severidade nas faixas: até 20 · 21–40 · 41–60 · acima de 60 passageiros."
-    )
-else:
-    _df_cap = df_para_soma.copy()
-    _df_cap['_capacidade'] = pd.to_numeric(_df_cap[_col_capacidade], errors='coerce')
-    _df_cap = _df_cap.dropna(subset=['_capacidade'])
-
-    if _df_cap.empty:
-        st.info(f"A coluna '{_col_capacidade}' existe, mas não possui valores numéricos válidos.")
-    else:
-        _bins   = [0, 20, 40, 60, np.inf]
-        _labels = ['Até 20 passageiros', '21 a 40 passageiros', '41 a 60 passageiros', 'Acima de 60 passageiros']
-        _df_cap['Faixa de Capacidade'] = pd.cut(_df_cap['_capacidade'], bins=_bins, labels=_labels)
-
-        _perfil_cap = _df_cap.groupby('Faixa de Capacidade', observed=True).agg(
-            Qtd_Apolices=('N° Apólice', 'nunique'),
-            Total_Premio=('Soma Prêmio Pago por Apolice', 'sum')
-        ).reset_index()
-
-        _map_cap = _df_cap[['N° Apólice', 'Faixa de Capacidade']].drop_duplicates(subset=['N° Apólice'])
-        _sin_cap = _sin_valor.merge(_map_cap, left_on='Apolice', right_on='N° Apólice', how='inner')
-
-        _agg_cap = _sin_cap.groupby('Faixa de Capacidade', observed=True).agg(
-            Qtd_Sinistros=('nr_sinistro', 'nunique'),
-            Total_Sinistro=('Valor_Sinistro', 'sum'),
-            Sinistro_Medio=('Valor_Sinistro', 'mean'),
-            Sinistro_Maximo=('Valor_Sinistro', 'max')
-        ).reset_index()
-
-        _perfil_cap = _perfil_cap.merge(_agg_cap, on='Faixa de Capacidade', how='left').fillna(0)
-        _perfil_cap['Frequência'] = _perfil_cap['Qtd_Sinistros'] / _perfil_cap['Qtd_Apolices'].replace(0, np.nan)
-        _perfil_cap['Frequência'] = _perfil_cap['Frequência'].fillna(0)
-        _perfil_cap['Sinistralidade'] = _perfil_cap.apply(
-            lambda r: r['Total_Sinistro'] / r['Total_Premio'] if r['Total_Premio'] > 0 else 0, axis=1)
-
-        _cap_exib = _perfil_cap.copy()
-        _cap_exib['Frequência']     = _cap_exib['Frequência'].map(lambda x: f"{x:.2f}".replace('.', ','))
-        _cap_exib['Sinistralidade'] = _cap_exib['Sinistralidade'].map(lambda x: f"{x:.2%}".replace('.', ','))
-        for _c in ['Total_Premio', 'Total_Sinistro', 'Sinistro_Medio', 'Sinistro_Maximo']:
-            _cap_exib[_c] = _cap_exib[_c].map(formatar_valor_br)
-        _cap_exib['Qtd_Sinistros'] = _cap_exib['Qtd_Sinistros'].astype(int)
-
-        st.dataframe(
-            _cap_exib.rename(columns={
-                'Sinistro_Medio':  'Severidade Média (R$)',
-                'Sinistro_Maximo': 'Maior Sinistro (R$)',
-            }),
-            hide_index=True, use_container_width=True)
-        st.caption(
-            "Perfil por faixa de capacidade: frequência = sinistros por apólice; "
-            "severidade média = custo médio por sinistro na faixa."
-        )
-
 # ── Nota metodológica (padrão das seções analíticas do app) ──────────────────
 st.markdown("""
 <div style="background:#e8effd;border-radius:8px;padding:14px 18px;font-size:0.82rem;color:#374151;">
 <b>📖 Notas metodológicas — visão ressegurador</b><br><br>
-<b>Frequência</b> = sinistros únicos ÷ apólices únicas do segmento, no período filtrado (slider). Não é frequência anualizada por veículo-exposto — informe isso ao ressegurador se solicitado.<br><br>
-<b>Severidade</b> = valor consolidado por sinistro (pagos + reservas na data-base), incluindo todas as coberturas acionadas.<br><br>
-<b>Gravidade da lesão</b> é aproximada pela cobertura acionada (DMH = leve/moderada, Invalidez = grave, Morte = fatal). Um mesmo sinistro com múltiplas coberturas aparece em cada categoria acionada, com o valor daquela cobertura.<br><br>
-<b>Corte catastrófico</b> configurável — sugerido alinhar com a prioridade/retenção do contrato de resseguro.
+<b>Base:</b> sinistros com valor consolidado (pagos + reservas) maior que zero no período filtrado. Sinistros avisados sem movimentação financeira são desconsiderados de toda a seção (frequência e severidade).<br><br>
+<b>Frequência</b> = sinistros únicos com valor ÷ apólices únicas do segmento, no período filtrado (slider). Não é frequência anualizada por veículo-exposto — informe isso ao ressegurador se solicitado.<br><br>
+<b>Severidade</b> = valor consolidado por sinistro, incluindo todas as coberturas acionadas.<br><br>
+<b>Corte de sinistro grave:</b> valores fixos de R$ 100 mil a R$ 5 milhões (critério: valor ≥ corte) e "Acima de 7.000.000,00" (critério: valor > R$ 7 milhões). Sugerido alinhar o corte com a prioridade/retenção do contrato de resseguro.
 </div>
 """, unsafe_allow_html=True)
 
