@@ -3,4 +3,4 @@ pandas
 plotly
 streamlit-antd-components
 fpdf2
-pyarrow 
+pyarrow
