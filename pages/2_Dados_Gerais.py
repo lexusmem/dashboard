@@ -3501,7 +3501,21 @@ with st.expander("📥 Baixar snapshot consolidado  /  📤 Carregar snapshots p
     with _col_dl:
         if not df_sinistros.empty:
             try:
-                _snap_bytes, _qtd_linhas, _qtd_datas = _gerar_snapshot_bytes(df_sinistros, dados_calculados)
+                # Cache dos bytes do consolidado — evita regerar em toda interação
+                # não relacionada (ex: mudar um filtro de Ramo). Só recalcula quando
+                # snapshots_uploaded ou a base de sinistros mudam.
+                _cache_key_dl = (len(st.session_state.get('snapshots_uploaded', {})), _HOJE_STR, len(df_sinistros))
+                _cache_dl = st.session_state.get('_snapshot_bytes_cache')
+                if _cache_dl is not None and _cache_dl.get('key') == _cache_key_dl:
+                    _snap_bytes = _cache_dl['bytes']
+                    _qtd_linhas = _cache_dl['qtd_linhas']
+                    _qtd_datas = _cache_dl['qtd_datas']
+                else:
+                    _snap_bytes, _qtd_linhas, _qtd_datas = _gerar_snapshot_bytes(df_sinistros, dados_calculados)
+                    st.session_state['_snapshot_bytes_cache'] = {
+                        'key': _cache_key_dl, 'bytes': _snap_bytes,
+                        'qtd_linhas': _qtd_linhas, 'qtd_datas': _qtd_datas,
+                    }
                 # Indicador claro do que será baixado
                 _qtd_hist = len(st.session_state.get('snapshots_uploaded', {}))
                 if _qtd_hist == 0:
@@ -3560,87 +3574,128 @@ with st.expander("📥 Baixar snapshot consolidado  /  📤 Carregar snapshots p
 #   _df_snap_agg_concat   : DataFrame — todas as linhas AGG_CARTEIRA de todas as datas
 # A "data de hoje" é montada on-the-fly a partir de df_sinistros + dados_calculados.
 
-def _separar_por_tipo(_df):
-    """Separa um DataFrame de snapshot em (sin, agg) por tipo_registro."""
-    if _df is None or _df.empty:
-        return pd.DataFrame(), pd.DataFrame()
-    if 'tipo_registro' not in _df.columns:
-        # Retrocompat: assume tudo é SINISTRO
-        return _df.copy(), pd.DataFrame()
-    _sin = _df[_df['tipo_registro'] == 'SINISTRO'].copy()
-    _agg = _df[_df['tipo_registro'] == 'AGG_CARTEIRA'].copy()
-    return _sin, _agg
+# ─────────────────────────────────────────────────────────────────────────────
+# 🔋 Computação sob demanda (lazy loading) — economiza memória
+# ─────────────────────────────────────────────────────────────────────────────
+# A concatenação de todos os snapshots (potencialmente vários dias x dezenas
+# de milhares de linhas) só roda quando o usuário ativa esta seção. Enquanto
+# inativa, as 5 abas abaixo recebem estruturas vazias e mostram apenas um aviso
+# (custo quase zero). Uma vez ativado, o resultado fica em cache na sessão e só
+# é recalculado se novos snapshots forem carregados.
+_mostrar_analise_temporal = st.checkbox(
+    "📊 Ativar Análise Temporal da Carteira (processa sob demanda para economizar memória)",
+    value=st.session_state.get('_analise_temporal_ativa', False),
+    key='toggle_analise_temporal'
+)
+st.session_state['_analise_temporal_ativa'] = _mostrar_analise_temporal
 
-def _construir_snap_hoje():
-    """Monta o 'snapshot virtual' do dia atual a partir das bases vivas."""
-    if df_sinistros.empty:
-        return pd.DataFrame(), pd.DataFrame()
-    # SINISTRO de hoje (enriquecido com Ramo/Utilização)
-    _cols = [c for c in [
-        'nr_sinistro', 'N° Apólice', 'nr_ramo',
-        'dt_aviso', 'dt_ocorrencia',
-        'vl_sinistro_pago', 'vl_sinistro_pendente', 'vl_sinistro_total',
-        'vl_despesa_pago', 'vl_despesa_pendente', 'vl_despesa_total',
-        'vl_honorario_total', 'vl_salvado_total',
-        'Total Sinistro',
-        'status_processo', 'status_movimento'
-    ] if c in df_sinistros.columns]
-    _sin_hoje = df_sinistros[_cols].copy()
-    if dados_calculados is not None and 'N° Apólice' in dados_calculados.columns:
-        _mapa = dados_calculados[['N° Apólice', 'Ramo', 'Utilização']].drop_duplicates('N° Apólice').copy()
-        _mapa['N° Apólice'] = _mapa['N° Apólice'].astype(str)
-        _mapa = _coage_categoria_str(_mapa, ['Ramo', 'Utilização'])
-        if 'N° Apólice' in _sin_hoje.columns:
-            _sin_hoje['N° Apólice'] = _sin_hoje['N° Apólice'].astype(str)
-            _sin_hoje = _sin_hoje.merge(_mapa, on='N° Apólice', how='left')
-        _sin_hoje = _coage_categoria_str(_sin_hoje, ['Ramo', 'Utilização', 'dt_aviso', 'dt_ocorrencia'])
-    # Coerção defensiva: protege caso merge não tenha rodado
-    _sin_hoje = _coage_categoria_str(_sin_hoje, ['dt_aviso', 'dt_ocorrencia'])
-    _sin_hoje['data_snapshot'] = pd.Timestamp(_HOJE_STR)
-    # AGG_CARTEIRA de hoje
-    _agg_hoje = pd.DataFrame()
-    if dados_calculados is not None and not dados_calculados.empty:
-        _dc = dados_calculados.copy()
-        _dc = _coage_categoria_str(_dc, ['Ramo', 'Utilização'])
-        _dc['_premio_num'] = _parse_premio_safe(_dc['Soma Prêmio Pago por Apolice'])
-        _agg_hoje = _dc.groupby(['Ramo', 'Utilização'], dropna=False).agg(
-            qtd_apolices_vigentes=('N° Apólice', 'nunique'),
-            soma_premio=('_premio_num', 'sum'),
-        ).reset_index()
-        _agg_hoje = _coage_categoria_str(_agg_hoje, ['Ramo', 'Utilização'])
-        _agg_hoje['data_snapshot'] = pd.Timestamp(_HOJE_STR)
-    return _sin_hoje, _agg_hoje
+if not _mostrar_analise_temporal:
+    st.info(
+        "⏸️ Análise Temporal inativa — marque a caixa acima para processar os "
+        "snapshots e ver as 5 abas (Visão Geral, Por Segmento, Drill-down, "
+        "Reserva & Atuarial, Alertas). Mantê-la desligada reduz o consumo de "
+        "memória da página quando você só precisa da tabela de apólices acima."
+    )
+    _df_snap_sin_concat = pd.DataFrame()
+    _df_snap_agg_concat = pd.DataFrame()
+    _snap_dias = []
+else:
+    _cache_key_at = (len(st.session_state.get('snapshots_uploaded', {})), _HOJE_STR, len(df_sinistros))
+    _cache_at = st.session_state.get('_analise_temporal_cache')
+    if _cache_at is not None and _cache_at.get('key') == _cache_key_at:
+        # Cache válido — reaproveita sem recomputar (evita reprocessar em toda
+        # interação não relacionada, como mudar um filtro de Ramo)
+        _df_snap_sin_concat = _cache_at['sin']
+        _df_snap_agg_concat = _cache_at['agg']
+        _snap_dias = _cache_at['dias']
+    else:
+        def _separar_por_tipo(_df):
+            """Separa um DataFrame de snapshot em (sin, agg) por tipo_registro."""
+            if _df is None or _df.empty:
+                return pd.DataFrame(), pd.DataFrame()
+            if 'tipo_registro' not in _df.columns:
+                # Retrocompat: assume tudo é SINISTRO
+                return _df.copy(), pd.DataFrame()
+            _sin = _df[_df['tipo_registro'] == 'SINISTRO'].copy()
+            _agg = _df[_df['tipo_registro'] == 'AGG_CARTEIRA'].copy()
+            return _sin, _agg
 
-# Constrói coleções concatenadas
-_sin_partes = []
-_agg_partes = []
-_snap_dias_set = set()
+        def _construir_snap_hoje():
+            """Monta o 'snapshot virtual' do dia atual a partir das bases vivas."""
+            if df_sinistros.empty:
+                return pd.DataFrame(), pd.DataFrame()
+            # SINISTRO de hoje (enriquecido com Ramo/Utilização)
+            _cols = [c for c in [
+                'nr_sinistro', 'N° Apólice', 'nr_ramo',
+                'dt_aviso', 'dt_ocorrencia',
+                'vl_sinistro_pago', 'vl_sinistro_pendente', 'vl_sinistro_total',
+                'vl_despesa_pago', 'vl_despesa_pendente', 'vl_despesa_total',
+                'vl_honorario_total', 'vl_salvado_total',
+                'Total Sinistro',
+                'status_processo', 'status_movimento'
+            ] if c in df_sinistros.columns]
+            _sin_hoje = df_sinistros[_cols].copy()
+            if dados_calculados is not None and 'N° Apólice' in dados_calculados.columns:
+                _mapa = dados_calculados[['N° Apólice', 'Ramo', 'Utilização']].drop_duplicates('N° Apólice').copy()
+                _mapa['N° Apólice'] = _mapa['N° Apólice'].astype(str)
+                _mapa = _coage_categoria_str(_mapa, ['Ramo', 'Utilização'])
+                if 'N° Apólice' in _sin_hoje.columns:
+                    _sin_hoje['N° Apólice'] = _sin_hoje['N° Apólice'].astype(str)
+                    _sin_hoje = _sin_hoje.merge(_mapa, on='N° Apólice', how='left')
+                _sin_hoje = _coage_categoria_str(_sin_hoje, ['Ramo', 'Utilização', 'dt_aviso', 'dt_ocorrencia'])
+            # Coerção defensiva: protege caso merge não tenha rodado
+            _sin_hoje = _coage_categoria_str(_sin_hoje, ['dt_aviso', 'dt_ocorrencia'])
+            _sin_hoje['data_snapshot'] = pd.Timestamp(_HOJE_STR)
+            # AGG_CARTEIRA de hoje
+            _agg_hoje = pd.DataFrame()
+            if dados_calculados is not None and not dados_calculados.empty:
+                _dc = dados_calculados.copy()
+                _dc = _coage_categoria_str(_dc, ['Ramo', 'Utilização'])
+                _dc['_premio_num'] = _parse_premio_safe(_dc['Soma Prêmio Pago por Apolice'])
+                _agg_hoje = _dc.groupby(['Ramo', 'Utilização'], dropna=False).agg(
+                    qtd_apolices_vigentes=('N° Apólice', 'nunique'),
+                    soma_premio=('_premio_num', 'sum'),
+                ).reset_index()
+                _agg_hoje = _coage_categoria_str(_agg_hoje, ['Ramo', 'Utilização'])
+                _agg_hoje['data_snapshot'] = pd.Timestamp(_HOJE_STR)
+            return _sin_hoje, _agg_hoje
 
-# Hoje (sempre disponível)
-_s_hoje, _a_hoje = _construir_snap_hoje()
-if not _s_hoje.empty:
-    _sin_partes.append(_s_hoje)
-    _snap_dias_set.add(_HOJE_STR)
-if not _a_hoje.empty:
-    _agg_partes.append(_a_hoje)
+        # Constrói coleções concatenadas
+        _sin_partes = []
+        _agg_partes = []
+        _snap_dias_set = set()
 
-# Histórico em sessão
-for _date_key, _df_hist in st.session_state.get('snapshots_uploaded', {}).items():
-    if _date_key == _HOJE_STR:
-        continue
-    _h = _df_hist.copy()
-    if 'data_snapshot' not in _h.columns:
-        _h['data_snapshot'] = pd.Timestamp(_date_key)
-    _s, _a = _separar_por_tipo(_h)
-    if not _s.empty:
-        _sin_partes.append(_s)
-    if not _a.empty:
-        _agg_partes.append(_a)
-    _snap_dias_set.add(_date_key)
+        # Hoje (sempre disponível)
+        _s_hoje, _a_hoje = _construir_snap_hoje()
+        if not _s_hoje.empty:
+            _sin_partes.append(_s_hoje)
+            _snap_dias_set.add(_HOJE_STR)
+        if not _a_hoje.empty:
+            _agg_partes.append(_a_hoje)
 
-_df_snap_sin_concat = pd.concat(_sin_partes, ignore_index=True, sort=False) if _sin_partes else pd.DataFrame()
-_df_snap_agg_concat = pd.concat(_agg_partes, ignore_index=True, sort=False) if _agg_partes else pd.DataFrame()
-_snap_dias = sorted([pd.to_datetime(d) for d in _snap_dias_set])
+        # Histórico em sessão
+        for _date_key, _df_hist in st.session_state.get('snapshots_uploaded', {}).items():
+            if _date_key == _HOJE_STR:
+                continue
+            _h = _df_hist.copy()
+            if 'data_snapshot' not in _h.columns:
+                _h['data_snapshot'] = pd.Timestamp(_date_key)
+            _s, _a = _separar_por_tipo(_h)
+            if not _s.empty:
+                _sin_partes.append(_s)
+            if not _a.empty:
+                _agg_partes.append(_a)
+            _snap_dias_set.add(_date_key)
+
+        _df_snap_sin_concat = pd.concat(_sin_partes, ignore_index=True, sort=False) if _sin_partes else pd.DataFrame()
+        _df_snap_agg_concat = pd.concat(_agg_partes, ignore_index=True, sort=False) if _agg_partes else pd.DataFrame()
+        _snap_dias = sorted([pd.to_datetime(d) for d in _snap_dias_set])
+        st.session_state['_analise_temporal_cache'] = {
+            'key': _cache_key_at,
+            'sin': _df_snap_sin_concat,
+            'agg': _df_snap_agg_concat,
+            'dias': _snap_dias,
+        }
 
 # Garante numérico nas colunas de valor
 for _c in ['vl_sinistro_pago', 'vl_sinistro_pendente', 'vl_sinistro_total',
@@ -3650,23 +3705,24 @@ for _c in ['vl_sinistro_pago', 'vl_sinistro_pendente', 'vl_sinistro_total',
         _df_snap_sin_concat[_c] = pd.to_numeric(_df_snap_sin_concat[_c], errors='coerce').fillna(0)
 
 # ── Informativo: quantos dias acumulados ─────────────────────────────────────
-_qtd_dias_disponiveis = len(_snap_dias)
-_dias_historicos = _qtd_dias_disponiveis - 1  # excluindo hoje
-if _dias_historicos <= 0:
-    st.warning(
-        "⚠️ **Você está apenas com o snapshot de hoje.** As 5 abas abaixo precisam "
-        "de pelo menos 1 dia histórico para mostrar análises temporais. Suba seu "
-        "consolidado antigo pelo botão acima ou volte amanhã após fazer o ciclo "
-        "upload/download diário."
-    )
-else:
-    _primeira = min(_snap_dias).strftime('%d/%m/%Y')
-    _ultima = max(_snap_dias).strftime('%d/%m/%Y')
-    st.success(
-        f"✅ **{_qtd_dias_disponiveis} dia(s) de snapshot disponíveis** "
-        f"({_primeira} → {_ultima}). Histórico de {_dias_historicos} dia(s) "
-        f"para análise temporal."
-    )
+if _mostrar_analise_temporal:
+    _qtd_dias_disponiveis = len(_snap_dias)
+    _dias_historicos = _qtd_dias_disponiveis - 1  # excluindo hoje
+    if _dias_historicos <= 0:
+        st.warning(
+            "⚠️ **Você está apenas com o snapshot de hoje.** As 5 abas abaixo precisam "
+            "de pelo menos 1 dia histórico para mostrar análises temporais. Suba seu "
+            "consolidado antigo pelo botão acima ou volte amanhã após fazer o ciclo "
+            "upload/download diário."
+        )
+    else:
+        _primeira = min(_snap_dias).strftime('%d/%m/%Y')
+        _ultima = max(_snap_dias).strftime('%d/%m/%Y')
+        st.success(
+            f"✅ **{_qtd_dias_disponiveis} dia(s) de snapshot disponíveis** "
+            f"({_primeira} → {_ultima}). Histórico de {_dias_historicos} dia(s) "
+            f"para análise temporal."
+        )
 
 # ── Helpers compartilhados pelas abas (Onda 2) ───────────────────────────────
 _st_fragment_temp = getattr(st, 'fragment', None) or getattr(st, 'experimental_fragment', None)
