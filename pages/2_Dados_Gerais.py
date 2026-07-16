@@ -568,9 +568,39 @@ def _gerar_snapshot_bytes(_df_sin, _dados_calc=None):
 
     _consolidado = pd.concat(_todos_dfs, ignore_index=True, sort=False)
 
-    # Dedup separado por tipo de registro
+    # ── Agregação por (nr_sinistro, data_snapshot) — CORREÇÃO DE BUG CRÍTICO ────
+    # Um mesmo nr_sinistro pode ter MÚLTIPLAS linhas no dia (uma por Cobertura —
+    # confirmado pelo uso de .nunique() em todo o app_homologacao.py ao contar
+    # sinistros). O código anterior usava drop_duplicates(keep='last'), que
+    # DESCARTAVA todas as linhas de cobertura exceto uma, subestimando o
+    # Total Sinistro real em ~30% nos snapshots salvos (o "hoje" ao vivo, que
+    # não passava por esse dedup, sempre mostrou o valor certo). A correção
+    # agrega (soma) os valores financeiros de todas as linhas do mesmo
+    # sinistro no mesmo dia, preservando o total verdadeiro.
     _mask_sin = _consolidado['tipo_registro'] == 'SINISTRO'
-    _sin = _consolidado[_mask_sin].drop_duplicates(subset=['nr_sinistro', 'data_snapshot'], keep='last')
+    _sin_bruto = _consolidado[_mask_sin].copy()
+
+    if not _sin_bruto.empty:
+        _cols_valor_sin = [c for c in [
+            'vl_sinistro_pago', 'vl_sinistro_pendente', 'vl_sinistro_total',
+            'vl_despesa_pago', 'vl_despesa_pendente', 'vl_despesa_total',
+            'vl_honorario_total', 'vl_salvado_total', 'Total Sinistro'
+        ] if c in _sin_bruto.columns]
+        for _c in _cols_valor_sin:
+            _sin_bruto[_c] = pd.to_numeric(_sin_bruto[_c], errors='coerce').fillna(0)
+
+        _cols_categ_sin = [c for c in [
+            'N° Apólice', 'cd_apolice', 'nr_ramo', 'dt_aviso', 'dt_ocorrencia',
+            'status_processo', 'status_movimento', 'Ramo', 'Utilização', 'tipo_registro'
+        ] if c in _sin_bruto.columns]
+
+        _agg_dict = {c: 'sum' for c in _cols_valor_sin}
+        _agg_dict.update({c: 'first' for c in _cols_categ_sin})
+
+        _sin = _sin_bruto.groupby(['nr_sinistro', 'data_snapshot'], as_index=False, dropna=False).agg(_agg_dict)
+    else:
+        _sin = _sin_bruto
+
     _agg = _consolidado[~_mask_sin]
     if not _agg.empty and 'Ramo' in _agg.columns and 'Utilização' in _agg.columns:
         _agg = _agg.drop_duplicates(subset=['Ramo', 'Utilização', 'data_snapshot'], keep='last')
@@ -4197,7 +4227,8 @@ with _tab_visao:
 <b>Atenção:</b><br>
 • A precisão dos cards de ritmo aumenta com mais dias acumulados. Com 2-3 dias, eventos pontuais podem dominar a média.<br>
 • A sinistralidade "MESMO período" só calcula sobre apólices visíveis no slider — se você mudar o slider, a curva muda.<br>
-• Se a sinistralidade INDEPENDENTE aparecer com valores muito baixos ou zerada, pode ser que os snapshots antigos foram gerados antes da versão atual (sem AGG_CARTEIRA). Rode um ciclo upload/download com a versão atual para enriquecer.
+• Se a sinistralidade INDEPENDENTE aparecer com valores muito baixos ou zerada, pode ser que os snapshots antigos foram gerados antes da versão atual (sem AGG_CARTEIRA). Rode um ciclo upload/download com a versão atual para enriquecer.<br>
+• <b>Se você recarregar os arquivos-fonte (apolice_endosso/sinistro) com dados revisados</b> — não apenas sinistros novos, mas valores atualizados de sinistros que já existiam (reavaliação de reserva, fechamento de período, correção) — os cards de ritmo (Velocidade de pagamento, Constituição de reserva, Net flow) podem aparecer anormalmente altos naquele dia. Isso acontece porque o cálculo divide a diferença toda entre os dois últimos snapshots pelos dias entre eles, e não distingue "revisão pontual da base" de "movimentação diária real". Se um número parecer muito fora do padrão, verifique se você recarregou uma base revisada recentemente antes de interpretar como tendência real.
 </div>
 """, unsafe_allow_html=True)
 
