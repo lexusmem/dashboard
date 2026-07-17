@@ -989,9 +989,38 @@ with col_cob_sin_2:
         df_cob_view_ap = df_sin_ap.copy()
         df_cob_view_ap['Franquia Apólice'] = 0.0
     else:
-        df_cob_view_ap = pd.merge(df_cob_ap, df_sin_ap, on='Cobertura Apólice', how='left')
+        # Os nomes de cobertura diferem entre os sistemas de origem (textos
+        # truncados em tamanhos diferentes, grafias distintas), então o merge
+        # exato pelo nome deixava sinistros sem correspondência (exibia 0,00).
+        # Usa o mesmo fuzzy match da franquia (SequenceMatcher, threshold 0.75)
+        # para alocar o sinistro na cobertura correspondente da apólice.
+        from difflib import SequenceMatcher
+        _nomes_cob_ap = df_cob_ap['Cobertura Apólice'].astype(str).tolist()
+
+        def _melhor_cobertura_ap(nome_sin, threshold=0.75):
+            _scores = [(SequenceMatcher(None, str(nome_sin).lower(), c.lower()).ratio(), c)
+                       for c in _nomes_cob_ap]
+            _best_score, _best_cob = max(_scores, key=lambda x: x[0])
+            return _best_cob if _best_score >= threshold else None
+
+        df_sin_ap['Cobertura Match'] = df_sin_ap['Cobertura Apólice'].map(_melhor_cobertura_ap)
+
+        # Sinistros com correspondência: soma na cobertura da apólice casada
+        _sin_match_ap = df_sin_ap.dropna(subset=['Cobertura Match'])\
+            .groupby('Cobertura Match')['Total Sinistro'].sum().reset_index()\
+            .rename(columns={'Cobertura Match': 'Cobertura Apólice'})
+
+        df_cob_view_ap = pd.merge(df_cob_ap, _sin_match_ap, on='Cobertura Apólice', how='left')
         df_cob_view_ap['Total Sinistro'] = df_cob_view_ap['Total Sinistro'].fillna(0)
         df_cob_view_ap['Franquia Apólice'] = df_cob_view_ap['Franquia Apólice'].fillna(0)
+
+        # Sinistros SEM correspondência (similaridade < 0.75): exibe mesmo
+        # assim como linha adicional, para o valor nunca sumir da tabela
+        _sin_sem_match_ap = df_sin_ap[df_sin_ap['Cobertura Match'].isna()]
+        if not _sin_sem_match_ap.empty:
+            _extra_ap = _sin_sem_match_ap[['Cobertura Apólice', 'Total Sinistro']].copy()
+            _extra_ap['Franquia Apólice'] = 0.0
+            df_cob_view_ap = pd.concat([df_cob_view_ap, _extra_ap], ignore_index=True)
 
     df_cob_view_ap['Franquia Apólice'] = df_cob_view_ap['Franquia Apólice'].map(formatar_valor_br)
     df_cob_view_ap['Total Sinistro']   = df_cob_view_ap['Total Sinistro'].map(formatar_valor_br)
