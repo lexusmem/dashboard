@@ -3044,7 +3044,9 @@ if not df_para_soma.empty and not _sin_valor.empty:
     # Bandas de severidade: razão média/mediana da PRÓPRIA utilização
     # (índice de cauda: média muito acima da mediana = poucos sinistros
     # grandes puxando o valor — cauda pesada)
-    _LIM_SEV_ALTA, _LIM_SEV_BAIXA = 3.0, 2.0
+    # Limiar de Baixa calibrado pelo julgamento de subscrição (2,5); combinado
+    # com a "trava de cauda" aplicada após a classificação (ver abaixo).
+    _LIM_SEV_ALTA, _LIM_SEV_BAIXA = 3.0, 2.5
 
     def _nivel_severidade(media, mediana):
         if media <= 0 or mediana <= 0:
@@ -3067,7 +3069,8 @@ Alta ≥ {_fmt_pct(_med_freq * _LIM_ALTA)} ·
 Baixa ≤ {_fmt_pct(_med_freq * _LIM_BAIXA)} &nbsp;|&nbsp;
 <b>Severidade</b> (razão média ÷ mediana da própria utilização — índice de cauda) —
 Alta ≥ {_LIM_SEV_ALTA:.2f} ·
-Baixa ≤ {_LIM_SEV_BAIXA:.2f}
+Baixa ≤ {_LIM_SEV_BAIXA:.2f} ·
+trava de cauda: utilização com sinistro ≥ corte não é classificada como Baixa
 </div>
 """, unsafe_allow_html=True)
 
@@ -3110,6 +3113,14 @@ Baixa ≤ {_LIM_SEV_BAIXA:.2f}
         lambda r: r['Sinistro_Medio'] / r['Sinistro_Mediano'] if r['Sinistro_Mediano'] > 0 else 0, axis=1)
     _perfil_util['Nível Severidade'] = _perfil_util.apply(
         lambda r: _nivel_severidade(r['Sinistro_Medio'], r['Sinistro_Mediano']), axis=1)
+
+    # Trava de cauda: utilização com ao menos 1 sinistro acima do corte
+    # selecionado não pode ser rotulada como severidade Baixa — sobe para
+    # Média. Evita rotular como "baixa severidade" um segmento que já
+    # produziu sinistro de grande porte.
+    _perfil_util['Nível Severidade'] = _perfil_util.apply(
+        lambda r: 'Média' if (r['Nível Severidade'] == 'Baixa' and r['Qtd_Graves'] > 0)
+        else r['Nível Severidade'], axis=1)
 
     def _descricao_perfil(row):
         f, s = row['Nível Frequência'], row['Nível Severidade']
@@ -3161,7 +3172,6 @@ Baixa ≤ {_LIM_SEV_BAIXA:.2f}
             _plot,
             x='Frequência', y='Sinistro_Medio',
             size='Total_Premio', color='Utilização',
-            text='Utilização',
             labels={'Sinistro_Medio': 'Severidade média (R$)',
                     'Frequência': 'Frequência (sinistros por apólice)'},
             height=480
@@ -3171,14 +3181,27 @@ Baixa ≤ {_LIM_SEV_BAIXA:.2f}
                            annotation_text='mediana severidade (base completa)', annotation_font_size=10)
         fig_mapa.add_vline(x=_med_freq, line_dash='dash', line_color='#9ca3af',
                            annotation_text='mediana frequência (base completa)', annotation_font_size=10)
-        fig_mapa.update_traces(textposition='top center', textfont_size=10)
-        fig_mapa.update_layout(showlegend=False, plot_bgcolor='rgba(0,0,0,0)',
-                               paper_bgcolor='rgba(0,0,0,0)',
-                               xaxis_tickformat='.0%')
+        fig_mapa.update_traces(
+            hovertemplate='<b>%{fullData.name}</b><br>'
+                          'Frequência: %{x:.2%}<br>'
+                          'Severidade média: R$ %{y:,.2f}'
+                          '<extra></extra>'
+        )
+        fig_mapa.update_layout(
+            showlegend=True,
+            legend=dict(orientation='v', yanchor='top', y=1.0,
+                        xanchor='left', x=1.02, font=dict(size=10),
+                        itemwidth=30),
+            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+            xaxis_tickformat='.0%',
+            margin=dict(r=10)
+        )
         st.plotly_chart(fig_mapa, use_container_width=True)
         st.caption(
             "Quadrante superior direito = alta frequência e alta severidade (pior perfil). "
             "Superior esquerdo = baixa frequência com severidade alta (perfil de cauda/catastrófico). "
+            "Cada cor é uma utilização (identificada na legenda ao lado; passe o mouse sobre a bolha para "
+            "ver os valores). Quadrante superior direito = alta frequência e alta severidade. "
             "Tamanho da bolha = prêmio (exposição). As linhas tracejadas são as medianas da base completa — "
             "a vertical é a régua da frequência na coluna Perfil; a horizontal é apenas referência visual "
             "(a severidade do Perfil é classificada pela razão média/mediana de cada utilização)."
@@ -3205,6 +3228,11 @@ Baixa ≤ {_LIM_SEV_BAIXA:.2f}
         _f_cauda      = f"{_r['Media_Mediana']:.2f}".replace('.', ',')
         _f_sev_alta   = f"{_LIM_SEV_ALTA:.2f}".replace('.', ',')
         _f_sev_baixa  = f"{_LIM_SEV_BAIXA:.2f}".replace('.', ',')
+        if int(_r['Qtd_Graves']) > 0:
+            _txt_trava = (f"- Trava de cauda: a utilização tem **{int(_r['Qtd_Graves'])} sinistro(s) "
+                          f"acima do corte selecionado** — se a razão indicar Baixa, o nível sobe para Média")
+        else:
+            _txt_trava = "- Trava de cauda: não se aplica (nenhum sinistro acima do corte selecionado)"
 
         st.markdown(f"""
 **1️⃣ Frequência da utilização** *(dados do período/filtros selecionados)*
@@ -3224,7 +3252,8 @@ Baixa ≤ {_LIM_SEV_BAIXA:.2f}
 
 **4️⃣ Comparação com as bandas de severidade**
 - Alta: razão ≥ **{_f_sev_alta}** · Baixa: razão ≤ **{_f_sev_baixa}** · Média: entre as duas
-- Razão de {_f_cauda} → nível **{_r['Nível Severidade']}**
+{_txt_trava}
+- Resultado: nível **{_r['Nível Severidade']}**
 
 **✅ Perfil final: {_r['Perfil']}**
 """)
@@ -3239,7 +3268,7 @@ st.markdown("""
 <b>Frequência</b> = sinistros únicos com valor ÷ apólices únicas do segmento, no período filtrado (slider). Não é frequência anualizada por veículo-exposto — informe isso ao ressegurador se solicitado.<br><br>
 <b>Severidade</b> = valor consolidado por sinistro, incluindo todas as coberturas acionadas.<br><br>
 <b>Classificação de frequência (Baixa/Média/Alta):</b> comparação contra a mediana da <b>base completa</b> (todas as apólices e sinistros carregados, sem filtros nem slider), com bandas Alta ≥ 150% da mediana e Baixa ≤ 67% da mediana. Por usar referência fixa, o rótulo é estável e não muda conforme os filtros.<br><br>
-<b>Classificação de severidade (Baixa/Média/Alta):</b> razão <b>média ÷ mediana</b> dos sinistros da própria utilização (índice de cauda). Razão elevada indica que poucos sinistros de grande valor puxam a média para cima — distribuição de cauda pesada, com maior potencial de perdas severas. Bandas: Alta ≥ 3,00 · Baixa ≤ 2,00. Como usa apenas os dados da própria utilização, o rótulo independe do mix da carteira e dos filtros aplicados (desde que o período contenha os mesmos sinistros).<br><br>
+<b>Classificação de severidade (Baixa/Média/Alta):</b> razão <b>média ÷ mediana</b> dos sinistros da própria utilização (índice de cauda). Razão elevada indica que poucos sinistros de grande valor puxam a média para cima — distribuição de cauda pesada, com maior potencial de perdas severas. Bandas: Alta ≥ 3,00 · Baixa ≤ 2,50 · Média entre as duas (limiar de Baixa calibrado pelo julgamento de subscrição). <b>Trava de cauda:</b> utilização com ao menos um sinistro acima do corte selecionado não é classificada como severidade Baixa — sobe para Média (por depender do corte escolhido, o nível de severidade pode mudar conforme essa seleção). Como usa os dados da própria utilização, o rótulo independe do mix da carteira.<br><br>
 <b>Corte de sinistro grave:</b> valores fixos de R$ 100 mil a R$ 5 milhões (critério: valor ≥ corte) e "Acima de 7.000.000,00" (critério: valor > R$ 7 milhões). Sugerido alinhar o corte com a prioridade/retenção do contrato de resseguro.
 </div>
 """, unsafe_allow_html=True)
