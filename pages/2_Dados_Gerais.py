@@ -439,8 +439,12 @@ _filtro_keys = ['filtro_rep', 'filtro_cor', 'filtro_seg', 'filtro_ramo', 'filtro
 st.sidebar.markdown('<div style="margin-top:1rem"></div>', unsafe_allow_html=True)
 if st.sidebar.button('Limpar Todos os Filtros'):
     for k in _filtro_keys:
-        if k in st.session_state:
-            st.session_state[k] = []
+        # Remove a key do session_state em vez de atribuir [] — como os
+        # multiselect usam key + default=[], setar o valor manualmente
+        # dispara o aviso "created with a default value but also had its
+        # value set via the Session State API". Apagando a key, o widget
+        # é recriado já vazio no próximo rerun, sem conflito.
+        st.session_state.pop(k, None)
     st.session_state['resetar_slider'] = True
     st.rerun()
 
