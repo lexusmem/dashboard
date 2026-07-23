@@ -2928,6 +2928,277 @@ else:
     st.info("Nenhum dado disponível para análise de variação.")
 
 # ══════════════════════════════════════════════════════════════════════════════
+# BLOCO: PRÊMIO DE RISCO E ADEQUAÇÃO TARIFÁRIA
+# Prêmio de risco (custo técnico puro) por Utilização e por Região de Circulação,
+# comparado ao prêmio pago médio, revelando a folga/aperto tarifário de cada
+# segmento — o que a sinistralidade média sozinha não mostra.
+#
+# Conceito (aula MBA — Prêmio de Risco):
+#   Prêmio de Risco (PR) = frequência × severidade
+#                        = total de sinistros ÷ nº de apólices expostas
+#   É o custo puro de sinistro por apólice, independente do prêmio cobrado.
+#
+# Depende de variáveis já existentes no ponto de inserção:
+#   df_para_soma                    (apólices, numérico, filtrado + slider)
+#   df_sinistro_periodo_atualizado  (sinistros do período filtrado)
+#   formatar_valor_br, pd, px, np, st
+# ══════════════════════════════════════════════════════════════════════════════
+
+st.write("---")
+st.subheader("💰 Prêmio de Risco e Adequação Tarifária")
+st.caption(
+    "Prêmio de risco = custo técnico puro de sinistro por apólice (frequência × severidade). "
+    "Comparado ao prêmio pago médio, revela onde a tarifa está apertada ou com folga — "
+    "leitura que a sinistralidade média sozinha não entrega. "
+    "Sinistros sem movimentação financeira (valor zerado) são desconsiderados."
+)
+
+# ── Base de sinistros com valor consolidado por sinistro (período filtrado) ──
+if not df_sinistro_periodo_atualizado.empty:
+    _df_sin_pr_pr = df_sinistro_periodo_atualizado.copy()
+    _df_sin_pr_pr['Total Sinistro'] = pd.to_numeric(_df_sin_pr_pr['Total Sinistro'], errors='coerce').fillna(0.0)
+
+    _sin_valor_pr = _df_sin_pr_pr.groupby('nr_sinistro').agg(
+        Valor_Sinistro=('Total Sinistro', 'sum'),
+        Apolice=('N° Apólice', 'first')
+    ).reset_index()
+    _sin_valor_pr = _sin_valor_pr[_sin_valor_pr['Valor_Sinistro'] > 0].copy()
+else:
+    _sin_valor_pr = pd.DataFrame(columns=['nr_sinistro', 'Valor_Sinistro', 'Apolice'])
+
+# ── Margem de segurança configurável (aula: prêmio puro = PR × (1 + MS)) ─────
+col_ms_1, col_ms_2 = st.columns([1, 3])
+with col_ms_1:
+    _margem_seg = st.number_input(
+        'Margem de segurança (%)',
+        min_value=0.0, max_value=100.0, value=20.0, step=5.0,
+        help='Coeficiente de segurança aplicado sobre o prêmio de risco para '
+             'obter o prêmio puro (proteção contra flutuações de riscos futuros). '
+             'O material didático usa 20%.',
+        key='margem_seg_premio_risco'
+    ) / 100.0
+
+
+def _monta_premio_risco(_dim, _df_apo, _sin_valor):
+    """Calcula prêmio de risco e adequação tarifária agrupando por _dim."""
+    if _df_apo.empty:
+        return pd.DataFrame()
+
+    # Exposição e prêmio pago por segmento (período/filtros da tela)
+    _exp = _df_apo.groupby(_dim).agg(
+        Qtd_Apolices=('N° Apólice', 'nunique'),
+        Total_Premio=('Soma Prêmio Pago por Apolice', 'sum')
+    ).reset_index()
+
+    # Mapa apólice -> segmento, para alocar cada sinistro ao seu segmento
+    _map = _df_apo[['N° Apólice', _dim]].drop_duplicates(subset=['N° Apólice'])
+    _sv = _sin_valor.merge(_map, left_on='Apolice', right_on='N° Apólice', how='left')
+    _sv[_dim] = _sv[_dim].fillna('Não identificada')
+
+    _agg = _sv.groupby(_dim).agg(
+        Qtd_Sinistros=('nr_sinistro', 'nunique'),
+        Total_Sinistro=('Valor_Sinistro', 'sum'),
+        Sinistro_Medio=('Valor_Sinistro', 'mean')
+    ).reset_index()
+
+    _r = _exp.merge(_agg, on=_dim, how='left')
+    for _c in ['Qtd_Sinistros', 'Total_Sinistro', 'Sinistro_Medio']:
+        _r[_c] = _r[_c].fillna(0)
+
+    # Frequência = sinistros ÷ apólices
+    _r['Frequência'] = _r['Qtd_Sinistros'] / _r['Qtd_Apolices'].replace(0, np.nan)
+    _r['Frequência'] = _r['Frequência'].fillna(0)
+
+    # Prêmio de risco = total sinistro ÷ apólices  (= frequência × severidade)
+    _r['Premio_Risco'] = _r['Total_Sinistro'] / _r['Qtd_Apolices'].replace(0, np.nan)
+    _r['Premio_Risco'] = _r['Premio_Risco'].fillna(0)
+
+    # Prêmio puro = PR × (1 + margem de segurança)
+    _r['Premio_Puro'] = _r['Premio_Risco'] * (1 + _margem_seg)
+
+    # Prêmio pago médio por apólice
+    _r['Premio_Pago_Medio'] = _r['Total_Premio'] / _r['Qtd_Apolices'].replace(0, np.nan)
+    _r['Premio_Pago_Medio'] = _r['Premio_Pago_Medio'].fillna(0)
+
+    # Índice de adequação = prêmio pago médio ÷ prêmio de risco
+    # (quantas vezes o prêmio pago cobre o custo puro; < 1 = subprecificado)
+    _r['Indice_Adequacao'] = _r.apply(
+        lambda x: x['Premio_Pago_Medio'] / x['Premio_Risco'] if x['Premio_Risco'] > 0 else np.nan, axis=1)
+
+    # Sinistralidade do segmento (para comparação)
+    _r['Sinistralidade'] = _r.apply(
+        lambda x: x['Total_Sinistro'] / x['Total_Premio'] if x['Total_Premio'] > 0 else 0, axis=1)
+
+    return _r.sort_values('Total_Premio', ascending=False)
+
+
+def _classifica_adequacao(row):
+    """Rótulo de adequação tarifária a partir do índice e da base amostral."""
+    if row['Qtd_Sinistros'] == 0:
+        return 'Sem sinistros — PR não estimável'
+    idx = row['Indice_Adequacao']
+    if pd.isna(idx) or idx == 0:
+        return 'Indeterminado'
+    if idx < 1.0:
+        base = 'Prêmio pago não cobre o custo puro'
+    elif idx < 1.6:
+        base = 'Cobre o custo, margem apertada'
+    else:
+        base = 'Boa folga sobre o custo puro'
+    # Aviso de baixa confiabilidade estatística
+    if row['Qtd_Sinistros'] < 5:
+        base += ' (amostra pequena)'
+    return base
+
+
+def _exibe_tabela_pr(_r, _dim, _label_dim):
+    """Formata e exibe a tabela de prêmio de risco (padrão BR do app)."""
+    if _r.empty:
+        st.info(f"Sem dados para calcular prêmio de risco por {_label_dim}.")
+        return
+
+    _r = _r.copy()
+    _r['Adequação'] = _r.apply(_classifica_adequacao, axis=1)
+
+    _e = _r.copy()
+    _e['Frequência']       = _e['Frequência'].map(lambda x: f"{x:.2%}".replace('.', ','))
+    _e['Sinistralidade']   = _e['Sinistralidade'].map(lambda x: f"{x:.2%}".replace('.', ','))
+    _e['Indice_Adequacao'] = _e['Indice_Adequacao'].map(
+        lambda x: '—' if pd.isna(x) else f"{x:.2f}x".replace('.', ','))
+    for _c in ['Premio_Risco', 'Premio_Puro', 'Premio_Pago_Medio', 'Sinistro_Medio', 'Total_Sinistro', 'Total_Premio']:
+        _e[_c] = _e[_c].map(formatar_valor_br)
+    _e['Qtd_Sinistros'] = _e['Qtd_Sinistros'].astype(int)
+
+    _cols = [_dim, 'Qtd_Apolices', 'Qtd_Sinistros', 'Frequência',
+             'Sinistro_Medio', 'Premio_Risco', 'Premio_Puro',
+             'Premio_Pago_Medio', 'Indice_Adequacao', 'Sinistralidade', 'Adequação']
+    st.dataframe(
+        _e[_cols].rename(columns={
+            _dim:                'Segmento' if _dim != 'Utilização' else 'Utilização',
+            'Sinistro_Medio':    'Severidade Média (R$)',
+            'Premio_Risco':      'Prêmio de Risco (R$)',
+            'Premio_Puro':       f'Prêmio Puro +{int(_margem_seg*100)}% (R$)',
+            'Premio_Pago_Medio': 'Prêmio Pago Médio (R$)',
+            'Indice_Adequacao':  'Índice Adequação',
+        }),
+        hide_index=True,
+        use_container_width=True,
+        column_config={
+            _dim if _dim == 'Utilização' else 'Segmento': st.column_config.Column(width=180),
+            "Adequação": st.column_config.Column(width=240),
+        })
+
+
+if not df_para_soma.empty and not _sin_valor_pr.empty:
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Por UTILIZAÇÃO
+    # ══════════════════════════════════════════════════════════════════════
+    st.markdown('<p class="section-label">Prêmio de Risco por Utilização</p>', unsafe_allow_html=True)
+    _pr_util = _monta_premio_risco('Utilização', df_para_soma, _sin_valor_pr)
+    _exibe_tabela_pr(_pr_util, 'Utilização', 'Utilização')
+
+    # Gráfico: prêmio de risco vs prêmio pago médio por utilização
+    _plot_u = _pr_util[(_pr_util['Qtd_Sinistros'] > 0) &
+                       (_pr_util['Utilização'].astype(str) != '0')].copy()
+    if not _plot_u.empty:
+        _plot_u = _plot_u.sort_values('Premio_Risco', ascending=True)
+        fig_pr_u = px.bar(
+            _plot_u, y='Utilização',
+            x=['Premio_Risco', 'Premio_Pago_Medio'],
+            orientation='h', barmode='group',
+            labels={'value': 'R$ por apólice', 'variable': ''},
+            height=420,
+            color_discrete_map={'Premio_Risco': '#dc2626', 'Premio_Pago_Medio': '#1a56db'}
+        )
+        _nomes = {'Premio_Risco': 'Prêmio de Risco (custo puro)', 'Premio_Pago_Medio': 'Prêmio Pago Médio'}
+        fig_pr_u.for_each_trace(lambda t: t.update(name=_nomes.get(t.name, t.name)))
+        fig_pr_u.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                               legend=dict(orientation='h', yanchor='bottom', y=1.02),
+                               yaxis_title=None)
+        st.plotly_chart(fig_pr_u, use_container_width=True)
+        st.caption(
+            "Barra vermelha (prêmio de risco) próxima ou acima da azul (prêmio pago médio) "
+            "sinaliza segmento subprecificado; azul bem acima da vermelha indica folga tarifária."
+        )
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Por REGIÃO DE CIRCULAÇÃO
+    # ══════════════════════════════════════════════════════════════════════
+    st.write("")
+    st.markdown('<p class="section-label">Prêmio de Risco por Região de Circulação</p>', unsafe_allow_html=True)
+    if 'Região de Circulação' in df_para_soma.columns:
+        _pr_reg = _monta_premio_risco('Região de Circulação', df_para_soma, _sin_valor_pr)
+        _exibe_tabela_pr(_pr_reg, 'Região de Circulação', 'Região de Circulação')
+    else:
+        st.info("Coluna 'Região de Circulação' não disponível na base do período.")
+
+    # ══════════════════════════════════════════════════════════════════════
+    # CRUZAMENTO Utilização × Região (heatmap de prêmio de risco)
+    # ══════════════════════════════════════════════════════════════════════
+    if 'Região de Circulação' in df_para_soma.columns:
+        st.write("")
+        st.markdown('<p class="section-label">Prêmio de Risco: Utilização × Região de Circulação</p>', unsafe_allow_html=True)
+
+        # Exposição por par (Utilização, Região)
+        _exp_cru = df_para_soma.groupby(['Utilização', 'Região de Circulação']).agg(
+            Qtd_Apolices=('N° Apólice', 'nunique')
+        ).reset_index()
+
+        # Sinistros alocados ao par via apólice
+        _map_cru = df_para_soma[['N° Apólice', 'Utilização', 'Região de Circulação']]\
+            .drop_duplicates(subset=['N° Apólice'])
+        _sv_cru = _sin_valor_pr.merge(_map_cru, left_on='Apolice', right_on='N° Apólice', how='inner')
+        _agg_cru = _sv_cru.groupby(['Utilização', 'Região de Circulação']).agg(
+            Total_Sinistro=('Valor_Sinistro', 'sum'),
+            Qtd_Sinistros=('nr_sinistro', 'nunique')
+        ).reset_index()
+
+        _cru = _exp_cru.merge(_agg_cru, on=['Utilização', 'Região de Circulação'], how='left').fillna(0)
+        _cru['Premio_Risco'] = _cru['Total_Sinistro'] / _cru['Qtd_Apolices'].replace(0, np.nan)
+
+        # Só mostra pares com exposição relevante para não poluir com ruído
+        _min_apo = st.slider(
+            'Mínimo de apólices por célula (filtra combinações com pouca exposição)',
+            min_value=1, max_value=200, value=30, step=10,
+            key='min_apo_heatmap_pr'
+        )
+        _cru_f = _cru[_cru['Qtd_Apolices'] >= _min_apo].copy()
+
+        if not _cru_f.empty and _cru_f['Premio_Risco'].notna().any():
+            _pivot = _cru_f.pivot_table(index='Utilização', columns='Região de Circulação',
+                                        values='Premio_Risco', aggfunc='first')
+            fig_heat = px.imshow(
+                _pivot,
+                labels=dict(x='Região de Circulação', y='Utilização', color='Prêmio de Risco (R$/apólice)'),
+                color_continuous_scale='Reds', aspect='auto', height=460,
+                text_auto='.0f'
+            )
+            fig_heat.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+            fig_heat.update_xaxes(tickangle=45)
+            st.plotly_chart(fig_heat, use_container_width=True)
+            st.caption(
+                "Células mais escuras = maior custo puro de sinistro por apólice naquela combinação de "
+                "utilização e região. Ajuste o mínimo de apólices acima para equilibrar granularidade e "
+                "confiabilidade — células com poucas apólices são estatisticamente instáveis."
+            )
+        else:
+            st.info(f"Nenhuma combinação Utilização × Região com ao menos {_min_apo} apólices no período.")
+else:
+    st.info("Sem dados suficientes para calcular prêmio de risco no período filtrado.")
+
+# ── Nota metodológica ────────────────────────────────────────────────────────
+st.markdown("""
+<div style="background:#e8effd;border-radius:8px;padding:14px 18px;font-size:0.82rem;color:#374151;">
+<b>📖 Notas metodológicas — prêmio de risco</b><br><br>
+<b>Prêmio de risco</b> = total de sinistros do segmento ÷ nº de apólices expostas (equivale a frequência × severidade). É o custo técnico puro por apólice, <b>independente do prêmio cobrado</b>. Base: sinistros com valor consolidado &gt; 0 (pagos + reservas) no período filtrado.<br><br>
+<b>Prêmio puro</b> = prêmio de risco × (1 + margem de segurança). A margem protege contra flutuações de riscos futuros; ajuste-a no campo acima.<br><br>
+<b>Índice de adequação</b> = prêmio pago médio ÷ prêmio de risco. Abaixo de 1,00, o prêmio pago não cobre nem o custo puro de sinistro (antes de qualquer despesa administrativa, comercial ou lucro) — sinal de subprecificação que a sinistralidade média pode mascarar.<br><br>
+<b>Cuidados do RCO:</b> (1) ramo de <b>cauda longa</b> — o prêmio de risco de segmentos pequenos é dominado pela ocorrência ou não de um sinistro catastrófico; leia junto com o perfil de cauda da seção anterior. (2) Sinistros judiciais de RC levam anos para liquidar, então o custo de anos recentes tende a ser <b>subestimado</b> (efeito IBNR) — use como referência de subscrição, não como taxa final. (3) Segmentos com menos de 5 sinistros são sinalizados como amostra pequena.
+</div>
+""", unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
 # BLOCO: PERFIL DE RISCO POR UTILIZAÇÃO — VISÃO RESSEGURADOR
 # Frequência × severidade × potencial catastrófico por Utilização.
 # - Sinistros com valor consolidado zerado são desconsiderados de toda a seção.
