@@ -1,0 +1,1138 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard RC Ônibus - Allseg Seguradora</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Chart.js Plugin DataLabels para exibir valores numéricos nas barras -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+    <!-- PapaParse para ler CSV -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <!-- SheetJS para ler Excel (.xlsx / .xls) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- FontAwesome Ícones -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f7ff',
+                            100: '#e0effe',
+                            500: '#0284c7',
+                            600: '#0369a1',
+                            700: '#075985',
+                            800: '#0c4a6e',
+                            900: '#0f172a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(226, 232, 240, 0.8);
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans min-h-screen flex flex-col antialiased">
+
+    <!-- Cabeçalho / Barra de Navegação -->
+    <header class="bg-slate-900 text-white sticky top-0 z-50 shadow-md">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="bg-sky-500 text-white p-2 rounded-lg font-bold">
+                    <i class="fa-solid fa-bus text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold leading-tight">Allseg Seguradora</h1>
+                    <p class="text-xs text-sky-400 font-medium">Painel de Análise Comercial & Subscrição - RC Ônibus</p>
+                </div>
+            </div>
+            
+            <div class="flex items-center space-x-3">
+                <label for="fileInput" class="cursor-pointer bg-sky-600 hover:bg-sky-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition flex items-center space-x-2 shadow">
+                    <i class="fa-solid fa-file-import"></i>
+                    <span>Carregar Excel / CSV</span>
+                </label>
+                <input type="file" id="fileInput" accept=".xlsx, .xls, .csv" class="hidden">
+            </div>
+        </div>
+    </header>
+
+    <!-- Banner de Início/Upload -->
+    <div id="uploadBanner" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 my-6 w-full">
+        <div class="border-2 border-dashed border-sky-300 bg-sky-50/50 rounded-2xl p-8 text-center hover:bg-sky-50 transition cursor-pointer" onclick="document.getElementById('fileInput').click()">
+            <div class="mx-auto w-16 h-16 bg-sky-100 text-sky-600 rounded-full flex items-center justify-center text-2xl mb-3">
+                <i class="fa-solid fa-file-excel"></i>
+            </div>
+            <h2 class="text-lg font-bold text-slate-800">Selecione ou Arraste a Planilha de Cotações / Propostas</h2>
+            <p class="text-sm text-slate-500 mt-1">Compatível com ficheiros <strong>.xlsx</strong>, <strong>.xls</strong> ou <strong>.csv</strong> extraídos do Portal do Corretor</p>
+            <button class="mt-4 bg-sky-600 text-white text-sm px-5 py-2 rounded-lg font-medium shadow hover:bg-sky-700 transition">
+                Escolher Ficheiro
+            </button>
+        </div>
+    </div>
+
+    <!-- Conteúdo Principal -->
+    <main id="dashboardContent" class="hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full space-y-6 flex-1">
+        
+        <!-- Barra de Filtros Pesquisa -->
+        <section class="glass-card rounded-2xl p-4 shadow-sm">
+            <div class="flex flex-col space-y-3">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <div class="flex items-center space-x-2 text-slate-700 font-bold text-sm">
+                        <i class="fa-solid fa-filter text-sky-600"></i>
+                        <span>Filtros Dinâmicos de Pesquisa</span>
+                    </div>
+                    <button id="btnResetFilters" class="bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center space-x-1">
+                        <i class="fa-solid fa-rotate-right"></i>
+                        <span>Limpar Filtros</span>
+                    </button>
+                </div>
+                
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
+                    <!-- Filtro Ano de Criação -->
+                    <div>
+                        <label class="block font-semibold text-slate-600 mb-1">Ano de Criação</label>
+                        <select id="filterAno" class="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 font-medium focus:ring-2 focus:ring-sky-500 outline-none">
+                            <option value="">Todos os Anos</option>
+                        </select>
+                    </div>
+
+                    <!-- Filtro Perfil de Frota -->
+                    <div>
+                        <label class="block font-semibold text-slate-600 mb-1">Perfil de Frota</label>
+                        <select id="filterPerfilFrota" class="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 font-medium focus:ring-2 focus:ring-sky-500 outline-none">
+                            <option value="">Todos os Perfis</option>
+                            <option value="1 Veículo">1 Veículo (Individual)</option>
+                            <option value="2 a 10 Veículos">2 a 10 Veículos (Frota P)</option>
+                            <option value="11 a 30 Veículos">11 a 30 Veículos (Frota M)</option>
+                            <option value="31+ Veículos">31+ Veículos (Frota G)</option>
+                        </select>
+                    </div>
+
+                    <!-- Filtro Produto -->
+                    <div>
+                        <label class="block font-semibold text-slate-600 mb-1">Tipo de Produto</label>
+                        <select id="filterProduto" class="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 font-medium focus:ring-2 focus:ring-sky-500 outline-none">
+                            <option value="">Todos os Produtos</option>
+                        </select>
+                    </div>
+
+                    <!-- Filtro Corretor -->
+                    <div>
+                        <label class="block font-semibold text-slate-600 mb-1">Corretor</label>
+                        <select id="filterCorretor" class="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 font-medium focus:ring-2 focus:ring-sky-500 outline-none">
+                            <option value="">Todos os Corretores</option>
+                        </select>
+                    </div>
+
+                    <!-- Filtro Representante -->
+                    <div>
+                        <label class="block font-semibold text-slate-600 mb-1">Representante</label>
+                        <select id="filterRepresentante" class="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 font-medium focus:ring-2 focus:ring-sky-500 outline-none">
+                            <option value="">Todos os Representantes</option>
+                        </select>
+                    </div>
+
+                    <!-- Filtro Subscritor -->
+                    <div>
+                        <label class="block font-semibold text-slate-600 mb-1">Subscritor</label>
+                        <select id="filterSubscritor" class="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 font-medium focus:ring-2 focus:ring-sky-500 outline-none">
+                            <option value="">Todos os Subscritores</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- KPI Cards Grid Geral (5 Cards Executivos) -->
+        <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            <!-- Card 1: Total Cotações -->
+            <div class="glass-card p-4 rounded-2xl shadow-sm border-l-4 border-l-sky-500 flex flex-col justify-between">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Cotações/Propostas</p>
+                        <h3 id="kpiTotalCotacoes" class="text-xl font-black text-slate-800 mt-1">0</h3>
+                    </div>
+                    <div class="bg-sky-100 text-sky-600 p-2.5 rounded-xl">
+                        <i class="fa-solid fa-file-signature text-base"></i>
+                    </div>
+                </div>
+                <div class="mt-3 flex items-center text-[11px] text-slate-500">
+                    <span id="kpiVeiculosTotal" class="font-semibold text-slate-700">0 veículos</span>
+                    <span class="mx-1">•</span>
+                    <span>Demandados</span>
+                </div>
+            </div>
+
+            <!-- Card 2: Apólices Emitidas & Conversão -->
+            <div class="glass-card p-4 rounded-2xl shadow-sm border-l-4 border-l-emerald-500 flex flex-col justify-between">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Apólices Emitidas</p>
+                        <h3 id="kpiEmitidas" class="text-xl font-black text-slate-800 mt-1">0</h3>
+                    </div>
+                    <div class="bg-emerald-100 text-emerald-600 p-2.5 rounded-xl">
+                        <i class="fa-solid fa-circle-check text-base"></i>
+                    </div>
+                </div>
+                <div class="mt-3 flex items-center justify-between text-[11px]">
+                    <span class="text-slate-500">Taxa Conversão:</span>
+                    <span id="kpiConversionRate" class="font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">0%</span>
+                </div>
+            </div>
+
+            <!-- Card 3: Prêmio Total Emitido -->
+            <div class="glass-card p-4 rounded-2xl shadow-sm border-l-4 border-l-indigo-500 flex flex-col justify-between">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Prêmio Emitido (R$)</p>
+                        <h3 id="kpiPremioEmitido" class="text-xl font-black text-slate-800 mt-1">R$ 0</h3>
+                    </div>
+                    <div class="bg-indigo-100 text-indigo-600 p-2.5 rounded-xl">
+                        <i class="fa-solid fa-sack-dollar text-base"></i>
+                    </div>
+                </div>
+                <div class="mt-3 flex items-center justify-between text-[11px] text-slate-500">
+                    <span>Ticket Médio:</span>
+                    <span id="kpiTicketMedio" class="font-semibold text-slate-700">R$ 0</span>
+                </div>
+            </div>
+
+            <!-- Card 4: Demandas em Subscrição / Análise -->
+            <div class="glass-card p-4 rounded-2xl shadow-sm border-l-4 border-l-purple-500 flex flex-col justify-between">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Em Subscrição/Análise</p>
+                        <h3 id="kpiEmSubscricao" class="text-xl font-black text-slate-800 mt-1">0</h3>
+                    </div>
+                    <div class="bg-purple-100 text-purple-600 p-2.5 rounded-xl">
+                        <i class="fa-solid fa-user-gear text-base"></i>
+                    </div>
+                </div>
+                <div class="mt-3 flex items-center justify-between text-[11px]">
+                    <span class="text-slate-500">Volume Esteira:</span>
+                    <span id="kpiPremioSubscricao" class="font-semibold text-purple-600">R$ 0</span>
+                </div>
+            </div>
+
+            <!-- Card 5: Cotações Expiradas -->
+            <div class="glass-card p-4 rounded-2xl shadow-sm border-l-4 border-l-amber-500 flex flex-col justify-between">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Cotações Expiradas</p>
+                        <h3 id="kpiExpiradas" class="text-xl font-black text-slate-800 mt-1">0</h3>
+                    </div>
+                    <div class="bg-amber-100 text-amber-600 p-2.5 rounded-xl">
+                        <i class="fa-solid fa-clock-rotate-left text-base"></i>
+                    </div>
+                </div>
+                <div class="mt-3 flex items-center justify-between text-[11px]">
+                    <span class="text-slate-500">Prêmio Expirado:</span>
+                    <span id="kpiPremioExpirado" class="font-semibold text-amber-600">R$ 0</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Bloco Temporal & Produtos -->
+        <section class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <!-- Evolução Temporal Ano a Ano (Cotações vs Emitidas) -->
+            <div class="glass-card p-5 rounded-2xl shadow-sm lg:col-span-6 flex flex-col">
+                <div class="flex justify-between items-center mb-4">
+                    <div>
+                        <h3 class="font-bold text-slate-800">Evolução Temporal Ano a Ano</h3>
+                        <p class="text-xs text-slate-500">Comparativo do volume histórico anual de cotações solicitadas vs. emitidas</p>
+                    </div>
+                </div>
+                <div class="relative flex-1 min-h-[260px]">
+                    <canvas id="chartEvolucaoTemporal"></canvas>
+                </div>
+            </div>
+
+            <!-- Evolução Temporal Ano a Ano por Tipo de Produto -->
+            <div class="glass-card p-5 rounded-2xl shadow-sm lg:col-span-6 flex flex-col">
+                <div class="flex justify-between items-center mb-4">
+                    <div>
+                        <h3 class="font-bold text-slate-800">Evolução Temporal Ano a Ano por Produto</h3>
+                        <p class="text-xs text-slate-500">Distribuição anual de cotações discriminada por modalidade de produto</p>
+                    </div>
+                </div>
+                <div class="relative flex-1 min-h-[260px]">
+                    <canvas id="chartEvolucaoProduto"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- Desempenho por Produto & Perfil de Frota -->
+        <section class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <!-- Desempenho por Tipo de Produto -->
+            <div class="glass-card p-5 rounded-2xl shadow-sm lg:col-span-5 flex flex-col">
+                <div class="flex justify-between items-center mb-4">
+                    <div>
+                        <h3 class="font-bold text-slate-800">Desempenho por Tipo de Produto</h3>
+                        <p class="text-xs text-slate-500">Total de cotações x Apólices emitidas por modalidade</p>
+                    </div>
+                </div>
+                <div class="relative flex-1 min-h-[260px]">
+                    <canvas id="chartProdutos"></canvas>
+                </div>
+            </div>
+
+            <!-- Gráfico Unificado: Perfil de Frota -->
+            <div class="glass-card p-5 rounded-2xl shadow-sm lg:col-span-7 flex flex-col">
+                <div class="flex justify-between items-center mb-4">
+                    <div>
+                        <h3 class="font-bold text-slate-800">Análise Unificada por Perfil de Frota</h3>
+                        <p class="text-xs text-slate-500">Proporção do volume total cotado (%) vs. Taxa de conversão/emissão em apólice (%)</p>
+                    </div>
+                </div>
+                <div class="relative flex-1 min-h-[260px]">
+                    <canvas id="chartPerfilFrotaUnificado"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- Charts Grid: Representantes & Subscritores -->
+        <section class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <!-- Volume por Representante Comercial (Horizontal) -->
+            <div class="glass-card p-5 rounded-2xl shadow-sm lg:col-span-6 flex flex-col">
+                <div class="flex justify-between items-center mb-4">
+                    <div>
+                        <h3 class="font-bold text-slate-800">Volume por Representante Comercial</h3>
+                        <p class="text-xs text-slate-500">Total de cotações x Emitidas por assessoria/representante</p>
+                    </div>
+                </div>
+                <div class="relative flex-1 min-h-[300px]">
+                    <canvas id="chartRepresentantes"></canvas>
+                </div>
+            </div>
+
+            <!-- Atuação dos Subscritores (Horizontal + Rótulos de Dados Visíveis) -->
+            <div class="glass-card p-5 rounded-2xl shadow-sm lg:col-span-6 flex flex-col">
+                <div class="flex justify-between items-center mb-4">
+                    <div>
+                        <h3 class="font-bold text-slate-800">Atuação dos Subscritores</h3>
+                        <p class="text-xs text-slate-500">Demandas analisadas e efetivadas por equipa de subscrição</p>
+                    </div>
+                </div>
+                <div class="relative flex-1 min-h-[300px]">
+                    <canvas id="chartSubscritores"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- Charts Grid: Status & Top Corretores -->
+        <section class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <!-- Visão Geral por Status -->
+            <div class="glass-card p-5 rounded-2xl shadow-sm lg:col-span-5 flex flex-col">
+                <div class="flex justify-between items-center mb-4">
+                    <div>
+                        <h3 class="font-bold text-slate-800">Visão Geral por Status</h3>
+                        <p class="text-xs text-slate-500">Estágio atual das cotações e propostas no portal</p>
+                    </div>
+                </div>
+                <div class="relative flex-1 min-h-[320px] flex items-center justify-center">
+                    <canvas id="chartStatus"></canvas>
+                </div>
+            </div>
+
+            <!-- Top Corretores (Horizontal + Rótulos de Dados Visíveis) -->
+            <div class="glass-card p-5 rounded-2xl shadow-sm lg:col-span-7 flex flex-col">
+                <div class="flex justify-between items-center mb-4">
+                    <div>
+                        <h3 class="font-bold text-slate-800">Top Corretores (Total de Cotações vs. Emitidas)</h3>
+                        <p class="text-xs text-slate-500">Volume de propostas iniciadas e taxa de efetivação dos principais parceiros</p>
+                    </div>
+                </div>
+                <div class="relative flex-1 min-h-[320px]">
+                    <canvas id="chartTopCorretores"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tabela Detalhada Completa -->
+        <section class="glass-card rounded-2xl p-5 shadow-sm space-y-4">
+            <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div>
+                    <h3 class="font-bold text-slate-800 text-base">Listagem Operacional de Propostas & Cotações</h3>
+                    <p class="text-xs text-slate-500">Consulta analítica por corretor, cliente, representante, subscritor e perfil</p>
+                </div>
+                <div class="w-full sm:w-72 relative">
+                    <input type="text" id="searchInput" placeholder="Buscar por Corretor, Cliente, Subscritor..." class="w-full bg-white border border-slate-300 rounded-lg pl-9 pr-3 py-2 text-xs focus:ring-2 focus:ring-sky-500 outline-none">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+                </div>
+            </div>
+
+            <div class="overflow-x-auto custom-scrollbar border border-slate-200 rounded-xl">
+                <table class="w-full text-left text-xs text-slate-600">
+                    <thead class="bg-slate-100 text-slate-700 font-bold uppercase tracking-wider border-b border-slate-200">
+                        <tr>
+                            <th class="p-3">Cotação</th>
+                            <th class="p-3">Data Criação</th>
+                            <th class="p-3">Produto</th>
+                            <th class="p-3">Cliente</th>
+                            <th class="p-3">Corretor</th>
+                            <th class="p-3">Subscritor(es)</th>
+                            <th class="p-3 text-center">Perfil Frota</th>
+                            <th class="p-3 text-right">Prêmio (R$)</th>
+                            <th class="p-3 text-center">Status</th>
+                            <th class="p-3">Apólice</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody" class="divide-y divide-slate-100 bg-white">
+                        <!-- Preenchido via JS -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Paginação -->
+            <div class="flex items-center justify-between text-xs text-slate-500 pt-2">
+                <div id="tableInfo">Exibindo 0 registros</div>
+                <div class="flex space-x-2">
+                    <button id="btnPrevPage" class="px-3 py-1 bg-slate-200 hover:bg-slate-300 rounded font-semibold text-slate-700 disabled:opacity-50">Anterior</button>
+                    <button id="btnNextPage" class="px-3 py-1 bg-slate-200 hover:bg-slate-300 rounded font-semibold text-slate-700 disabled:opacity-50">Próximo</button>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Rodapé -->
+    <footer class="bg-slate-900 text-slate-400 text-xs py-4 text-center mt-auto border-t border-slate-800">
+        <p>Allseg Seguradora • Painel de Inteligência de Negócios e Subscrição RC Ônibus</p>
+    </footer>
+
+    <!-- Lógica de Processamento e Visualização de Dados -->
+    <script>
+        // Registrar o plugin ChartDataLabels globalmente
+        Chart.register(ChartDataLabels);
+
+        // Estado Global
+        let rawData = [];
+        let filteredData = [];
+        let chartInstances = {};
+        let currentPage = 1;
+        const itemsPerPage = 15;
+
+        // Elementos DOM
+        const fileInput = document.getElementById('fileInput');
+        const uploadBanner = document.getElementById('uploadBanner');
+        const dashboardContent = document.getElementById('dashboardContent');
+        
+        const filterAno = document.getElementById('filterAno');
+        const filterPerfilFrota = document.getElementById('filterPerfilFrota');
+        const filterProduto = document.getElementById('filterProduto');
+        const filterCorretor = document.getElementById('filterCorretor');
+        const filterRepresentante = document.getElementById('filterRepresentante');
+        const filterSubscritor = document.getElementById('filterSubscritor');
+        const searchInput = document.getElementById('searchInput');
+        const btnResetFilters = document.getElementById('btnResetFilters');
+
+        const formatBRL = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
+
+        // Função de Tratamento de Data do Excel ou String
+        function parseExcelDate(raw) {
+            if (!raw && raw !== 0) return { dateStr: '-', year: 'Outros' };
+
+            let dateObj = null;
+
+            if (typeof raw === 'number') {
+                dateObj = new Date(Math.round((raw - 25569) * 86400 * 1000));
+            } else if (typeof raw === 'string') {
+                const trimmed = raw.trim();
+                if (!isNaN(trimmed) && trimmed !== '') {
+                    dateObj = new Date(Math.round((parseFloat(trimmed) - 25569) * 86400 * 1000));
+                } else {
+                    dateObj = new Date(trimmed);
+                    if (isNaN(dateObj.getTime())) {
+                        const parts = trimmed.split(/[\sT//-]+/);
+                        if (parts.length >= 3) {
+                            if (parts[0].length === 4) dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
+                            else if (parts[2].length === 4) dateObj = new Date(parts[2], parts[1] - 1, parts[0]);
+                        }
+                    }
+                }
+            }
+
+            if (dateObj && !isNaN(dateObj.getTime())) {
+                const yyyy = dateObj.getFullYear();
+                const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+                const dd = String(dateObj.getDate()).padStart(2, '0');
+                return {
+                    dateStr: `${dd}/${mm}/${yyyy}`,
+                    year: String(yyyy)
+                };
+            }
+
+            return { dateStr: String(raw).substring(0, 10), year: 'Outros' };
+        }
+
+        // Classificação do Perfil de Frota
+        function getPerfilFrota(numVeiculos) {
+            if (numVeiculos === 1) return '1 Veículo';
+            if (numVeiculos >= 2 && numVeiculos <= 10) return '2 a 10 Veículos';
+            if (numVeiculos >= 11 && numVeiculos <= 30) return '11 a 30 Veículos';
+            if (numVeiculos > 30) return '31+ Veículos';
+            return '1 Veículo';
+        }
+
+        // Leitura do Ficheiro (Excel ou CSV)
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const fileName = file.name.toLowerCase();
+
+            if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    try {
+                        const data = new Uint8Array(evt.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                        const json = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+                        processData(json);
+                    } catch (err) {
+                        alert('Erro ao carregar ficheiro Excel: ' + err.message);
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            } else if (fileName.endsWith('.csv')) {
+                Papa.parse(file, {
+                    header: true,
+                    skipEmptyLines: true,
+                    dynamicTyping: true,
+                    complete: (results) => processData(results.data),
+                    error: (err) => alert('Erro ao carregar ficheiro CSV.')
+                });
+            } else {
+                alert('Formato inválido! Envie um ficheiro .xlsx, .xls ou .csv.');
+            }
+        });
+
+        // Mapeamento e Normalização das Colunas
+        function processData(data) {
+            rawData = data.map(item => {
+                let rawPremio = item['Prêmio'] || item['Prêmio Total'] || item['valor premio liquido'] || item['Valor Prêmio'] || 0;
+                if (typeof rawPremio === 'string') {
+                    rawPremio = parseFloat(rawPremio.replace(/[^\d.,-]/g, '').replace(',', '.')) || 0;
+                }
+
+                let rawVeic = item['num_veiculo'] || item['num_veiculos'] || item['Veículos'] || item['Qtd Veículos'] || 1;
+                if (typeof rawVeic === 'string') {
+                    rawVeic = parseInt(rawVeic.replace(/[^\d]/g, '')) || 1;
+                }
+
+                const subscritorCotacao = item['Subscritor'] || '';
+                const subscritorProposta = item['Subscritor_proposta'] || item['Subscritor Proposta'] || '';
+                const subscritorPrincipal = subscritorProposta || subscritorCotacao || 'Sem Subscritor Atribuído';
+
+                const parsedDate = parseExcelDate(item['Criação'] || item['Criacao']);
+
+                return {
+                    cotacao: item['Cotação'] || item['Cotacao'] || 'N/A',
+                    criacaoStr: parsedDate.dateStr,
+                    anoCriacao: parsedDate.year,
+                    produto: item['Produto'] || 'RCO Ônibus',
+                    corretor: item['Corretor'] || 'Não Informado',
+                    representante: item['Representante'] || 'Direto / Outros',
+                    cliente: item['Cliente'] || 'Não Informado',
+                    documento: item['Documento'] || item['CNPJ/CPF'] || '',
+                    status: item['Status_Cotacão'] || item['Status_Cotacao'] || item['Status'] || 'Outros',
+                    apolice: item['Apólice'] || item['Apolice'] || '-',
+                    premio: isNaN(rawPremio) ? 0 : rawPremio,
+                    veiculos: isNaN(rawVeic) ? 1 : rawVeic,
+                    perfilFrota: getPerfilFrota(isNaN(rawVeic) ? 1 : rawVeic),
+                    subscritorCotacao: subscritorCotacao,
+                    subscritorProposta: subscritorProposta,
+                    subscritorPrincipal: subscritorPrincipal
+                };
+            });
+
+            filteredData = [...rawData];
+
+            uploadBanner.classList.add('hidden');
+            dashboardContent.classList.remove('hidden');
+
+            populateFilters();
+            updateDashboard();
+        }
+
+        // Popula Filtros Select
+        function populateFilters() {
+            const anos = [...new Set(rawData.map(d => d.anoCriacao))].filter(a => a !== 'Outros').sort();
+            const produtos = [...new Set(rawData.map(d => d.produto))].filter(Boolean).sort();
+            const corretores = [...new Set(rawData.map(d => d.corretor))].filter(Boolean).sort();
+            const representantes = [...new Set(rawData.map(d => d.representante))].filter(Boolean).sort();
+            const subscritores = [...new Set(rawData.map(d => d.subscritorPrincipal))].filter(Boolean).sort();
+
+            filterAno.innerHTML = '<option value="">Todos os Anos</option>' + 
+                anos.map(a => `<option value="${a}">${a}</option>`).join('');
+
+            filterProduto.innerHTML = '<option value="">Todos os Produtos</option>' + 
+                produtos.map(p => `<option value="${p}">${p}</option>`).join('');
+
+            filterCorretor.innerHTML = '<option value="">Todos os Corretores</option>' + 
+                corretores.map(c => `<option value="${c}">${c}</option>`).join('');
+
+            filterRepresentante.innerHTML = '<option value="">Todos os Representantes</option>' + 
+                representantes.map(r => `<option value="${r}">${r}</option>`).join('');
+
+            filterSubscritor.innerHTML = '<option value="">Todos os Subscritores</option>' + 
+                subscritores.map(s => `<option value="${s}">${s}</option>`).join('');
+        }
+
+        // Aplicação de Filtros Dinâmicos
+        function applyFilters() {
+            const selectedAno = filterAno.value;
+            const selectedPerfil = filterPerfilFrota.value;
+            const selectedProduto = filterProduto.value;
+            const selectedCorretor = filterCorretor.value;
+            const selectedRep = filterRepresentante.value;
+            const selectedSubscritor = filterSubscritor.value;
+            const search = searchInput.value.toLowerCase();
+
+            filteredData = rawData.filter(d => {
+                const matchAno = !selectedAno || d.anoCriacao === selectedAno;
+                const matchPerfil = !selectedPerfil || d.perfilFrota === selectedPerfil;
+                const matchProduto = !selectedProduto || d.produto === selectedProduto;
+                const matchCorretor = !selectedCorretor || d.corretor === selectedCorretor;
+                const matchRep = !selectedRep || d.representante === selectedRep;
+                const matchSubscritor = !selectedSubscritor || d.subscritorPrincipal === selectedSubscritor;
+                const matchSearch = !search || 
+                    String(d.cotacao).toLowerCase().includes(search) || 
+                    d.corretor.toLowerCase().includes(search) || 
+                    d.cliente.toLowerCase().includes(search) ||
+                    d.representante.toLowerCase().includes(search) ||
+                    d.subscritorPrincipal.toLowerCase().includes(search);
+
+                return matchAno && matchPerfil && matchProduto && matchCorretor && matchRep && matchSubscritor && matchSearch;
+            });
+
+            currentPage = 1;
+            updateDashboard();
+        }
+
+        function updateDashboard() {
+            renderKPIs();
+            renderCharts();
+            renderTable();
+        }
+
+        // KPIs
+        function renderKPIs() {
+            const totalCotacoes = filteredData.length;
+            
+            // Apólices Emitidas
+            const emitidas = filteredData.filter(d => {
+                const st = String(d.status).toLowerCase();
+                return st.includes('emitid') || st.includes('efetivad') || st.includes('integrad');
+            });
+
+            // Mapeamento Estrito para os 6 Status exatos:
+            // 1. Subscrição, 2. Subscrição Proposta
+            // 3. Em Análise, 4. Em Análise Proposta
+            // 5. Cotação Pendente de Retorno, 6. Proposta Pendente de Retorno
+            const statusExatosSubscricao = [
+                'subscrição', 'subscricao',
+                'subscrição proposta', 'subscricao proposta',
+                'em análise', 'em analise',
+                'em análise proposta', 'em analise proposta',
+                'cotação pendente de retorno', 'cotacao pendente de retorno',
+                'proposta pendente de retorno'
+            ];
+
+            const emSubscricao = filteredData.filter(d => {
+                const st = String(d.status).trim().toLowerCase();
+                return statusExatosSubscricao.includes(st);
+            });
+
+            // Expiradas
+            const expiradas = filteredData.filter(d => String(d.status).toLowerCase().includes('expirad'));
+
+            const numEmitidas = emitidas.length;
+            const numEmSubscricao = emSubscricao.length;
+            const numExpiradas = expiradas.length;
+
+            const totalVeiculos = filteredData.reduce((acc, curr) => acc + curr.veiculos, 0);
+            const premioEmitido = emitidas.reduce((acc, curr) => acc + curr.premio, 0);
+            const premioSubscricao = emSubscricao.reduce((acc, curr) => acc + curr.premio, 0);
+            const premioExpirado = expiradas.reduce((acc, curr) => acc + curr.premio, 0);
+
+            const conversionRate = totalCotacoes > 0 ? ((numEmitidas / totalCotacoes) * 100).toFixed(1) : 0;
+            const ticketMedio = numEmitidas > 0 ? (premioEmitido / numEmitidas) : 0;
+
+            document.getElementById('kpiTotalCotacoes').innerText = totalCotacoes.toLocaleString('pt-BR');
+            document.getElementById('kpiVeiculosTotal').innerText = `${totalVeiculos.toLocaleString('pt-BR')} veículos`;
+            
+            document.getElementById('kpiEmitidas').innerText = numEmitidas.toLocaleString('pt-BR');
+            document.getElementById('kpiConversionRate').innerText = `${conversionRate}%`;
+
+            document.getElementById('kpiPremioEmitido').innerText = formatBRL(premioEmitido);
+            document.getElementById('kpiTicketMedio').innerText = formatBRL(ticketMedio);
+
+            document.getElementById('kpiEmSubscricao').innerText = numEmSubscricao.toLocaleString('pt-BR');
+            document.getElementById('kpiPremioSubscricao').innerText = formatBRL(premioSubscricao);
+
+            document.getElementById('kpiExpiradas').innerText = numExpiradas.toLocaleString('pt-BR');
+            document.getElementById('kpiPremioExpirado').innerText = formatBRL(premioExpirado);
+        }
+
+        // Renderização dos Gráficos do Dashboard
+        function renderCharts() {
+            ['evolucaoTemporal', 'evolucaoProduto', 'produtos', 'perfilUnificado', 'representantes', 'subscritores', 'status', 'topCorretores'].forEach(key => {
+                if (chartInstances[key]) chartInstances[key].destroy();
+            });
+
+            // 1. Evolução Temporal Ano a Ano (Cotações vs Emitidas)
+            const anoData = {};
+            filteredData.forEach(d => {
+                if (d.anoCriacao !== 'Outros') {
+                    if (!anoData[d.anoCriacao]) anoData[d.anoCriacao] = { cotacoes: 0, emitidas: 0 };
+                    anoData[d.anoCriacao].cotacoes++;
+                    const st = String(d.status).toLowerCase();
+                    if (st.includes('emitid') || st.includes('efetivad') || st.includes('integrad')) {
+                        anoData[d.anoCriacao].emitidas++;
+                    }
+                }
+            });
+
+            const sortedAnos = Object.keys(anoData).sort();
+
+            const ctxAno = document.getElementById('chartEvolucaoTemporal').getContext('2d');
+            chartInstances.evolucaoTemporal = new Chart(ctxAno, {
+                type: 'bar',
+                data: {
+                    labels: sortedAnos,
+                    datasets: [
+                        { label: 'Cotações Solicitadas', data: sortedAnos.map(a => anoData[a].cotacoes), backgroundColor: '#0284c7', borderRadius: 6 },
+                        { label: 'Apólices Emitidas', data: sortedAnos.map(a => anoData[a].emitidas), backgroundColor: '#10b981', borderRadius: 6 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'top' },
+                        datalabels: {
+                            anchor: 'end',
+                            align: 'end',
+                            font: { size: 10, weight: 'bold' },
+                            color: '#475569',
+                            formatter: (val) => val > 0 ? val : ''
+                        }
+                    },
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+
+            // 2. Evolução Temporal Ano a Ano por Tipo de Produto
+            const anoProdutoMap = {};
+            const produtosSet = new Set();
+
+            filteredData.forEach(d => {
+                if (d.anoCriacao !== 'Outros') {
+                    const prod = d.produto || 'RCO Ônibus';
+                    produtosSet.add(prod);
+                    if (!anoProdutoMap[d.anoCriacao]) anoProdutoMap[d.anoCriacao] = {};
+                    anoProdutoMap[d.anoCriacao][prod] = (anoProdutoMap[d.anoCriacao][prod] || 0) + 1;
+                }
+            });
+
+            const listaProdutos = Array.from(produtosSet).sort();
+            const coresProdutos = ['#0284c7', '#10b981', '#f59e0b', '#a855f7', '#ec4899', '#06b6d4', '#64748b'];
+
+            const datasetsAnoProduto = listaProdutos.map((prod, index) => {
+                return {
+                    label: prod,
+                    data: sortedAnos.map(ano => (anoProdutoMap[ano] && anoProdutoMap[ano][prod]) ? anoProdutoMap[ano][prod] : 0),
+                    backgroundColor: coresProdutos[index % coresProdutos.length],
+                    borderRadius: 4
+                };
+            });
+
+            const ctxEvolucaoProd = document.getElementById('chartEvolucaoProduto').getContext('2d');
+            chartInstances.evolucaoProduto = new Chart(ctxEvolucaoProd, {
+                type: 'bar',
+                data: {
+                    labels: sortedAnos,
+                    datasets: datasetsAnoProduto
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'top' },
+                        datalabels: {
+                            anchor: 'center',
+                            align: 'center',
+                            font: { size: 9, weight: 'bold' },
+                            color: '#ffffff',
+                            formatter: (val) => val > 0 ? val : ''
+                        }
+                    },
+                    scales: {
+                        x: { stacked: true },
+                        y: { stacked: true, beginAtZero: true }
+                    }
+                }
+            });
+
+            // 3. Desempenho por Tipo de Produto
+            const prodMap = {};
+            filteredData.forEach(d => {
+                if (!prodMap[d.produto]) prodMap[d.produto] = { cotacoes: 0, emitidas: 0 };
+                prodMap[d.produto].cotacoes++;
+                const st = String(d.status).toLowerCase();
+                if (st.includes('emitid') || st.includes('efetivad') || st.includes('integrad')) {
+                    prodMap[d.produto].emitidas++;
+                }
+            });
+
+            const ctxProd = document.getElementById('chartProdutos').getContext('2d');
+            chartInstances.produtos = new Chart(ctxProd, {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(prodMap),
+                    datasets: [
+                        { label: 'Cotações Totais', data: Object.values(prodMap).map(v => v.cotacoes), backgroundColor: '#38bdf8', borderRadius: 4 },
+                        { label: 'Apólices Emitidas', data: Object.values(prodMap).map(v => v.emitidas), backgroundColor: '#10b981', borderRadius: 4 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'top' },
+                        datalabels: {
+                            anchor: 'end',
+                            align: 'end',
+                            font: { size: 10, weight: 'bold' },
+                            color: '#334155',
+                            formatter: (val) => val > 0 ? val : ''
+                        }
+                    },
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+
+            // 4. Gráfico UNIFICADO por Perfil de Frota (% Volume vs % Taxa Conversão)
+            const perfisOrder = ['1 Veículo', '2 a 10 Veículos', '11 a 30 Veículos', '31+ Veículos'];
+            const cotacoesPorPerfil = { '1 Veículo': 0, '2 a 10 Veículos': 0, '11 a 30 Veículos': 0, '31+ Veículos': 0 };
+            const emitidasPorPerfil = { '1 Veículo': 0, '2 a 10 Veículos': 0, '11 a 30 Veículos': 0, '31+ Veículos': 0 };
+
+            filteredData.forEach(d => {
+                if (cotacoesPorPerfil[d.perfilFrota] !== undefined) {
+                    cotacoesPorPerfil[d.perfilFrota]++;
+                    const st = String(d.status).toLowerCase();
+                    if (st.includes('emitid') || st.includes('efetivad') || st.includes('integrad')) {
+                        emitidasPorPerfil[d.perfilFrota]++;
+                    }
+                }
+            });
+
+            const totalCot = filteredData.length || 1;
+            const percVolumeCotado = perfisOrder.map(p => ((cotacoesPorPerfil[p] / totalCot) * 100).toFixed(1));
+            const percTaxaConversao = perfisOrder.map(p => {
+                const totalNaFaixa = cotacoesPorPerfil[p];
+                return totalNaFaixa > 0 ? ((emitidasPorPerfil[p] / totalNaFaixa) * 100).toFixed(1) : 0;
+            });
+
+            const ctxUnificado = document.getElementById('chartPerfilFrotaUnificado').getContext('2d');
+            chartInstances.perfilUnificado = new Chart(ctxUnificado, {
+                type: 'bar',
+                data: {
+                    labels: ['1 Veículo (Individual)', '2 a 10 Veículos (Frota P)', '11 a 30 Veículos (Frota M)', '31+ Veículos (Frota G)'],
+                    datasets: [
+                        { label: '% do Volume Total Cotado', data: percVolumeCotado, backgroundColor: '#0284c7', borderRadius: 6 },
+                        { label: '% Taxa de Conversão em Apólice', data: percTaxaConversao, backgroundColor: '#10b981', borderRadius: 6 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'top' },
+                        datalabels: {
+                            anchor: 'end',
+                            align: 'end',
+                            font: { size: 10, weight: 'bold' },
+                            color: '#0f172a',
+                            formatter: (val) => `${val}%`
+                        }
+                    },
+                    scales: { y: { ticks: { callback: v => v + '%' }, max: 100 } }
+                }
+            });
+
+            // 5. Volume por Representante Comercial (HORIZONTAL)
+            const repData = {};
+            filteredData.forEach(d => {
+                const rep = d.representante;
+                if (!repData[rep]) repData[rep] = { total: 0, emitidas: 0 };
+                repData[rep].total++;
+                const st = String(d.status).toLowerCase();
+                if (st.includes('emitid') || st.includes('efetivad') || st.includes('integrad')) {
+                    repData[rep].emitidas++;
+                }
+            });
+
+            const topReps = Object.entries(repData)
+                .sort((a, b) => b[1].total - a[1].total)
+                .slice(0, 8);
+
+            const ctxRep = document.getElementById('chartRepresentantes').getContext('2d');
+            chartInstances.representantes = new Chart(ctxRep, {
+                type: 'bar',
+                data: {
+                    labels: topReps.map(r => r[0].length > 22 ? r[0].substring(0, 22) + '...' : r[0]),
+                    datasets: [
+                        { label: 'Cotações Totais', data: topReps.map(r => r[1].total), backgroundColor: '#94a3b8', borderRadius: 4 },
+                        { label: 'Apólices Emitidas', data: topReps.map(r => r[1].emitidas), backgroundColor: '#0284c7', borderRadius: 4 }
+                    ]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'top' },
+                        datalabels: {
+                            anchor: 'end',
+                            align: 'end',
+                            font: { size: 10, weight: 'bold' },
+                            color: '#334155',
+                            formatter: (val) => val > 0 ? val : ''
+                        }
+                    }
+                }
+            });
+
+            // 6. Performance de Subscritores (HORIZONTAL + VALORES VISÍVEIS)
+            const subData = {};
+            filteredData.forEach(d => {
+                const sub = d.subscritorPrincipal;
+                if (!subData[sub]) subData[sub] = { total: 0, emitidas: 0 };
+                subData[sub].total++;
+                const st = String(d.status).toLowerCase();
+                if (st.includes('emitid') || st.includes('efetivad') || st.includes('integrad')) {
+                    subData[sub].emitidas++;
+                }
+            });
+
+            const topSubscritores = Object.entries(subData)
+                .sort((a, b) => b[1].total - a[1].total)
+                .slice(0, 8);
+
+            const ctxSub = document.getElementById('chartSubscritores').getContext('2d');
+            chartInstances.subscritores = new Chart(ctxSub, {
+                type: 'bar',
+                data: {
+                    labels: topSubscritores.map(s => s[0].length > 22 ? s[0].substring(0, 22) + '...' : s[0]),
+                    datasets: [
+                        { label: 'Total Analisado', data: topSubscritores.map(s => s[1].total), backgroundColor: '#a855f7', borderRadius: 4 },
+                        { label: 'Efetivadas / Emitidas', data: topSubscritores.map(s => s[1].emitidas), backgroundColor: '#10b981', borderRadius: 4 }
+                    ]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'top' },
+                        datalabels: {
+                            anchor: 'end',
+                            align: 'end',
+                            font: { size: 10, weight: 'bold' },
+                            color: '#475569',
+                            formatter: (val) => val > 0 ? val : ''
+                        }
+                    },
+                    scales: {
+                        x: { grace: '12%' }
+                    }
+                }
+            });
+
+            // 7. Distribuição por Status (Doughnut)
+            const statusMap = {};
+            filteredData.forEach(d => {
+                statusMap[d.status] = (statusMap[d.status] || 0) + 1;
+            });
+
+            const ctxStatus = document.getElementById('chartStatus').getContext('2d');
+            chartInstances.status = new Chart(ctxStatus, {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(statusMap),
+                    datasets: [{
+                        data: Object.values(statusMap),
+                        backgroundColor: ['#10b981', '#3b82f6', '#a855f7', '#f59e0b', '#ef4444', '#64748b', '#06b6d4', '#ec4899']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } },
+                        datalabels: {
+                            color: '#ffffff',
+                            font: { size: 10, weight: 'bold' },
+                            formatter: (val) => val > 0 ? val : ''
+                        }
+                    }
+                }
+            });
+
+            // 8. Top Corretores (HORIZONTAL + VALORES VISÍVEIS)
+            const corretorVol = {};
+            filteredData.forEach(d => {
+                const corr = d.corretor;
+                if (!corretorVol[corr]) corretorVol[corr] = { cotacoes: 0, emitidas: 0 };
+                corretorVol[corr].cotacoes++;
+                const st = String(d.status).toLowerCase();
+                if (st.includes('emitid') || st.includes('efetivad') || st.includes('integrad')) {
+                    corretorVol[corr].emitidas++;
+                }
+            });
+
+            const sortedCorretores = Object.entries(corretorVol)
+                .sort((a, b) => b[1].cotacoes - a[1].cotacoes)
+                .slice(0, 10);
+
+            const ctxTopCorretores = document.getElementById('chartTopCorretores').getContext('2d');
+            chartInstances.topCorretores = new Chart(ctxTopCorretores, {
+                type: 'bar',
+                data: {
+                    labels: sortedCorretores.map(c => c[0].length > 25 ? c[0].substring(0, 25) + '...' : c[0]),
+                    datasets: [
+                        { label: 'Total Cotações', data: sortedCorretores.map(c => c[1].cotacoes), backgroundColor: '#0284c7', borderRadius: 4 },
+                        { label: 'Apólices Emitidas', data: sortedCorretores.map(c => c[1].emitidas), backgroundColor: '#10b981', borderRadius: 4 }
+                    ]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'top' },
+                        datalabels: {
+                            anchor: 'end',
+                            align: 'end',
+                            font: { size: 10, weight: 'bold' },
+                            color: '#334155',
+                            formatter: (val) => val > 0 ? val : ''
+                        }
+                    },
+                    scales: {
+                        x: { grace: '12%' }
+                    }
+                }
+            });
+        }
+
+        // Renderiza Tabela Detalhada com Data Formatada e Cliente
+        function renderTable() {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+
+            const start = (currentPage - 1) * itemsPerPage;
+            const end = start + itemsPerPage;
+            const pageData = filteredData.slice(start, end);
+
+            if (pageData.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="10" class="text-center py-6 text-slate-400">Nenhum registro encontrado.</td></tr>`;
+            } else {
+                pageData.forEach(d => {
+                    let statusClass = 'bg-slate-100 text-slate-700';
+                    const st = String(d.status).toLowerCase();
+                    if (st.includes('emitid') || st.includes('efetivad') || st.includes('integrad')) {
+                        statusClass = 'bg-emerald-100 text-emerald-800 border border-emerald-200';
+                    } else if (st.includes('subscriç') || st.includes('subscric') || st.includes('análisa') || st.includes('analis')) {
+                        statusClass = 'bg-purple-100 text-purple-800 border border-purple-200';
+                    } else if (st.includes('expirad') || st.includes('pendente')) {
+                        statusClass = 'bg-amber-100 text-amber-800 border border-amber-200';
+                    } else if (st.includes('recusad') || st.includes('cancelad') || st.includes('criticad')) {
+                        statusClass = 'bg-rose-100 text-rose-800 border border-rose-200';
+                    }
+
+                    const row = document.createElement('tr');
+                    row.className = 'hover:bg-slate-50 transition';
+                    row.innerHTML = `
+                        <td class="p-3 font-semibold text-slate-800">${d.cotacao}</td>
+                        <td class="p-3 text-slate-500 font-mono">${d.criacaoStr}</td>
+                        <td class="p-3 text-slate-600 font-medium">${d.produto}</td>
+                        <td class="p-3 font-medium text-slate-700 max-w-[140px] truncate" title="${d.cliente}">${d.cliente}</td>
+                        <td class="p-3 font-medium text-slate-700 max-w-[140px] truncate" title="${d.corretor}">${d.corretor}</td>
+                        <td class="p-3 text-slate-600 max-w-[140px] truncate" title="${d.subscritorPrincipal}">${d.subscritorPrincipal}</td>
+                        <td class="p-3 text-center font-semibold text-sky-700">${d.perfilFrota}</td>
+                        <td class="p-3 text-right font-semibold text-slate-800">${formatBRL(d.premio)}</td>
+                        <td class="p-3 text-center">
+                            <span class="px-2.5 py-1 rounded-full text-[10px] font-bold ${statusClass}">${d.status}</span>
+                        </td>
+                        <td class="p-3 font-mono text-slate-500">${d.apolice || '-'}</td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            }
+
+            document.getElementById('tableInfo').innerText = `Exibindo ${Math.min(start + 1, filteredData.length)} até ${Math.min(end, filteredData.length)} de ${filteredData.length} registros`;
+            document.getElementById('btnPrevPage').disabled = currentPage === 1;
+            document.getElementById('btnNextPage').disabled = end >= filteredData.length;
+        }
+
+        // Event Listeners dos Filtros
+        filterAno.addEventListener('change', applyFilters);
+        filterPerfilFrota.addEventListener('change', applyFilters);
+        filterProduto.addEventListener('change', applyFilters);
+        filterCorretor.addEventListener('change', applyFilters);
+        filterRepresentante.addEventListener('change', applyFilters);
+        filterSubscritor.addEventListener('change', applyFilters);
+        searchInput.addEventListener('input', applyFilters);
+
+        btnResetFilters.addEventListener('click', () => {
+            filterAno.value = '';
+            filterPerfilFrota.value = '';
+            filterProduto.value = '';
+            filterCorretor.value = '';
+            filterRepresentante.value = '';
+            filterSubscritor.value = '';
+            searchInput.value = '';
+            applyFilters();
+        });
+
+        document.getElementById('btnPrevPage').addEventListener('click', () => {
+            if (currentPage > 1) {
+                currentPage--;
+                renderTable();
+            }
+        });
+
+        document.getElementById('btnNextPage').addEventListener('click', () => {
+            if ((currentPage * itemsPerPage) < filteredData.length) {
+                currentPage++;
+                renderTable();
+            }
+        });
+    </script>
+</body>
+</html>
