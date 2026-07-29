@@ -2969,14 +2969,17 @@ else:
 # ── Margem de segurança configurável (aula: prêmio puro = PR × (1 + MS)) ─────
 col_ms_1, col_ms_2 = st.columns([1, 3])
 with col_ms_1:
-    _margem_seg = st.number_input(
+    _OPCOES_MARGEM = [f'{p}%' for p in range(0, 101, 5)]  # 0%, 5%, ..., 100%
+    _margem_label = st.selectbox(
         'Margem de segurança (%)',
-        min_value=0.0, max_value=100.0, value=20.0, step=5.0,
+        options=_OPCOES_MARGEM,
+        index=_OPCOES_MARGEM.index('20%'),  # padrão 20% (material didático)
         help='Coeficiente de segurança aplicado sobre o prêmio de risco para '
              'obter o prêmio puro (proteção contra flutuações de riscos futuros). '
              'O material didático usa 20%.',
         key='margem_seg_premio_risco'
-    ) / 100.0
+    )
+    _margem_seg = int(_margem_label.replace('%', '')) / 100.0
 
 
 def _monta_premio_risco(_dim, _df_apo, _sin_valor):
@@ -3020,10 +3023,15 @@ def _monta_premio_risco(_dim, _df_apo, _sin_valor):
     _r['Premio_Pago_Medio'] = _r['Total_Premio'] / _r['Qtd_Apolices'].replace(0, np.nan)
     _r['Premio_Pago_Medio'] = _r['Premio_Pago_Medio'].fillna(0)
 
-    # Índice de adequação = prêmio pago médio ÷ prêmio de risco
-    # (quantas vezes o prêmio pago cobre o custo puro; < 1 = subprecificado)
+    # Índice de adequação (piso) = prêmio pago médio ÷ prêmio de RISCO
+    # (quantas vezes o prêmio pago cobre o custo puro; < 1 = insustentável)
     _r['Indice_Adequacao'] = _r.apply(
         lambda x: x['Premio_Pago_Medio'] / x['Premio_Risco'] if x['Premio_Risco'] > 0 else np.nan, axis=1)
+
+    # Índice de adequação (com margem) = prêmio pago médio ÷ prêmio PURO
+    # (cobre o custo já com a margem de segurança; < 1 = sem margem suficiente)
+    _r['Indice_Adequacao_Puro'] = _r.apply(
+        lambda x: x['Premio_Pago_Medio'] / x['Premio_Puro'] if x['Premio_Puro'] > 0 else np.nan, axis=1)
 
     # Sinistralidade do segmento (para comparação)
     _r['Sinistralidade'] = _r.apply(
@@ -3033,18 +3041,26 @@ def _monta_premio_risco(_dim, _df_apo, _sin_valor):
 
 
 def _classifica_adequacao(row):
-    """Rótulo de adequação tarifária a partir do índice e da base amostral."""
+    """Rótulo de adequação tarifária.
+
+    Combina os dois índices:
+    - índice sobre o prêmio de RISCO  = piso de sobrevivência técnica
+    - índice sobre o prêmio PURO      = adequação já com a margem de segurança
+    """
     if row['Qtd_Sinistros'] == 0:
         return 'Sem sinistros — PR não estimável'
-    idx = row['Indice_Adequacao']
-    if pd.isna(idx) or idx == 0:
+    idx_risco = row['Indice_Adequacao']
+    idx_puro  = row['Indice_Adequacao_Puro']
+    if pd.isna(idx_risco) or idx_risco == 0:
         return 'Indeterminado'
-    if idx < 1.0:
-        base = 'Prêmio pago não cobre o custo puro'
-    elif idx < 1.6:
-        base = 'Cobre o custo, margem apertada'
+    if idx_risco < 1.0:
+        base = 'Não cobre nem o custo puro (insustentável)'
+    elif pd.isna(idx_puro) or idx_puro < 1.0:
+        base = 'Cobre o custo, mas sem a margem de segurança'
+    elif idx_puro < 1.3:
+        base = 'Cobre com a margem, folga apertada'
     else:
-        base = 'Boa folga sobre o custo puro'
+        base = 'Adequado com boa folga'
     # Aviso de baixa confiabilidade estatística
     if row['Qtd_Sinistros'] < 5:
         base += ' (amostra pequena)'
@@ -3065,21 +3081,25 @@ def _exibe_tabela_pr(_r, _dim, _label_dim):
     _e['Sinistralidade']   = _e['Sinistralidade'].map(lambda x: f"{x:.2%}".replace('.', ','))
     _e['Indice_Adequacao'] = _e['Indice_Adequacao'].map(
         lambda x: '—' if pd.isna(x) else f"{x:.2f}x".replace('.', ','))
+    _e['Indice_Adequacao_Puro'] = _e['Indice_Adequacao_Puro'].map(
+        lambda x: '—' if pd.isna(x) else f"{x:.2f}x".replace('.', ','))
     for _c in ['Premio_Risco', 'Premio_Puro', 'Premio_Pago_Medio', 'Sinistro_Medio', 'Total_Sinistro', 'Total_Premio']:
         _e[_c] = _e[_c].map(formatar_valor_br)
     _e['Qtd_Sinistros'] = _e['Qtd_Sinistros'].astype(int)
 
     _cols = [_dim, 'Qtd_Apolices', 'Qtd_Sinistros', 'Frequência',
              'Sinistro_Medio', 'Premio_Risco', 'Premio_Puro',
-             'Premio_Pago_Medio', 'Indice_Adequacao', 'Sinistralidade', 'Adequação']
+             'Premio_Pago_Medio', 'Indice_Adequacao', 'Indice_Adequacao_Puro',
+             'Sinistralidade', 'Adequação']
     st.dataframe(
         _e[_cols].rename(columns={
             _dim:                'Segmento' if _dim != 'Utilização' else 'Utilização',
             'Sinistro_Medio':    'Severidade Média (R$)',
             'Premio_Risco':      'Prêmio de Risco (R$)',
             'Premio_Puro':       f'Prêmio Puro +{int(_margem_seg*100)}% (R$)',
-            'Premio_Pago_Medio': 'Prêmio Pago Médio (R$)',
-            'Indice_Adequacao':  'Índice Adequação',
+            'Premio_Pago_Medio':      'Prêmio Pago Médio (R$)',
+            'Indice_Adequacao':       'Índice vs Risco',
+            'Indice_Adequacao_Puro':  'Índice vs Puro',
         }),
         hide_index=True,
         use_container_width=True,
@@ -3187,16 +3207,21 @@ if not df_para_soma.empty and not _sin_valor_pr.empty:
 else:
     st.info("Sem dados suficientes para calcular prêmio de risco no período filtrado.")
 
-# ── Nota metodológica ────────────────────────────────────────────────────────
-st.markdown("""
-<div style="background:#e8effd;border-radius:8px;padding:14px 18px;font-size:0.82rem;color:#374151;">
-<b>📖 Notas metodológicas — prêmio de risco</b><br><br>
-<b>Prêmio de risco</b> = total de sinistros do segmento ÷ nº de apólices expostas (equivale a frequência × severidade). É o custo técnico puro por apólice, <b>independente do prêmio cobrado</b>. Base: sinistros com valor consolidado &gt; 0 (pagos + reservas) no período filtrado.<br><br>
-<b>Prêmio puro</b> = prêmio de risco × (1 + margem de segurança). A margem protege contra flutuações de riscos futuros; ajuste-a no campo acima.<br><br>
-<b>Índice de adequação</b> = prêmio pago médio ÷ prêmio de risco. Abaixo de 1,00, o prêmio pago não cobre nem o custo puro de sinistro (antes de qualquer despesa administrativa, comercial ou lucro) — sinal de subprecificação que a sinistralidade média pode mascarar.<br><br>
-<b>Cuidados do RCO:</b> (1) ramo de <b>cauda longa</b> — o prêmio de risco de segmentos pequenos é dominado pela ocorrência ou não de um sinistro catastrófico; leia junto com o perfil de cauda da seção anterior. (2) Sinistros judiciais de RC levam anos para liquidar, então o custo de anos recentes tende a ser <b>subestimado</b> (efeito IBNR) — use como referência de subscrição, não como taxa final. (3) Segmentos com menos de 5 sinistros são sinalizados como amostra pequena.
-</div>
-""", unsafe_allow_html=True)
+# ── Nota metodológica (expander — clique para ler o passo a passo) ───────────
+with st.expander("🧮 Como interpretar os cálculos — prêmio de risco e adequação"):
+    st.markdown("""
+**Prêmio de risco** = total de sinistros do segmento ÷ nº de apólices expostas (equivale a frequência × severidade). É o custo técnico puro por apólice, **independente do prêmio cobrado**. Base: sinistros com valor consolidado > 0 (pagos + reservas) no período filtrado.
+
+**Prêmio puro** = prêmio de risco × (1 + margem de segurança). A margem protege contra flutuações de riscos futuros; ajuste-a no campo acima.
+
+**Índice vs Risco** = prêmio pago médio ÷ prêmio de risco. É o **piso de sobrevivência técnica**: abaixo de 1,00 o prêmio pago não cobre nem o custo puro de sinistro (antes de qualquer despesa administrativa, comercial ou lucro).
+
+**Índice vs Puro** = prêmio pago médio ÷ prêmio puro. É a **adequação com margem**: abaixo de 1,00 o prêmio cobre o custo médio de sinistro, mas não a margem de segurança contra os anos ruins — régua mais exigente e realista para subscrição.
+
+**Como ler o rótulo de Adequação:** "insustentável" = nem o custo puro é coberto (Índice vs Risco < 1); "sem a margem de segurança" = cobre o custo mas não a margem (Índice vs Puro < 1); "folga apertada" / "boa folga" = cobre com margem, com pouca ou boa sobra.
+
+**Cuidados do RCO:** (1) ramo de **cauda longa** — o prêmio de risco de segmentos pequenos é dominado pela ocorrência ou não de um sinistro catastrófico; leia junto com o perfil de cauda da seção seguinte. (2) Sinistros judiciais de RC levam anos para liquidar, então o custo de anos recentes tende a ser **subestimado** (efeito IBNR) — use como referência de subscrição, não como taxa final. (3) Segmentos com menos de 5 sinistros são sinalizados como amostra pequena.
+""")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # BLOCO: PERFIL DE RISCO POR UTILIZAÇÃO — VISÃO RESSEGURADOR
@@ -3535,18 +3560,21 @@ trava de cauda: utilização com sinistro ≥ corte não é classificada como Ba
 else:
     st.info("Sem dados suficientes para montar o perfil de risco por Utilização.")
 
-# ── Nota metodológica (padrão das seções analíticas do app) ──────────────────
-st.markdown("""
-<div style="background:#e8effd;border-radius:8px;padding:14px 18px;font-size:0.82rem;color:#374151;">
-<b>📖 Notas metodológicas — visão ressegurador</b><br><br>
-<b>Base:</b> sinistros com valor consolidado (pagos + reservas) maior que zero no período filtrado. Sinistros avisados sem movimentação financeira são desconsiderados de toda a seção (frequência e severidade).<br><br>
-<b>Frequência</b> = sinistros únicos com valor ÷ apólices únicas do segmento, no período filtrado (slider). Não é frequência anualizada por veículo-exposto — informe isso ao ressegurador se solicitado.<br><br>
-<b>Severidade</b> = valor consolidado por sinistro, incluindo todas as coberturas acionadas.<br><br>
-<b>Classificação de frequência (Baixa/Média/Alta):</b> comparação contra a mediana da <b>base completa</b> (todas as apólices e sinistros carregados, sem filtros nem slider), com bandas Alta ≥ 150% da mediana e Baixa ≤ 67% da mediana. Por usar referência fixa, o rótulo é estável e não muda conforme os filtros.<br><br>
-<b>Classificação de severidade (Baixa/Média/Alta):</b> razão <b>média ÷ mediana</b> dos sinistros da própria utilização (índice de cauda). Razão elevada indica que poucos sinistros de grande valor puxam a média para cima — distribuição de cauda pesada, com maior potencial de perdas severas. Bandas: Alta ≥ 3,00 · Baixa ≤ 2,50 · Média entre as duas (limiar de Baixa calibrado pelo julgamento de subscrição). <b>Trava de cauda:</b> utilização com ao menos um sinistro acima do corte selecionado não é classificada como severidade Baixa — sobe para Média (por depender do corte escolhido, o nível de severidade pode mudar conforme essa seleção). Como usa os dados da própria utilização, o rótulo independe do mix da carteira.<br><br>
-<b>Corte de sinistro grave:</b> valores fixos de R$ 100 mil a R$ 5 milhões (critério: valor ≥ corte) e "Acima de 7.000.000,00" (critério: valor > R$ 7 milhões). Sugerido alinhar o corte com a prioridade/retenção do contrato de resseguro.
-</div>
-""", unsafe_allow_html=True)
+# ── Nota metodológica (expander — clique para ler o passo a passo) ───────────
+with st.expander("🧮 Como interpretar os cálculos — visão ressegurador"):
+    st.markdown("""
+**Base:** sinistros com valor consolidado (pagos + reservas) maior que zero no período filtrado. Sinistros avisados sem movimentação financeira são desconsiderados de toda a seção (frequência e severidade).
+
+**Frequência** = sinistros únicos com valor ÷ apólices únicas do segmento, no período filtrado (slider). Não é frequência anualizada por veículo-exposto — informe isso ao ressegurador se solicitado.
+
+**Severidade** = valor consolidado por sinistro, incluindo todas as coberturas acionadas.
+
+**Classificação de frequência (Baixa/Média/Alta):** comparação contra a mediana da **base completa** (todas as apólices e sinistros carregados, sem filtros nem slider), com bandas Alta ≥ 150% da mediana e Baixa ≤ 67% da mediana. Por usar referência fixa, o rótulo é estável e não muda conforme os filtros.
+
+**Classificação de severidade (Baixa/Média/Alta):** razão **média ÷ mediana** dos sinistros da própria utilização (índice de cauda). Razão elevada indica que poucos sinistros de grande valor puxam a média para cima — distribuição de cauda pesada, com maior potencial de perdas severas. Bandas: Alta ≥ 3,00 · Baixa ≤ 2,50 · Média entre as duas (limiar de Baixa calibrado pelo julgamento de subscrição). **Trava de cauda:** utilização com ao menos um sinistro acima do corte selecionado não é classificada como severidade Baixa — sobe para Média (por depender do corte escolhido, o nível de severidade pode mudar conforme essa seleção). Como usa os dados da própria utilização, o rótulo independe do mix da carteira.
+
+**Corte de sinistro grave:** valores fixos de R$ 100 mil a R$ 5 milhões (critério: valor ≥ corte) e "Acima de 7.000.000,00" (critério: valor > R$ 7 milhões). Sugerido alinhar o corte com a prioridade/retenção do contrato de resseguro.
+""")
 
 st.write("---")
 st.caption("Desenvolvido por Alex Sousa.")
