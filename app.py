@@ -800,6 +800,11 @@ if img_base64:
 st.sidebar.header('Dados Gerais')
 st.sidebar.page_link("pages/2_Dados_Gerais.py", label="📊  Dados Gerais")
 
+# Link para a página de Dados Cotações (painel independente — só pede o arquivo
+# de cotações quando a página é acessada)
+st.sidebar.header('Dados Cotações')
+st.sidebar.page_link("pages/3_Dados_Cotacoes.py", label="📝  Dados Cotações")
+
 # --- Filtragem dados da Apólice ---
 st.sidebar.header('Filtro Apólice')
 
