@@ -1974,10 +1974,8 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
 else:
     st.info("Nenhum dado disponível para análise de frequência e severidade.")
 
-st.markdown("""
-<div style="background:#F8FAFC;border-radius:10px;padding:18px;border:1px solid #E2E8F0;font-size:13px;color:#334155;">
-<b>📖 Como entender esta análise</b><br><br>
-
+with st.expander("🧮 Como interpretar esta análise"):
+    st.markdown("""
 <b>O que é:</b> A sinistralidade total pode subir por dois motivos completamente diferentes — porque ocorreram <i>mais sinistros</i> (frequência) ou porque cada sinistro ficou <i>mais caro</i> (severidade). Esta seção separa os dois efeitos para que a decisão de subscrição seja mais precisa.<br><br>
 
 <b>Frequência</b> = Quantidade de sinistros ÷ Quantidade de apólices. Indica quantos sinistros ocorrem em média por apólice a cada ano. Se sobe, significa que mais segurados estão acionando o seguro — pode indicar seleção adversa (carteira com perfil de risco ruim) ou problema no critério de aceitação.<br><br>
@@ -1991,7 +1989,6 @@ st.markdown("""
 🟢 Ambas caindo → carteira saudável.<br><br>
 
 <b>Como foi desenvolvido:</b> Agrupa os dados por Ano de Vigência da Apólice. A frequência usa quantidade de sinistros únicos (nr_sinistro) dividida pela quantidade de apólices únicas. A severidade usa o Total Sinistro (sinistro + despesa + honorário - salvado) dividido pela quantidade de sinistros. A linha tracejada vermelha é uma regressão linear simples sobre os anos disponíveis. Os alertas automáticos comparam o último ano completo com o penúltimo.
-</div>
 """, unsafe_allow_html=True)
 
 
@@ -2248,10 +2245,8 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
 else:
     st.info("Nenhum dado disponível para análise de desenvolvimento por safra.")
 
-st.markdown("""
-<div style="background:#F8FAFC;border-radius:10px;padding:18px;border:1px solid #E2E8F0;font-size:13px;color:#334155;">
-<b>📖 Como entender esta análise</b><br><br>
-
+with st.expander("🧮 Como interpretar esta análise"):
+    st.markdown("""
 <b>O que é:</b> Uma apólice de 2022 pode gerar sinistros que só serão avisados em 2023, 2024 ou até 2025. Isso significa que olhar apenas a sinistralidade do ano corrente de uma safra recente pode ser enganoso — parte dos sinistros ainda não apareceu. Esta análise mostra como a sinistralidade de cada <i>safra</i> (ano de vigência) evolui ao longo do tempo à medida que novos sinistros são avisados.<br><br>
 
 <b>Como ler a tabela:</b><br>
@@ -2267,7 +2262,6 @@ Uma safra que mostra 30% em Ano+0 e chega a 66% em Ano+2 significa que dois ter�
 <b>Atenção aos anos recentes:</b> Safras dos últimos 1-2 anos sempre parecem ter sinistralidade baixa, mas é porque ainda estão em desenvolvimento. Compare com o padrão das safras anteriores para estimar o valor final.<br><br>
 
 <b>Como foi desenvolvido:</b> Para cada sinistro, identifica o Ano de Vigência da apólice correspondente e o Ano de Aviso do sinistro. Calcula o lag (diferença em anos). Acumula o Total Sinistro por safra à medida que o lag aumenta e divide pelo prêmio total daquela safra. O gráfico de curvas mostra uma linha por safra — curvas que ainda sobem indicam safras incompletas.
-</div>
 """, unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2504,10 +2498,8 @@ else:
     st.info("Nenhum dado disponível para análise de tendência.")
 
 st.markdown("")
-st.markdown("""
-<div style="background:#F8FAFC;border-radius:10px;padding:18px;border:1px solid #E2E8F0;font-size:13px;color:#334155;">
-<b>📖 Como entender esta análise</b><br><br>
-
+with st.expander("🧮 Como interpretar esta análise"):
+    st.markdown("""
 <b>O que é:</b> Esta seção responde à pergunta: <i>a sinistralidade está melhorando ou piorando ao longo dos anos?</i> São quatro visualizações complementares que mostram a direção e a velocidade da mudança.<br><br>
 
 <b>Sinistralidade % Anual com Tendência Linear:</b> Mostra a sinistralidade real de cada ano de vigência (linha azul) e uma linha de tendência calculada por regressão linear (linha vermelha tracejada). Se a linha vermelha sobe, a tendência é de piora. O alerta automático abaixo do gráfico classifica a velocidade: alta acelerada (acima de 5% ao ano), alta moderada (entre 1% e 5%), estável ou queda.<br><br>
@@ -2525,7 +2517,6 @@ Score 70-100 = Reajuste Urgente | Score 40-69 = Reajuste Recomendado | Score 0-3
 <b>Ticket médio (últimos 12m vs 12m anteriores):</b> O painel mostra o custo médio por sinistro em duas janelas de 12 meses. A janela mais recente pode estar <i>subestimada</i> porque sinistros recentes ainda não foram avisados/enviados (atraso de comunicação). A janela dos 12 meses anteriores já está mais madura e serve de referência: se o ticket recente está muito abaixo do anterior, parte da diferença pode ser apenas atraso de aviso, e não melhora real de severidade.<br><br>
 
 <b>Como foi desenvolvido:</b> A sinistralidade anual usa a mesma base do Desempenho Consolidado por Ano (Ano de Vigência da Apólice), garantindo consistência. As médias móveis mensais são calculadas sobre a data de aviso dos sinistros, que é o dado mais atual disponível. A regressão linear é calculada com numpy.polyfit sobre os anos disponíveis filtrados.
-</div>
 """, unsafe_allow_html=True)
 
 
@@ -2720,10 +2711,8 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
             st.dataframe(_tbl_base, hide_index=True, use_container_width=True)
 
         st.markdown("")
-        st.markdown("""
-<div style="background:#F8FAFC;border-radius:10px;padding:18px;border:1px solid #E2E8F0;font-size:13px;color:#334155;">
-<b>📖 Como entender esta análise</b><br><br>
-
+        with st.expander("🧮 Como interpretar esta análise"):
+            st.markdown("""
 <b>O que é:</b> Esta seção responde à pergunta: <i>quais Ramos ou Utilizações puxaram a sinistralidade para cima (ou para baixo) recentemente?</i> Ela compara três janelas de tempo — 60, 90 e 180 dias — cada uma contra o período imediatamente anterior de mesma duração, usando a <b>data de aviso</b> dos sinistros.<br><br>
 
 <b>Cartões de sinistralidade por janela:</b> Mostram a sinistralidade geral da carteira no período recente vs. o período anterior equivalente. A seta indica se houve piora (▲ vermelho) ou melhora (▼ verde), em pontos percentuais (pp). As datas de cada janela aparecem abaixo do indicador.<br><br>
@@ -2735,8 +2724,7 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
 <b>Como foi desenvolvido:</b> O prêmio de cada grupo é proporcionalizado ao tamanho da janela (ex.: prêmio anual × 60/365 para a janela de 60 dias). O sinistro é somado pela data de aviso dentro de cada janela. Sinistralidade = sinistro da janela ÷ prêmio proporcional. A variação em pp é a diferença entre a sinistralidade recente e a anterior. Janelas curtas (60d) reagem rápido mas oscilam mais; a janela de 180d é mais estável.<br><br>
 
 <b>Atenção:</b> Como a análise usa a data de aviso, sinistros ocorridos recentemente mas ainda não avisados não aparecem — a janela mais recente pode estar subestimada.
-</div>
-""", unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
     # ══ SEÇÃO 2 — Evolução Trimestral e Mensal (fragmento isolado) ══════════
     @_st_fragment
@@ -2896,10 +2884,8 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
             st.plotly_chart(_fig_mes, use_container_width=True, config={'displayModeBar': False})
 
         st.markdown("")
-        st.markdown("""
-<div style="background:#F8FAFC;border-radius:10px;padding:18px;border:1px solid #E2E8F0;font-size:13px;color:#334155;">
-<b>📖 Como entender esta análise</b><br><br>
-
+        with st.expander("🧮 Como interpretar esta análise"):
+            st.markdown("""
 <b>O que é:</b> Esta seção mostra a <i>trajetória</i> da sinistralidade de cada Ramo ou Utilização ao longo do tempo, em duas escalas: trimestral (período completo filtrado — direção de médio prazo) e mensal (últimos 12 meses — movimento recente).<br><br>
 
 <b>Aba Trimestral:</b> Uma linha por grupo, com a sinistralidade de cada trimestre. O emoji ao lado do nome resume a tendência dos últimos 4 trimestres: 🔴 alta relevante (subiu mais de 5pp), 🟡 alta leve, 🟢 estável ou em queda. Os alertas automáticos abaixo do gráfico destacam o grupo com maior alta e o de maior queda no último ano.<br><br>
@@ -2909,8 +2895,7 @@ if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
 <b>Como foi desenvolvido:</b> O sinistro é agrupado por trimestre/mês de <b>aviso</b> e por Ramo ou Utilização. O prêmio de cada grupo é distribuído uniformemente entre os períodos (prêmio total do grupo ÷ nº de anos da base × 4 trimestres ou × 12 meses). Sinistralidade do período = sinistro do período ÷ prêmio proporcional do grupo.<br><br>
 
 <b>Atenção:</b> Por usar prêmio médio uniforme, grupos com forte crescimento ou queda de produção podem ter a sinistralidade distorcida em períodos específicos. Meses muito recentes tendem a aparecer melhores do que são, pela demora no aviso dos sinistros.
-</div>
-""", unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
     # ── Renderização ─────────────────────────────────────────────────────────
     _render_diag_variacao()
@@ -3207,21 +3192,24 @@ if not df_para_soma.empty and not _sin_valor_pr.empty:
 else:
     st.info("Sem dados suficientes para calcular prêmio de risco no período filtrado.")
 
-# ── Nota metodológica (expander — clique para ler o passo a passo) ───────────
+# ── Nota metodológica ────────────────────────────────────────────────────────
 with st.expander("🧮 Como interpretar os cálculos — prêmio de risco e adequação"):
     st.markdown("""
-**Prêmio de risco** = total de sinistros do segmento ÷ nº de apólices expostas (equivale a frequência × severidade). É o custo técnico puro por apólice, **independente do prêmio cobrado**. Base: sinistros com valor consolidado > 0 (pagos + reservas) no período filtrado.
+<b>Prêmio de risco</b> = total de sinistros do segmento ÷ nº de apólices expostas (equivale a frequência × severidade). É o custo técnico puro por apólice, <b>independente do prêmio cobrado</b>. Base: sinistros com valor consolidado &gt; 0 (pagos + reservas) no período filtrado.
 
-**Prêmio puro** = prêmio de risco × (1 + margem de segurança). A margem protege contra flutuações de riscos futuros; ajuste-a no campo acima.
 
-**Índice vs Risco** = prêmio pago médio ÷ prêmio de risco. É o **piso de sobrevivência técnica**: abaixo de 1,00 o prêmio pago não cobre nem o custo puro de sinistro (antes de qualquer despesa administrativa, comercial ou lucro).
+<b>Prêmio puro</b> = prêmio de risco × (1 + margem de segurança). A margem protege contra flutuações de riscos futuros; ajuste-a no campo acima.
 
-**Índice vs Puro** = prêmio pago médio ÷ prêmio puro. É a **adequação com margem**: abaixo de 1,00 o prêmio cobre o custo médio de sinistro, mas não a margem de segurança contra os anos ruins — régua mais exigente e realista para subscrição.
 
-**Como ler o rótulo de Adequação:** "insustentável" = nem o custo puro é coberto (Índice vs Risco < 1); "sem a margem de segurança" = cobre o custo mas não a margem (Índice vs Puro < 1); "folga apertada" / "boa folga" = cobre com margem, com pouca ou boa sobra.
+<b>Índice vs Risco</b> = prêmio pago médio ÷ prêmio de risco. É o <b>piso de sobrevivência técnica</b>: abaixo de 1,00 o prêmio pago não cobre nem o custo puro de sinistro (antes de qualquer despesa administrativa, comercial ou lucro).
 
-**Cuidados do RCO:** (1) ramo de **cauda longa** — o prêmio de risco de segmentos pequenos é dominado pela ocorrência ou não de um sinistro catastrófico; leia junto com o perfil de cauda da seção seguinte. (2) Sinistros judiciais de RC levam anos para liquidar, então o custo de anos recentes tende a ser **subestimado** (efeito IBNR) — use como referência de subscrição, não como taxa final. (3) Segmentos com menos de 5 sinistros são sinalizados como amostra pequena.
-""")
+<b>Índice vs Puro</b> = prêmio pago médio ÷ prêmio puro. É a <b>adequação com margem</b>: abaixo de 1,00 o prêmio cobre o custo médio de sinistro, mas não a margem de segurança contra os anos ruins — régua mais exigente e realista para subscrição.
+
+<b>Como ler o rótulo de Adequação:</b> "insustentável" = nem o custo puro é coberto (Índice vs Risco < 1); "sem a margem de segurança" = cobre o custo mas não a margem (Índice vs Puro < 1); "folga apertada" / "boa folga" = cobre com margem, com pouca ou boa sobra.
+
+
+<b>Cuidados do RCO:</b> (1) ramo de <b>cauda longa</b> — o prêmio de risco de segmentos pequenos é dominado pela ocorrência ou não de um sinistro catastrófico; leia junto com o perfil de cauda da seção anterior. (2) Sinistros judiciais de RC levam anos para liquidar, então o custo de anos recentes tende a ser <b>subestimado</b> (efeito IBNR) — use como referência de subscrição, não como taxa final. (3) Segmentos com menos de 5 sinistros são sinalizados como amostra pequena.
+""", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # BLOCO: PERFIL DE RISCO POR UTILIZAÇÃO — VISÃO RESSEGURADOR
@@ -3560,21 +3548,26 @@ trava de cauda: utilização com sinistro ≥ corte não é classificada como Ba
 else:
     st.info("Sem dados suficientes para montar o perfil de risco por Utilização.")
 
-# ── Nota metodológica (expander — clique para ler o passo a passo) ───────────
+# ── Nota metodológica (padrão das seções analíticas do app) ──────────────────
 with st.expander("🧮 Como interpretar os cálculos — visão ressegurador"):
     st.markdown("""
-**Base:** sinistros com valor consolidado (pagos + reservas) maior que zero no período filtrado. Sinistros avisados sem movimentação financeira são desconsiderados de toda a seção (frequência e severidade).
+<b>Base:</b> sinistros com valor consolidado (pagos + reservas) maior que zero no período filtrado. Sinistros avisados sem movimentação financeira são desconsiderados de toda a seção (frequência e severidade).
 
-**Frequência** = sinistros únicos com valor ÷ apólices únicas do segmento, no período filtrado (slider). Não é frequência anualizada por veículo-exposto — informe isso ao ressegurador se solicitado.
 
-**Severidade** = valor consolidado por sinistro, incluindo todas as coberturas acionadas.
+<b>Frequência</b> = sinistros únicos com valor ÷ apólices únicas do segmento, no período filtrado (slider). Não é frequência anualizada por veículo-exposto — informe isso ao ressegurador se solicitado.
 
-**Classificação de frequência (Baixa/Média/Alta):** comparação contra a mediana da **base completa** (todas as apólices e sinistros carregados, sem filtros nem slider), com bandas Alta ≥ 150% da mediana e Baixa ≤ 67% da mediana. Por usar referência fixa, o rótulo é estável e não muda conforme os filtros.
 
-**Classificação de severidade (Baixa/Média/Alta):** razão **média ÷ mediana** dos sinistros da própria utilização (índice de cauda). Razão elevada indica que poucos sinistros de grande valor puxam a média para cima — distribuição de cauda pesada, com maior potencial de perdas severas. Bandas: Alta ≥ 3,00 · Baixa ≤ 2,50 · Média entre as duas (limiar de Baixa calibrado pelo julgamento de subscrição). **Trava de cauda:** utilização com ao menos um sinistro acima do corte selecionado não é classificada como severidade Baixa — sobe para Média (por depender do corte escolhido, o nível de severidade pode mudar conforme essa seleção). Como usa os dados da própria utilização, o rótulo independe do mix da carteira.
+<b>Severidade</b> = valor consolidado por sinistro, incluindo todas as coberturas acionadas.
 
-**Corte de sinistro grave:** valores fixos de R$ 100 mil a R$ 5 milhões (critério: valor ≥ corte) e "Acima de 7.000.000,00" (critério: valor > R$ 7 milhões). Sugerido alinhar o corte com a prioridade/retenção do contrato de resseguro.
-""")
+
+<b>Classificação de frequência (Baixa/Média/Alta):</b> comparação contra a mediana da <b>base completa</b> (todas as apólices e sinistros carregados, sem filtros nem slider), com bandas Alta ≥ 150% da mediana e Baixa ≤ 67% da mediana. Por usar referência fixa, o rótulo é estável e não muda conforme os filtros.
+
+
+<b>Classificação de severidade (Baixa/Média/Alta):</b> razão <b>média ÷ mediana</b> dos sinistros da própria utilização (índice de cauda). Razão elevada indica que poucos sinistros de grande valor puxam a média para cima — distribuição de cauda pesada, com maior potencial de perdas severas. Bandas: Alta ≥ 3,00 · Baixa ≤ 2,50 · Média entre as duas (limiar de Baixa calibrado pelo julgamento de subscrição). <b>Trava de cauda:</b> utilização com ao menos um sinistro acima do corte selecionado não é classificada como severidade Baixa — sobe para Média (por depender do corte escolhido, o nível de severidade pode mudar conforme essa seleção). Como usa os dados da própria utilização, o rótulo independe do mix da carteira.
+
+
+<b>Corte de sinistro grave:</b> valores fixos de R$ 100 mil a R$ 5 milhões (critério: valor ≥ corte) e "Acima de 7.000.000,00" (critério: valor > R$ 7 milhões). Sugerido alinhar o corte com a prioridade/retenção do contrato de resseguro.
+""", unsafe_allow_html=True)
 
 st.write("---")
 st.caption("Desenvolvido por Alex Sousa.")
