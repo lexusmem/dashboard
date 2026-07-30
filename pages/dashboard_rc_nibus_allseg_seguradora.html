@@ -54,31 +54,12 @@
 </head>
 <body class="bg-slate-50 text-slate-800 font-sans min-h-screen flex flex-col antialiased">
 
-    <!-- Cabeçalho / Barra de Navegação -->
-    <header class="bg-slate-900 text-white sticky top-0 z-50 shadow-md">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-            <div class="flex items-center space-x-3">
-                <div class="bg-sky-500 text-white p-2 rounded-lg font-bold">
-                    <i class="fa-solid fa-bus text-xl"></i>
-                </div>
-                <div>
-                    <h1 class="text-lg font-bold leading-tight">Allseg Seguradora</h1>
-                    <p class="text-xs text-sky-400 font-medium">Painel de Análise Comercial & Subscrição - RC Ônibus</p>
-                </div>
-            </div>
-            
-            <div class="flex items-center space-x-3">
-                <label for="fileInput" class="cursor-pointer bg-sky-600 hover:bg-sky-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition flex items-center space-x-2 shadow">
-                    <i class="fa-solid fa-file-import"></i>
-                    <span>Carregar Excel / CSV</span>
-                </label>
-                <input type="file" id="fileInput" accept=".xlsx, .xls, .csv" class="hidden">
-            </div>
-        </div>
-    </header>
+    <!-- input de upload (antes no header removido) -->
+    <input type="file" id="fileInput" accept=".xlsx, .xls, .csv" class="hidden">
+
 
     <!-- Banner de Início/Upload -->
-    <div id="uploadBanner" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 my-6 w-full">
+    <div id="uploadBanner" class="w-full px-4 sm:px-6 my-6 w-full">
         <div class="border-2 border-dashed border-sky-300 bg-sky-50/50 rounded-2xl p-8 text-center hover:bg-sky-50 transition cursor-pointer" onclick="document.getElementById('fileInput').click()">
             <div class="mx-auto w-16 h-16 bg-sky-100 text-sky-600 rounded-full flex items-center justify-center text-2xl mb-3">
                 <i class="fa-solid fa-file-excel"></i>
@@ -92,7 +73,15 @@
     </div>
 
     <!-- Conteúdo Principal -->
-    <main id="dashboardContent" class="hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full space-y-6 flex-1">
+    <main id="dashboardContent" class="hidden w-full px-4 sm:px-6 py-6 w-full space-y-6 flex-1">
+
+        <!-- Barra de ação: trocar arquivo (substitui o botão do header removido) -->
+        <div class="flex justify-end">
+            <label for="fileInput" class="cursor-pointer bg-sky-600 hover:bg-sky-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition inline-flex items-center space-x-2 shadow">
+                <i class="fa-solid fa-file-import"></i>
+                <span>Carregar / Trocar Excel / CSV</span>
+            </label>
+        </div>
         
         <!-- Barra de Filtros Pesquisa -->
         <section class="glass-card rounded-2xl p-4 shadow-sm">
