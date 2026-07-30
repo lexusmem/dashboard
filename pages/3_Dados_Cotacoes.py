@@ -128,13 +128,19 @@ def _carregar(arquivo_bytes, nome):
         veic.astype(str).str.replace(r'[^\d]', '', regex=True), errors='coerce').fillna(1).astype(int)
     df['Veículos'] = df['Veículos'].replace(0, 1)
 
-    # Subscritor (proposta tem prioridade sobre cotação)
+    # Subscritor (proposta tem prioridade sobre cotação) — usado nos gráficos
     sub_cot = _primeira_col(raw, 'Subscritor')
     sub_prop = _primeira_col(raw, 'Subscritor_proposta', 'Subscritor Proposta')
     sub_cot = sub_cot if sub_cot is not None else pd.Series([''] * len(raw))
     sub_prop = sub_prop if sub_prop is not None else pd.Series([''] * len(raw))
     df['Subscritor'] = sub_prop.fillna('').replace('', np.nan)\
         .fillna(sub_cot).replace('', 'Sem Subscritor Atribuído').fillna('Sem Subscritor Atribuído')
+
+    # Flag de análise pela subscrição: baseada ESTRITAMENTE na coluna original
+    # "Subscritor" preenchida (regra de negócio: subscritor preenchido = cotação
+    # foi analisada pela subscrição). Independente do Subscritor_proposta.
+    _sub_orig = sub_cot.fillna('').astype(str).str.strip()
+    df['Analisada_Subscricao'] = _sub_orig.ne('') & _sub_orig.str.lower().ne('nan')
 
     # Data de criação e ano
     criacao = _primeira_col(raw, 'Criação', 'Criacao')
@@ -158,27 +164,73 @@ def _carregar(arquivo_bytes, nome):
     return df
 
 
-# ── Upload (só nesta página) ─────────────────────────────────────────────────
-arquivo = st.file_uploader(
-    "Selecione a planilha de Cotações / Propostas (.xlsx, .xls ou .csv extraído do Portal do Corretor)",
-    type=['xlsx', 'xls', 'csv'],
-    key='upload_cotacoes'
+# ── Upload (só nesta página) — some após carregar, reabre por botão ──────────
+# Guarda os dados carregados em session_state para que o uploader deixe de ser
+# exibido depois do carregamento. Um botão "Atualizar arquivo" reabre o uploader,
+# que volta a se fechar assim que um novo arquivo é lido.
+_TEXTO_UPLOAD = (
+    "Carregar arquivo contendo os dados extraídos do relatório Analítico "
+    "**ID_142 - Portal do Corretor - Gestão**, disponível no admseg (.xlsx, .xls ou .csv)"
 )
 
-if arquivo is None:
+def _ler_arquivo(_arq):
+    try:
+        return _carregar(_arq.getvalue(), _arq.name), None
+    except ImportError as e:
+        if 'openpyxl' in str(e):
+            return None, (
+                "Para ler arquivos **.xlsx** é necessário o pacote `openpyxl`, que não está "
+                "instalado neste ambiente.\n\n"
+                "**Como resolver:** adicione uma linha `openpyxl` ao `requirements.txt` do "
+                "projeto e faça o deploy novamente.\n\n"
+                "**Alternativa imediata:** exporte o arquivo do Portal como **.csv** e carregue-o "
+                "aqui — CSV não exige `openpyxl`."
+            )
+        return None, f"Dependência ausente ao ler o arquivo: {e}"
+    except Exception as e:
+        return None, f"Não foi possível ler o arquivo: {e}"
+
+# Estado inicial
+if 'cot_df' not in st.session_state:
+    st.session_state['cot_df'] = None
+if 'cot_mostrar_uploader' not in st.session_state:
+    st.session_state['cot_mostrar_uploader'] = True
+
+# Já há dados carregados: mostra resumo + botão para trocar de arquivo
+if st.session_state['cot_df'] is not None and not st.session_state['cot_mostrar_uploader']:
+    _cinfo1, _cinfo2 = st.columns([4, 1])
+    with _cinfo1:
+        st.success(f"✅ Arquivo carregado: **{st.session_state.get('cot_nome', 'dados de cotações')}** "
+                   f"({len(st.session_state['cot_df']):,} registros).".replace(',', '.'))
+    with _cinfo2:
+        if st.button("🔄 Atualizar arquivo", use_container_width=True):
+            st.session_state['cot_mostrar_uploader'] = True
+            st.rerun()
+
+# Uploader visível: primeira carga ou quando o usuário pediu para trocar
+if st.session_state['cot_mostrar_uploader']:
+    arquivo = st.file_uploader(_TEXTO_UPLOAD, type=['xlsx', 'xls', 'csv'], key='upload_cotacoes')
+    if arquivo is not None:
+        _df_lido, _erro = _ler_arquivo(arquivo)
+        if _erro:
+            st.error(_erro)
+            st.stop()
+        if _df_lido.empty:
+            st.warning("O arquivo foi lido, mas não contém linhas de cotação.")
+            st.stop()
+        # Guarda e fecha o uploader
+        st.session_state['cot_df'] = _df_lido
+        st.session_state['cot_nome'] = arquivo.name
+        st.session_state['cot_mostrar_uploader'] = False
+        st.rerun()
+
+# Sem dados ainda: instrui e para
+if st.session_state['cot_df'] is None:
     st.info("⬆️ Carregue o arquivo de cotações para visualizar o painel. "
             "Nenhum dado é solicitado nas outras páginas — o upload acontece apenas aqui.")
     st.stop()
 
-try:
-    df = _carregar(arquivo.getvalue(), arquivo.name)
-except Exception as e:
-    st.error(f"Não foi possível ler o arquivo: {e}")
-    st.stop()
-
-if df.empty:
-    st.warning("O arquivo foi lido, mas não contém linhas de cotação.")
-    st.stop()
+df = st.session_state['cot_df']
 
 # ── Filtros dinâmicos ────────────────────────────────────────────────────────
 st.markdown("#### 🔎 Filtros")
@@ -259,6 +311,7 @@ with g1:
     fig1 = go.Figure()
     fig1.add_bar(x=_ev['Ano'], y=_ev['Cotações'], name='Cotações Solicitadas', marker_color=_AZUL)
     fig1.add_bar(x=_ev['Ano'], y=_ev['Emitidas'], name='Apólices Emitidas', marker_color=_VERDE)
+    fig1.update_traces(texttemplate='%{y:,.0f}', textposition='outside', textfont_size=10)
     fig1.update_layout(barmode='group', height=360,
                        legend=dict(orientation='h', y=1.1), **_layout)
     st.plotly_chart(fig1, use_container_width=True)
@@ -267,7 +320,8 @@ with g2:
     st.markdown("**Evolução Temporal por Produto** · cotações por modalidade")
     _ev_prod = d[d['Ano'].notna()].groupby(['Ano', 'Produto']).size().reset_index(name='Cotações')
     _ev_prod['Ano'] = _ev_prod['Ano'].astype(int).astype(str)
-    fig2 = px.bar(_ev_prod, x='Ano', y='Cotações', color='Produto', height=360)
+    fig2 = px.bar(_ev_prod, x='Ano', y='Cotações', color='Produto', height=360, text_auto='.0f')
+    fig2.update_traces(textposition='inside', textfont_size=9)
     fig2.update_layout(barmode='stack', legend=dict(orientation='h', y=1.1), **_layout)
     st.plotly_chart(fig2, use_container_width=True)
 
@@ -282,6 +336,7 @@ with g3:
     fig3 = go.Figure()
     fig3.add_bar(y=_prod['Produto'], x=_prod['Cotações'], name='Cotações', orientation='h', marker_color=_AZUL)
     fig3.add_bar(y=_prod['Produto'], x=_prod['Emitidas'], name='Emitidas', orientation='h', marker_color=_VERDE)
+    fig3.update_traces(texttemplate='%{x:,.0f}', textposition='outside', textfont_size=10)
     fig3.update_layout(barmode='group', height=360, legend=dict(orientation='h', y=1.1), **_layout)
     st.plotly_chart(fig3, use_container_width=True)
 
@@ -300,6 +355,7 @@ with g4:
     fig4 = go.Figure()
     fig4.add_bar(x=_pf['Perfil'], y=_pf['% Volume Cotado'], name='% do Volume Total Cotado', marker_color=_AZUL)
     fig4.add_bar(x=_pf['Perfil'], y=_pf['% Conversão'], name='% Taxa de Conversão', marker_color=_VERDE)
+    fig4.update_traces(texttemplate='%{y:.1f}%', textposition='outside', textfont_size=10)
     fig4.update_layout(barmode='group', height=360, yaxis=dict(ticksuffix='%', range=[0, 100]),
                        legend=dict(orientation='h', y=1.1), **_layout)
     st.plotly_chart(fig4, use_container_width=True)
@@ -316,6 +372,7 @@ with g5:
     fig5 = go.Figure()
     fig5.add_bar(y=_rep['Representante'], x=_rep['Cotações'], name='Cotações', orientation='h', marker_color=_AZUL)
     fig5.add_bar(y=_rep['Representante'], x=_rep['Emitidas'], name='Emitidas', orientation='h', marker_color=_VERDE)
+    fig5.update_traces(texttemplate='%{x:,.0f}', textposition='outside', textfont_size=9)
     fig5.update_layout(barmode='group', height=380, legend=dict(orientation='h', y=1.1), **_layout)
     st.plotly_chart(fig5, use_container_width=True)
 
@@ -328,6 +385,7 @@ with g6:
     fig6 = go.Figure()
     fig6.add_bar(y=_sub['Subscritor'], x=_sub['Demandas'], name='Demandas', orientation='h', marker_color=_AZUL)
     fig6.add_bar(y=_sub['Subscritor'], x=_sub['Emitidas'], name='Emitidas', orientation='h', marker_color=_VERDE)
+    fig6.update_traces(texttemplate='%{x:,.0f}', textposition='outside', textfont_size=9)
     fig6.update_layout(barmode='group', height=380, legend=dict(orientation='h', y=1.1), **_layout)
     st.plotly_chart(fig6, use_container_width=True)
 
@@ -338,6 +396,7 @@ with g7:
     st.markdown("**Visão Geral por Status** · estágio atual das cotações")
     _stt = d.groupby('Status').size().reset_index(name='Qtd').sort_values('Qtd', ascending=False)
     fig7 = px.pie(_stt, names='Status', values='Qtd', hole=0.45, height=380)
+    fig7.update_traces(textinfo='percent+value', textfont_size=10)
     fig7.update_layout(**_layout)
     st.plotly_chart(fig7, use_container_width=True)
 
@@ -350,8 +409,106 @@ with g8:
     fig8 = go.Figure()
     fig8.add_bar(y=_corr['Corretor'], x=_corr['Cotações'], name='Cotações', orientation='h', marker_color=_AZUL)
     fig8.add_bar(y=_corr['Corretor'], x=_corr['Emitidas'], name='Emitidas', orientation='h', marker_color=_VERDE)
+    fig8.update_traces(texttemplate='%{x:,.0f}', textposition='outside', textfont_size=9)
     fig8.update_layout(barmode='group', height=380, legend=dict(orientation='h', y=1.1), **_layout)
     st.plotly_chart(fig8, use_container_width=True)
+
+st.write("---")
+
+# ── Análise de Efetivação da Subscrição ──────────────────────────────────────
+# Cotações com a coluna "Subscritor" preenchida = analisadas pela subscrição.
+# Dessas, quantas foram efetivadas (status emitida). Cruzado por perfil e produto.
+st.markdown("#### 🔍 Efetivação da Subscrição — cotações analisadas que viraram apólice")
+st.caption(
+    "Considera analisadas pela subscrição as cotações com a coluna **Subscritor** "
+    "preenchida. Entre elas, as **efetivadas** são as que atingiram status de emitida."
+)
+
+_analisadas = d[d['Analisada_Subscricao']]
+_analisadas_emit = _analisadas[_analisadas['Status'].map(_eh_emitida)]
+
+_n_analisadas = len(_analisadas)
+_n_efetivadas = len(_analisadas_emit)
+_taxa_efet = (_n_efetivadas / _n_analisadas * 100) if _n_analisadas > 0 else 0
+
+sc1, sc2, sc3 = st.columns(3)
+sc1.metric("Cotações Analisadas pela Subscrição", f"{_n_analisadas:,}".replace(',', '.'))
+sc2.metric("Analisadas que viraram Apólice", f"{_n_efetivadas:,}".replace(',', '.'))
+sc3.metric("Taxa de Efetivação", f"{_taxa_efet:.1f}%".replace('.', ','))
+
+if _n_analisadas == 0:
+    st.info("Nenhuma cotação analisada pela subscrição (coluna Subscritor preenchida) "
+            "no recorte de filtros atual.")
+else:
+    def _resumo_efetivacao(_dim):
+        _an = _analisadas.groupby(_dim).size().reset_index(name='Analisadas')
+        _ef = _analisadas_emit.groupby(_dim).size().reset_index(name='Efetivadas')
+        _res = _an.merge(_ef, on=_dim, how='left').fillna(0)
+        _res['Efetivadas'] = _res['Efetivadas'].astype(int)
+        _res['Taxa de Efetivação'] = _res.apply(
+            lambda r: r['Efetivadas'] / r['Analisadas'] if r['Analisadas'] > 0 else 0, axis=1)
+        return _res.sort_values('Analisadas', ascending=False)
+
+    se1, se2 = st.columns(2)
+
+    # Por Perfil de Frota
+    with se1:
+        st.markdown("**Por Perfil de Frota**")
+        _ef_perfil = _resumo_efetivacao('Perfil Frota')
+        # ordena pela ordem natural das faixas
+        _ef_perfil['__ord'] = _ef_perfil['Perfil Frota'].map(
+            {p: i for i, p in enumerate(_ORDEM_PERFIL)}).fillna(99)
+        _ef_perfil = _ef_perfil.sort_values('__ord')
+
+        fig_efp = go.Figure()
+        fig_efp.add_bar(x=_ef_perfil['Perfil Frota'], y=_ef_perfil['Analisadas'],
+                        name='Analisadas', marker_color=_AZUL)
+        fig_efp.add_bar(x=_ef_perfil['Perfil Frota'], y=_ef_perfil['Efetivadas'],
+                        name='Efetivadas', marker_color=_VERDE)
+        fig_efp.update_traces(texttemplate='%{y:,.0f}', textposition='outside', textfont_size=10)
+        fig_efp.update_layout(barmode='group', height=340,
+                              legend=dict(orientation='h', y=1.12), **_layout)
+        st.plotly_chart(fig_efp, use_container_width=True)
+
+        _tp = _ef_perfil[['Perfil Frota', 'Analisadas', 'Efetivadas', 'Taxa de Efetivação']].copy()
+        _tp['Taxa de Efetivação'] = _tp['Taxa de Efetivação'].map(lambda x: f"{x:.1%}".replace('.', ','))
+        st.dataframe(_tp, hide_index=True, use_container_width=True)
+
+    # Por Produto
+    with se2:
+        st.markdown("**Por Tipo de Produto**")
+        _ef_prod = _resumo_efetivacao('Produto')
+
+        fig_efpr = go.Figure()
+        fig_efpr.add_bar(x=_ef_prod['Produto'], y=_ef_prod['Analisadas'],
+                         name='Analisadas', marker_color=_AZUL)
+        fig_efpr.add_bar(x=_ef_prod['Produto'], y=_ef_prod['Efetivadas'],
+                         name='Efetivadas', marker_color=_VERDE)
+        fig_efpr.update_traces(texttemplate='%{y:,.0f}', textposition='outside', textfont_size=10)
+        fig_efpr.update_layout(barmode='group', height=340,
+                               legend=dict(orientation='h', y=1.12), **_layout)
+        st.plotly_chart(fig_efpr, use_container_width=True)
+
+        _tpr = _ef_prod[['Produto', 'Analisadas', 'Efetivadas', 'Taxa de Efetivação']].copy()
+        _tpr['Taxa de Efetivação'] = _tpr['Taxa de Efetivação'].map(lambda x: f"{x:.1%}".replace('.', ','))
+        st.dataframe(_tpr, hide_index=True, use_container_width=True)
+
+    # Cruzamento Perfil × Produto (taxa de efetivação)
+    st.markdown("**Taxa de Efetivação: Perfil de Frota × Produto**")
+    _an_cru = _analisadas.groupby(['Perfil Frota', 'Produto']).size().reset_index(name='Analisadas')
+    _ef_cru = _analisadas_emit.groupby(['Perfil Frota', 'Produto']).size().reset_index(name='Efetivadas')
+    _cru = _an_cru.merge(_ef_cru, on=['Perfil Frota', 'Produto'], how='left').fillna(0)
+    _cru['Taxa'] = _cru.apply(lambda r: r['Efetivadas'] / r['Analisadas'] * 100 if r['Analisadas'] > 0 else 0, axis=1)
+    _piv = _cru.pivot_table(index='Perfil Frota', columns='Produto', values='Taxa', aggfunc='first')
+    _piv = _piv.reindex([p for p in _ORDEM_PERFIL if p in _piv.index])
+    if not _piv.empty:
+        fig_heat = px.imshow(_piv, color_continuous_scale='Greens', aspect='auto',
+                             height=320, text_auto='.0f',
+                             labels=dict(color='Taxa de Efetivação (%)'))
+        fig_heat.update_layout(**_layout)
+        st.plotly_chart(fig_heat, use_container_width=True)
+        st.caption("Percentual de cotações analisadas que viraram apólice, por combinação "
+                   "de perfil de frota e produto. Células mais escuras = maior efetivação.")
 
 st.write("---")
 
