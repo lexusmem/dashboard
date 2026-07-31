@@ -136,10 +136,14 @@ def _carregar(arquivo_bytes, nome):
     df['Subscritor'] = sub_prop.fillna('').replace('', np.nan)\
         .fillna(sub_cot).replace('', 'Sem Subscritor Atribuído').fillna('Sem Subscritor Atribuído')
 
-    # Flag de análise pela subscrição: baseada ESTRITAMENTE na coluna original
-    # "Subscritor" preenchida (regra de negócio: subscritor preenchido = cotação
-    # foi analisada pela subscrição). Independente do Subscritor_proposta.
+    # Coluna Subscritor ORIGINAL (só a coluna 'Subscritor' do arquivo, sem a
+    # prioridade da proposta). É a que representa quem analisou a cotação — usada
+    # tanto no filtro de subscritor quanto na análise de efetivação, para que
+    # filtrar por um subscritor traga TODAS as cotações que ele analisou,
+    # inclusive as emitidas (que no campo combinado migrariam para o subscritor
+    # da proposta).
     _sub_orig = sub_cot.fillna('').astype(str).str.strip()
+    df['Subscritor Analista'] = _sub_orig.replace({'': 'Sem Subscritor', 'nan': 'Sem Subscritor'})
     df['Analisada_Subscricao'] = _sub_orig.ne('') & _sub_orig.str.lower().ne('nan')
 
     # Data de criação e ano
@@ -196,17 +200,6 @@ if 'cot_df' not in st.session_state:
 if 'cot_mostrar_uploader' not in st.session_state:
     st.session_state['cot_mostrar_uploader'] = True
 
-# Já há dados carregados: mostra resumo + botão para trocar de arquivo
-if st.session_state['cot_df'] is not None and not st.session_state['cot_mostrar_uploader']:
-    _cinfo1, _cinfo2 = st.columns([4, 1])
-    with _cinfo1:
-        st.success(f"✅ Arquivo carregado: **{st.session_state.get('cot_nome', 'dados de cotações')}** "
-                   f"({len(st.session_state['cot_df']):,} registros).".replace(',', '.'))
-    with _cinfo2:
-        if st.button("🔄 Atualizar arquivo", use_container_width=True):
-            st.session_state['cot_mostrar_uploader'] = True
-            st.rerun()
-
 # Uploader visível: primeira carga ou quando o usuário pediu para trocar
 if st.session_state['cot_mostrar_uploader']:
     arquivo = st.file_uploader(_TEXTO_UPLOAD, type=['xlsx', 'xls', 'csv'], key='upload_cotacoes')
@@ -233,7 +226,14 @@ if st.session_state['cot_df'] is None:
 df = st.session_state['cot_df']
 
 # ── Filtros dinâmicos ────────────────────────────────────────────────────────
-st.markdown("#### 🔎 Filtros")
+# Cabeçalho dos filtros com o botão de trocar arquivo à direita, na mesma linha.
+_hcol1, _hcol2 = st.columns([5, 1])
+with _hcol1:
+    st.markdown("#### 🔎 Filtros")
+with _hcol2:
+    if st.button("🔄 Atualizar arquivo", use_container_width=True):
+        st.session_state['cot_mostrar_uploader'] = True
+        st.rerun()
 c1, c2, c3, c4, c5, c6 = st.columns(6)
 
 _anos = sorted([int(a) for a in df['Ano'].dropna().unique()])
@@ -248,7 +248,7 @@ with c4:
 with c5:
     f_rep = st.selectbox('Representante', ['Todos'] + sorted(df['Representante'].dropna().unique()), key='f_rep_cot')
 with c6:
-    f_sub = st.selectbox('Subscritor', ['Todos'] + sorted(df['Subscritor'].dropna().unique()), key='f_sub_cot')
+    f_sub = st.selectbox('Subscritor (analista)', ['Todos'] + sorted(df['Subscritor Analista'].dropna().unique()), key='f_sub_cot')
 
 d = df.copy()
 if f_ano != 'Todos':       d = d[d['Ano'] == f_ano]
@@ -256,7 +256,7 @@ if f_perfil != 'Todos':    d = d[d['Perfil Frota'] == f_perfil]
 if f_produto != 'Todos':   d = d[d['Produto'] == f_produto]
 if f_corretor != 'Todos':  d = d[d['Corretor'] == f_corretor]
 if f_rep != 'Todos':       d = d[d['Representante'] == f_rep]
-if f_sub != 'Todos':       d = d[d['Subscritor'] == f_sub]
+if f_sub != 'Todos':       d = d[d['Subscritor Analista'] == f_sub]
 
 if d.empty:
     st.warning("Nenhuma cotação corresponde aos filtros selecionados.")
