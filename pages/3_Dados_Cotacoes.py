@@ -146,6 +146,11 @@ def _carregar(arquivo_bytes, nome):
     df['Subscritor Analista'] = _sub_orig.replace({'': 'Sem Subscritor', 'nan': 'Sem Subscritor'})
     df['Analisada_Subscricao'] = _sub_orig.ne('') & _sub_orig.str.lower().ne('nan')
 
+    # Subscritor da PROPOSTA (coluna Subscritor_proposta): quem assumiu a cotação
+    # quando ela virou proposta. Papel distinto do analista da cotação.
+    _sub_prop_orig = sub_prop.fillna('').astype(str).str.strip()
+    df['Subscritor Proposta'] = _sub_prop_orig.replace({'': 'Sem Subscritor Proposta', 'nan': 'Sem Subscritor Proposta'})
+
     # Data de criação e ano
     criacao = _primeira_col(raw, 'Criação', 'Criacao')
     if criacao is not None:
@@ -234,7 +239,8 @@ with _hcol2:
     if st.button("🔄 Atualizar arquivo", use_container_width=True):
         st.session_state['cot_mostrar_uploader'] = True
         st.rerun()
-c1, c2, c3, c4, c5, c6 = st.columns(6)
+c1, c2, c3, c4 = st.columns(4)
+c5, c6, c7, c8 = st.columns(4)
 
 _anos = sorted([int(a) for a in df['Ano'].dropna().unique()])
 with c1:
@@ -248,7 +254,9 @@ with c4:
 with c5:
     f_rep = st.selectbox('Representante', ['Todos'] + sorted(df['Representante'].dropna().unique()), key='f_rep_cot')
 with c6:
-    f_sub = st.selectbox('Subscritor (analista)', ['Todos'] + sorted(df['Subscritor Analista'].dropna().unique()), key='f_sub_cot')
+    f_sub = st.selectbox('Subscritor (analista da cotação)', ['Todos'] + sorted(df['Subscritor Analista'].dropna().unique()), key='f_sub_cot')
+with c7:
+    f_sub_prop = st.selectbox('Subscritor (da proposta)', ['Todos'] + sorted(df['Subscritor Proposta'].dropna().unique()), key='f_sub_prop_cot')
 
 d = df.copy()
 if f_ano != 'Todos':       d = d[d['Ano'] == f_ano]
@@ -257,6 +265,7 @@ if f_produto != 'Todos':   d = d[d['Produto'] == f_produto]
 if f_corretor != 'Todos':  d = d[d['Corretor'] == f_corretor]
 if f_rep != 'Todos':       d = d[d['Representante'] == f_rep]
 if f_sub != 'Todos':       d = d[d['Subscritor Analista'] == f_sub]
+if f_sub_prop != 'Todos':  d = d[d['Subscritor Proposta'] == f_sub_prop]
 
 if d.empty:
     st.warning("Nenhuma cotação corresponde aos filtros selecionados.")
