@@ -248,9 +248,12 @@ df = st.session_state['cot_df']
 _FILTRO_KEYS_COT = ['f_ano_cot', 'f_perfil_cot', 'f_prod_cot', 'f_corr_cot',
                     'f_rep_cot', 'f_sub_cot', 'f_sub_prop_cot']
 
-# Reset dos filtros ANTES de instanciar os widgets: apagar a key de um
+# Reset dos filtros ANTES de instanciar os widgets. Apagar a key de um
 # multiselect só limpa o campo se for feito antes de o widget ser criado no
-# rerun. O botão apenas liga a flag; a limpeza efetiva acontece aqui no topo.
+# rerun — se o pop for feito dentro do próprio botão (que roda DEPOIS dos
+# widgets na ordem do script), o Streamlit reinstancia o valor e o campo
+# continua preenchido. Por isso o botão apenas liga a flag e dá rerun; a
+# limpeza efetiva acontece aqui no topo, antes dos multiselect.
 if st.session_state.get('cot_limpar_filtros', False):
     for _k in _FILTRO_KEYS_COT:
         st.session_state.pop(_k, None)
