@@ -796,13 +796,10 @@ if img_base64:
 
 # ── PÁGINA 1: APÓLICE / SEGURADO ────────────────────────────────────────────
 
-# Link para a página de Dados Gerais na sidebar
-st.sidebar.header('Dados Gerais')
+# Navegação na sidebar (mesmo padrão da página de Dados Cotações)
+st.sidebar.header('Navegação')
+st.sidebar.page_link("app.py", label="📋  Apólice / Segurado")
 st.sidebar.page_link("pages/2_Dados_Gerais.py", label="📊  Dados Gerais")
-
-# Link para a página de Dados Cotações (painel independente — só pede o arquivo
-# de cotações quando a página é acessada)
-st.sidebar.header('Dados Cotações')
 st.sidebar.page_link("pages/3_Dados_Cotacoes.py", label="📝  Dados Cotações")
 
 # --- Filtragem dados da Apólice ---
