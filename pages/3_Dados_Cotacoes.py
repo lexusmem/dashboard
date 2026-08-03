@@ -14,6 +14,23 @@ from allseg_theme import aplicar_tema
 st.set_page_config(layout='wide', page_title='Dados Cotações — Allseg', page_icon='📝')
 aplicar_tema()
 
+# Fundo branco nos campos de filtro (multiselect) — por padrão herdam a cor da
+# página. Mira o container do BaseWeb usado pelo st.multiselect.
+st.markdown('''
+<style>
+/* Campo do multiselect (área onde ficam as tags/placeholder) */
+div[data-baseweb="select"] > div {
+    background-color: #ffffff !important;
+    border: 1px solid #d1d5db !important;
+    border-radius: 8px !important;
+}
+/* Menu suspenso de opções */
+div[data-baseweb="popover"] div[data-baseweb="menu"] {
+    background-color: #ffffff !important;
+}
+</style>
+''', unsafe_allow_html=True)
+
 # ── Navegação na sidebar (padrão das demais páginas) ─────────────────────────
 st.sidebar.header('Navegação')
 st.sidebar.page_link("app.py", label="📋  Apólice / Segurado")
@@ -248,24 +265,21 @@ df = st.session_state['cot_df']
 _FILTRO_KEYS_COT = ['f_ano_cot', 'f_perfil_cot', 'f_prod_cot', 'f_corr_cot',
                     'f_rep_cot', 'f_sub_cot', 'f_sub_prop_cot']
 
-# Reset dos filtros ANTES de instanciar os widgets. Apagar a key de um
-# multiselect só limpa o campo se for feito antes de o widget ser criado no
-# rerun — se o pop for feito dentro do próprio botão (que roda DEPOIS dos
-# widgets na ordem do script), o Streamlit reinstancia o valor e o campo
-# continua preenchido. Por isso o botão apenas liga a flag e dá rerun; a
-# limpeza efetiva acontece aqui no topo, antes dos multiselect.
-if st.session_state.get('cot_limpar_filtros', False):
+# Limpeza dos filtros via CALLBACK on_click. Este é o método robusto: o callback
+# roda ANTES de o script reexecutar e recriar os widgets, e atribuir [] à key de
+# cada multiselect (em vez de apagar a key) reseta de fato o valor exibido.
+# Apagar a key (pop/del) tem comportamento inconsistente conhecido no Streamlit
+# (a variável zera, mas o campo visual às vezes fica preso na seleção anterior).
+def _limpar_filtros_cot():
     for _k in _FILTRO_KEYS_COT:
-        st.session_state.pop(_k, None)
-    st.session_state['cot_limpar_filtros'] = False
+        if _k in st.session_state:
+            st.session_state[_k] = []
 
 _hcol1, _hcol2, _hcol3 = st.columns([4, 1, 1])
 with _hcol1:
     st.markdown("#### 🔎 Filtros")
 with _hcol2:
-    if st.button("🧹 Limpar filtros", use_container_width=True):
-        st.session_state['cot_limpar_filtros'] = True
-        st.rerun()
+    st.button("🧹 Limpar filtros", use_container_width=True, on_click=_limpar_filtros_cot)
 with _hcol3:
     if st.button("🔄 Atualizar arquivo", use_container_width=True):
         st.session_state['cot_mostrar_uploader'] = True
