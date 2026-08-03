@@ -59,8 +59,8 @@ _STATUS_EMITIDA = ('emitid', 'efetivad', 'integrad')
 _STATUS_SUBSCRICAO = {
     'subscrição', 'subscricao', 'subscrição proposta', 'subscricao proposta',
     'em análise', 'em analise', 'em análise proposta', 'em analise proposta',
-    'cotação pendente de retorno', 'cotacao pendente de retorno',
-    'proposta pendente de retorno',
+    # Os status "pendente de retorno" NÃO entram aqui: são contados no KPI
+    # "Cotações/Propostas Notificadas", para não haver dupla contagem.
 }
 
 
@@ -248,13 +248,20 @@ df = st.session_state['cot_df']
 _FILTRO_KEYS_COT = ['f_ano_cot', 'f_perfil_cot', 'f_prod_cot', 'f_corr_cot',
                     'f_rep_cot', 'f_sub_cot', 'f_sub_prop_cot']
 
+# Reset dos filtros ANTES de instanciar os widgets: apagar a key de um
+# multiselect só limpa o campo se for feito antes de o widget ser criado no
+# rerun. O botão apenas liga a flag; a limpeza efetiva acontece aqui no topo.
+if st.session_state.get('cot_limpar_filtros', False):
+    for _k in _FILTRO_KEYS_COT:
+        st.session_state.pop(_k, None)
+    st.session_state['cot_limpar_filtros'] = False
+
 _hcol1, _hcol2, _hcol3 = st.columns([4, 1, 1])
 with _hcol1:
     st.markdown("#### 🔎 Filtros")
 with _hcol2:
     if st.button("🧹 Limpar filtros", use_container_width=True):
-        for _k in _FILTRO_KEYS_COT:
-            st.session_state.pop(_k, None)
+        st.session_state['cot_limpar_filtros'] = True
         st.rerun()
 with _hcol3:
     if st.button("🔄 Atualizar arquivo", use_container_width=True):
