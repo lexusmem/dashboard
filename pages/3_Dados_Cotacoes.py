@@ -319,7 +319,7 @@ k3.metric("Prêmio Total Emitido (R$)", formatar_valor_br(_prem_emit),
           help=f"Ticket médio: R$ {formatar_valor_br(_ticket)}")
 k4.metric("Em Subscrição/Análise", f"{_n_subs:,}".replace(',', '.'),
           help=f"Volume esteira: R$ {formatar_valor_br(_prem_subs)}")
-k5.metric("Cot/Prop Notificadas", f"{_n_notif:,}".replace(',', '.'),
+k5.metric("Com Pendências Notificadas", f"{_n_notif:,}".replace(',', '.'),
           help=f"Pendentes de retorno · R$ {formatar_valor_br(_prem_notif)}")
 
 st.caption(f"Taxa de conversão: **{_conv:.1f}%**".replace('.', ',') +
