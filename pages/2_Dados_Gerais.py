@@ -426,9 +426,11 @@ dados_exibicao = dados_exibicao[colunas].sort_values('N° Apólice')
 
 # ── PÁGINA 2: DADOS GERAIS ────────────────────────────────────────────────────
 
-# Link de volta para a página principal na sidebar
-st.sidebar.header('Dados por Apólice')
+# Navegação na sidebar (mesmo padrão da página de Dados Cotações)
+st.sidebar.header('Navegação')
 st.sidebar.page_link("app.py", label="📋  Apólice / Segurado")
+st.sidebar.page_link("pages/2_Dados_Gerais.py", label="📊  Dados Gerais")
+st.sidebar.page_link("pages/3_Dados_Cotacoes.py", label="📝  Dados Cotações")
 
 # --- Lógica de Filtragem Hierárquica na Sidebar ---
 st.sidebar.header('Filtros Dados Gerais')
