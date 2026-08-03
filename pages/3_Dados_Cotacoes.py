@@ -77,6 +77,18 @@ def _eh_expirada(status):
     return 'expirad' in str(status).lower()
 
 
+def _eh_emitida_estrita(status):
+    """Status exatamente 'emitida' (para o KPI de Apólices Emitidas)."""
+    return str(status).strip().lower() == 'emitida'
+
+
+def _eh_notificada(status):
+    """Cotação/proposta pendente de retorno (notificada)."""
+    s = str(status).strip().lower()
+    return s in ('cotação pendente de retorno', 'cotacao pendente de retorno',
+                 'proposta pendente de retorno')
+
+
 @st.cache_data(show_spinner=False)
 def _carregar(arquivo_bytes, nome):
     """Lê o arquivo (xlsx/xls/csv) e normaliza as colunas."""
@@ -232,40 +244,50 @@ df = st.session_state['cot_df']
 
 # ── Filtros dinâmicos ────────────────────────────────────────────────────────
 # Cabeçalho dos filtros com o botão de trocar arquivo à direita, na mesma linha.
-_hcol1, _hcol2 = st.columns([5, 1])
+# Chaves dos filtros multiselect (usadas também pelo botão "Limpar filtros")
+_FILTRO_KEYS_COT = ['f_ano_cot', 'f_perfil_cot', 'f_prod_cot', 'f_corr_cot',
+                    'f_rep_cot', 'f_sub_cot', 'f_sub_prop_cot']
+
+_hcol1, _hcol2, _hcol3 = st.columns([4, 1, 1])
 with _hcol1:
     st.markdown("#### 🔎 Filtros")
 with _hcol2:
+    if st.button("🧹 Limpar filtros", use_container_width=True):
+        for _k in _FILTRO_KEYS_COT:
+            st.session_state.pop(_k, None)
+        st.rerun()
+with _hcol3:
     if st.button("🔄 Atualizar arquivo", use_container_width=True):
         st.session_state['cot_mostrar_uploader'] = True
         st.rerun()
 c1, c2, c3, c4 = st.columns(4)
 c5, c6, c7, c8 = st.columns(4)
 
+# Filtros multiselect (ponto 3) — vazio significa "todos"
 _anos = sorted([int(a) for a in df['Ano'].dropna().unique()])
 with c1:
-    f_ano = st.selectbox('Ano de Criação', ['Todos'] + _anos, key='f_ano_cot')
+    f_ano = st.multiselect('Ano de Criação', _anos, key='f_ano_cot', placeholder='Todos')
 with c2:
-    f_perfil = st.selectbox('Perfil de Frota', ['Todos'] + _ORDEM_PERFIL, key='f_perfil_cot')
+    f_perfil = st.multiselect('Perfil de Frota', _ORDEM_PERFIL, key='f_perfil_cot', placeholder='Todos')
 with c3:
-    f_produto = st.selectbox('Tipo de Produto', ['Todos'] + sorted(df['Produto'].dropna().unique()), key='f_prod_cot')
+    f_produto = st.multiselect('Tipo de Produto', sorted(df['Produto'].dropna().unique()), key='f_prod_cot', placeholder='Todos')
 with c4:
-    f_corretor = st.selectbox('Corretor', ['Todos'] + sorted(df['Corretor'].dropna().unique()), key='f_corr_cot')
+    f_corretor = st.multiselect('Corretor', sorted(df['Corretor'].dropna().unique()), key='f_corr_cot', placeholder='Todos')
 with c5:
-    f_rep = st.selectbox('Representante', ['Todos'] + sorted(df['Representante'].dropna().unique()), key='f_rep_cot')
+    f_rep = st.multiselect('Representante', sorted(df['Representante'].dropna().unique()), key='f_rep_cot', placeholder='Todos')
 with c6:
-    f_sub = st.selectbox('Subscritor (analista da cotação)', ['Todos'] + sorted(df['Subscritor Analista'].dropna().unique()), key='f_sub_cot')
+    f_sub = st.multiselect('Subscritor (analista da cotação)', sorted(df['Subscritor Analista'].dropna().unique()), key='f_sub_cot', placeholder='Todos')
 with c7:
-    f_sub_prop = st.selectbox('Subscritor (da proposta)', ['Todos'] + sorted(df['Subscritor Proposta'].dropna().unique()), key='f_sub_prop_cot')
+    f_sub_prop = st.multiselect('Subscritor (da proposta)', sorted(df['Subscritor Proposta'].dropna().unique()), key='f_sub_prop_cot', placeholder='Todos')
 
 d = df.copy()
-if f_ano != 'Todos':       d = d[d['Ano'] == f_ano]
-if f_perfil != 'Todos':    d = d[d['Perfil Frota'] == f_perfil]
-if f_produto != 'Todos':   d = d[d['Produto'] == f_produto]
-if f_corretor != 'Todos':  d = d[d['Corretor'] == f_corretor]
-if f_rep != 'Todos':       d = d[d['Representante'] == f_rep]
-if f_sub != 'Todos':       d = d[d['Subscritor Analista'] == f_sub]
-if f_sub_prop != 'Todos':  d = d[d['Subscritor Proposta'] == f_sub_prop]
+if f_ano:       d = d[d['Ano'].isin(f_ano)]
+if f_perfil:    d = d[d['Perfil Frota'].isin(f_perfil)]
+if f_produto:   d = d[d['Produto'].isin(f_produto)]
+if f_corretor:  d = d[d['Corretor'].isin(f_corretor)]
+if f_rep:       d = d[d['Representante'].isin(f_rep)]
+if f_sub:       d = d[d['Subscritor Analista'].isin(f_sub)]
+if f_sub_prop:  d = d[d['Subscritor Proposta'].isin(f_sub_prop)]
 
 if d.empty:
     st.warning("Nenhuma cotação corresponde aos filtros selecionados.")
@@ -273,15 +295,17 @@ if d.empty:
 
 # ── KPIs ─────────────────────────────────────────────────────────────────────
 _total = len(d)
-_emit = d[d['Status'].map(_eh_emitida)]
+# Apólices Emitidas: considera SOMENTE status exatamente 'emitida' (ponto 1)
+_emit = d[d['Status'].map(_eh_emitida_estrita)]
 _subs = d[d['Status'].map(_eh_subscricao)]
-_exp  = d[d['Status'].map(_eh_expirada)]
+# Notificadas: pendentes de retorno (cotação ou proposta) — substitui Expiradas
+_notif = d[d['Status'].map(_eh_notificada)]
 
-_n_emit, _n_subs, _n_exp = len(_emit), len(_subs), len(_exp)
+_n_emit, _n_subs, _n_notif = len(_emit), len(_subs), len(_notif)
 _veic = int(d['Veículos'].sum())
 _prem_emit = _emit['Prêmio'].sum()
 _prem_subs = _subs['Prêmio'].sum()
-_prem_exp  = _exp['Prêmio'].sum()
+_prem_notif = _notif['Prêmio'].sum()
 _conv = (_n_emit / _total * 100) if _total > 0 else 0
 _ticket = (_prem_emit / _n_emit) if _n_emit > 0 else 0
 
@@ -291,12 +315,12 @@ k1.metric("Total Cotações/Propostas", f"{_total:,}".replace(',', '.'),
           help=f"{_veic:,} veículos demandados".replace(',', '.'))
 k2.metric("Apólices Emitidas", f"{_n_emit:,}".replace(',', '.'),
           help=f"Taxa de conversão: {_conv:.1f}%".replace('.', ','))
-k3.metric("Prêmio Emitido (R$)", formatar_valor_br(_prem_emit),
+k3.metric("Prêmio Total Emitido (R$)", formatar_valor_br(_prem_emit),
           help=f"Ticket médio: R$ {formatar_valor_br(_ticket)}")
 k4.metric("Em Subscrição/Análise", f"{_n_subs:,}".replace(',', '.'),
           help=f"Volume esteira: R$ {formatar_valor_br(_prem_subs)}")
-k5.metric("Cotações Expiradas", f"{_n_exp:,}".replace(',', '.'),
-          help=f"Prêmio expirado: R$ {formatar_valor_br(_prem_exp)}")
+k5.metric("Cotações/Propostas Notificadas", f"{_n_notif:,}".replace(',', '.'),
+          help=f"Pendentes de retorno · R$ {formatar_valor_br(_prem_notif)}")
 
 st.caption(f"Taxa de conversão: **{_conv:.1f}%**".replace('.', ',') +
            f"  ·  Ticket médio emitido: **R$ {formatar_valor_br(_ticket)}**")
@@ -387,8 +411,12 @@ with g5:
 
 with g6:
     st.markdown("**Atuação dos Subscritores** · demandas analisadas e efetivadas")
-    _cs = d.groupby('Subscritor').size().reset_index(name='Demandas')
-    _es = _emit.groupby('Subscritor').size().reset_index(name='Emitidas')
+    # Exclui registros sem subscritor atribuído (ponto 4)
+    _SEM_SUB = ('Sem Subscritor', 'Sem Subscritor Atribuído', 'Sem Subscritor Proposta')
+    _d_sub = d[~d['Subscritor'].isin(_SEM_SUB)]
+    _emit_sub = _emit[~_emit['Subscritor'].isin(_SEM_SUB)]
+    _cs = _d_sub.groupby('Subscritor').size().reset_index(name='Demandas')
+    _es = _emit_sub.groupby('Subscritor').size().reset_index(name='Emitidas')
     _sub = _cs.merge(_es, on='Subscritor', how='left').fillna(0)\
         .sort_values('Demandas', ascending=False).head(12).sort_values('Demandas', ascending=True)
     fig6 = go.Figure()
@@ -434,7 +462,7 @@ st.caption(
 )
 
 _analisadas = d[d['Analisada_Subscricao']]
-_analisadas_emit = _analisadas[_analisadas['Status'].map(_eh_emitida)]
+_analisadas_emit = _analisadas[_analisadas['Status'].map(_eh_emitida_estrita)]
 
 _n_analisadas = len(_analisadas)
 _n_efetivadas = len(_analisadas_emit)
