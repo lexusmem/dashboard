@@ -991,6 +991,11 @@ with col_final_3:
     if not df_geral_periodo.empty:
         # 1. Converte as colunas de valor (string BR) de volta para float para somar
         df_seg_calc = df_geral_periodo.copy()
+        # Normaliza o nome do segurado (mesma regra do filtro _norm_nome) ANTES
+        # de agrupar, para que variações só de maiúsculas/minúsculas ou espaços
+        # (ex.: "Britacal Ind e Com..." vs "Britacal Ind E Com...") sejam somadas
+        # como um único segurado, em vez de aparecerem como linhas separadas.
+        df_seg_calc['Segurado'] = _norm_nome(df_seg_calc['Segurado'])
         df_seg_calc['Premio_Num'] = (
             df_seg_calc['Soma Prêmio Pago por Apolice']
             .str.replace('.', '', regex=False)
@@ -1490,7 +1495,11 @@ def gerar_ranking_piores_avancado(df_base, coluna_agrupadora, limite_sinistralid
         return pd.DataFrame()
 
     df_temp = df_base.copy()
-    
+    # Normaliza o nome da entidade antes de agrupar, para unir variações que
+    # diferem só em maiúsculas/minúsculas ou espaços (ex.: mesmo segurado grafado
+    # de duas formas), evitando linhas duplicadas no ranking.
+    df_temp[coluna_agrupadora] = _norm_nome(df_temp[coluna_agrupadora])
+
     # Função interna para limpar valores que venham como string formatada
     def para_float(x):
         if isinstance(x, str):
@@ -1749,7 +1758,10 @@ def gerar_ranking_producao(df_base, coluna_agrupadora):
         return pd.DataFrame()
 
     df_temp = df_base.copy()
-    
+    # Normaliza o nome da entidade antes de agrupar (une variações de
+    # maiúsculas/minúsculas e espaços num único registro).
+    df_temp[coluna_agrupadora] = _norm_nome(df_temp[coluna_agrupadora])
+
     # Conversão de valores para numérico (limpeza de strings se necessário)
     def para_float(x):
         if isinstance(x, str):
