@@ -439,20 +439,23 @@ st.sidebar.header('Filtros Dados Gerais')
 _filtro_keys = ['filtro_rep', 'filtro_cor', 'filtro_seg', 'filtro_ramo', 'filtro_util', 'filtro_tp_emissao', 'filtro_regiao', 'filtro_uf', 'filtro_apolice']
 
 st.sidebar.markdown('<div style="margin-top:1rem"></div>', unsafe_allow_html=True)
-if st.sidebar.button('Limpar Todos os Filtros'):
+
+# Limpeza dos filtros via CALLBACK on_click — método robusto. O callback roda
+# ANTES de o script reexecutar e recriar os widgets; atribuir [] a cada key de
+# multiselect (em vez de apagar a key com pop) reseta de fato o valor exibido.
+# Para o slider, marca a flag que força o valor padrão no rerun. Os multiselect
+# NÃO usam mais default=[] (isso, junto com key, causava o aviso do Streamlit
+# "created with a default value but also had its value set via Session State").
+def _limpar_todos_filtros():
     for k in _filtro_keys:
-        # Remove a key do session_state em vez de atribuir [] — como os
-        # multiselect usam key + default=[], setar o valor manualmente
-        # dispara o aviso "created with a default value but also had its
-        # value set via the Session State API". Apagando a key, o widget
-        # é recriado já vazio no próximo rerun, sem conflito.
-        st.session_state.pop(k, None)
+        st.session_state[k] = []
     st.session_state['resetar_slider'] = True
-    st.rerun()
+
+st.sidebar.button('Limpar Todos os Filtros', on_click=_limpar_todos_filtros)
 
 # 1. Filtro por Representante (case-insensitive)
 representantes_unicos = sorted(_norm_nome(dados_exibicao['Representante']).unique())
-representantes_selecionados = st.sidebar.multiselect('Representante(s)', options=representantes_unicos, default=[], key='filtro_rep')
+representantes_selecionados = st.sidebar.multiselect('Representante(s)', options=representantes_unicos, key='filtro_rep')
 
 dados_filtrados_rep = dados_exibicao.copy()
 if representantes_selecionados:
@@ -460,7 +463,7 @@ if representantes_selecionados:
 
 # 2. Filtro por Corretor (case-insensitive)
 corretores_unicos = sorted(_norm_nome(dados_filtrados_rep['Corretor']).unique())
-corretores_selecionados = st.sidebar.multiselect('Corretor(es)', options=corretores_unicos, default=[], key='filtro_cor')
+corretores_selecionados = st.sidebar.multiselect('Corretor(es)', options=corretores_unicos, key='filtro_cor')
 
 dados_filtrados_corr = dados_filtrados_rep.copy()
 if corretores_selecionados:
@@ -468,7 +471,7 @@ if corretores_selecionados:
 
 # 3. Filtro por Segurado (case-insensitive)
 segurados_unicos = sorted(_norm_nome(dados_filtrados_corr['Segurado']).unique())
-segurados_selecionados = st.sidebar.multiselect('Segurado(s)', options=segurados_unicos, default=[], key='filtro_seg')
+segurados_selecionados = st.sidebar.multiselect('Segurado(s)', options=segurados_unicos, key='filtro_seg')
 
 dados_filtrados_segurado = dados_filtrados_corr.copy()
 if segurados_selecionados:
@@ -476,7 +479,7 @@ if segurados_selecionados:
 
 # 4. Filtro por Ramo
 ramos_unicos = sorted(dados_filtrados_segurado['Ramo'].unique())
-ramos_selecionados = st.sidebar.multiselect('Ramo(s)', options=ramos_unicos, default=[], key='filtro_ramo')
+ramos_selecionados = st.sidebar.multiselect('Ramo(s)', options=ramos_unicos, key='filtro_ramo')
 
 dados_filtrados_ramo = dados_filtrados_segurado.copy()
 if ramos_selecionados:
@@ -484,7 +487,7 @@ if ramos_selecionados:
 
 # 5. Filtro por Utilização
 utilizacoes_unicas = sorted(dados_filtrados_ramo['Utilização'].astype(str).unique())
-utilizacoes_selecionadas = st.sidebar.multiselect('Utilização(ões)', options=utilizacoes_unicas, default=[], key='filtro_util')
+utilizacoes_selecionadas = st.sidebar.multiselect('Utilização(ões)', options=utilizacoes_unicas, key='filtro_util')
 
 dados_filtrados_util = dados_filtrados_ramo.copy()
 if utilizacoes_selecionadas:
@@ -492,7 +495,7 @@ if utilizacoes_selecionadas:
 
 # 6. Filtro por Tipo de Emissão
 tipos_emissao_unicos = sorted(dados_filtrados_util['Tipo de Apólice'].astype(str).unique())
-tipos_emissao_selecionados = st.sidebar.multiselect('Tipo de Emissão', options=tipos_emissao_unicos, default=[], key='filtro_tp_emissao')
+tipos_emissao_selecionados = st.sidebar.multiselect('Tipo de Emissão', options=tipos_emissao_unicos, key='filtro_tp_emissao')
 
 dados_filtrados_tp_emissao = dados_filtrados_util.copy()
 if tipos_emissao_selecionados:
@@ -500,7 +503,7 @@ if tipos_emissao_selecionados:
 
 # 7. Filtro por Região de Circulação
 regioes_unicas = sorted(dados_filtrados_tp_emissao['Região de Circulação'].astype(str).unique())
-regioes_selecionadas = st.sidebar.multiselect('Região de Circulação', options=regioes_unicas, default=[], key='filtro_regiao')
+regioes_selecionadas = st.sidebar.multiselect('Região de Circulação', options=regioes_unicas, key='filtro_regiao')
 
 dados_filtrados_regiao = dados_filtrados_tp_emissao.copy()
 if regioes_selecionadas:
@@ -509,7 +512,7 @@ if regioes_selecionadas:
 # 8. Filtro por UF (extraída dos 2 primeiros caracteres da Região de Circulação)
 dados_filtrados_regiao['_UF'] = dados_filtrados_regiao['Região de Circulação'].astype(str).str[:2].str.strip()
 ufs_unicas = sorted(dados_filtrados_regiao['_UF'].unique())
-ufs_selecionadas = st.sidebar.multiselect('UF', options=ufs_unicas, default=[], key='filtro_uf')
+ufs_selecionadas = st.sidebar.multiselect('UF', options=ufs_unicas, key='filtro_uf')
 
 dados_filtrados_uf = dados_filtrados_regiao.copy()
 if ufs_selecionadas:
@@ -517,7 +520,7 @@ if ufs_selecionadas:
 
 # 9. Filtro por Apólice (filtrado por todos os anteriores)
 apolices_unicas = sorted(dados_filtrados_uf['N° Apólice'].unique())
-apolices_selecionadas = st.sidebar.multiselect('Apólice(s)', options=apolices_unicas, default=[], key='filtro_apolice')
+apolices_selecionadas = st.sidebar.multiselect('Apólice(s)', options=apolices_unicas, key='filtro_apolice')
 
 resultado_final_filtrado = dados_filtrados_uf.copy()
 if apolices_selecionadas:
@@ -596,9 +599,12 @@ with col_esq:
         # Título customizado com espaçamento para não colar no slider
         st.write("")
         st.markdown('<p class="section-label">Selecione o Intervalo de Anos (Início de Vigência Apólice)</p>', unsafe_allow_html=True)
-        # Flag: se botão limpar foi clicado, força visualmente o valor padrão
+        # Reset do slider: se o botão limpar foi clicado, apaga a key ANTES de o
+        # widget ser criado, para ele voltar ao value= padrão sem o aviso de
+        # "default value + Session State" (não se atribui valor a uma key de
+        # widget que também define value=).
         if st.session_state.get('resetar_slider', False):
-            st.session_state['slider_anos'] = (ano_min_absoluto, ano_max_absoluto)
+            st.session_state.pop('slider_anos', None)
             st.session_state['resetar_slider'] = False
 
         anos_selecionados = st.slider(
@@ -991,6 +997,11 @@ with col_final_3:
     if not df_geral_periodo.empty:
         # 1. Converte as colunas de valor (string BR) de volta para float para somar
         df_seg_calc = df_geral_periodo.copy()
+        # Normaliza o nome do segurado (mesma regra do filtro _norm_nome) ANTES
+        # de agrupar, para que variações só de maiúsculas/minúsculas ou espaços
+        # (ex.: "Britacal Ind e Com..." vs "Britacal Ind E Com...") sejam somadas
+        # como um único segurado, em vez de aparecerem como linhas separadas.
+        df_seg_calc['Segurado'] = _norm_nome(df_seg_calc['Segurado'])
         df_seg_calc['Premio_Num'] = (
             df_seg_calc['Soma Prêmio Pago por Apolice']
             .str.replace('.', '', regex=False)
@@ -1490,7 +1501,11 @@ def gerar_ranking_piores_avancado(df_base, coluna_agrupadora, limite_sinistralid
         return pd.DataFrame()
 
     df_temp = df_base.copy()
-    
+    # Normaliza o nome da entidade antes de agrupar, para unir variações que
+    # diferem só em maiúsculas/minúsculas ou espaços (ex.: mesmo segurado grafado
+    # de duas formas), evitando linhas duplicadas no ranking.
+    df_temp[coluna_agrupadora] = _norm_nome(df_temp[coluna_agrupadora])
+
     # Função interna para limpar valores que venham como string formatada
     def para_float(x):
         if isinstance(x, str):
@@ -1749,7 +1764,10 @@ def gerar_ranking_producao(df_base, coluna_agrupadora):
         return pd.DataFrame()
 
     df_temp = df_base.copy()
-    
+    # Normaliza o nome da entidade antes de agrupar (une variações de
+    # maiúsculas/minúsculas e espaços num único registro).
+    df_temp[coluna_agrupadora] = _norm_nome(df_temp[coluna_agrupadora])
+
     # Conversão de valores para numérico (limpeza de strings se necessário)
     def para_float(x):
         if isinstance(x, str):
