@@ -593,34 +593,39 @@ if _ana.empty:
     st.info("Nenhuma cotação analisada pela subscrição (com data de criação) no recorte atual.")
 else:
     _ana['AnoStr'] = _ana['Ano'].astype(int).astype(str)
+    # Eixo X com TODOS os anos presentes, em ordem crescente
+    _ordem_anos = sorted(_ana['AnoStr'].unique())
 
-    # ── Dois gráficos lado a lado ─────────────────────────────────────────────
+    # ── Dois gráficos lado a lado (barras verticais: X = ano, Y = volume) ─────
     va, vb = st.columns(2)
 
-    # Volume analisado por ano, aberto por tipo de produto (barras horizontais)
+    # Volume analisado por ano, aberto por tipo de produto
     with va:
         st.markdown("**Volume analisado por ano** · por tipo de produto")
         _pav = _ana.groupby(['AnoStr', 'Produto']).size().reset_index(name='Analisadas')
-        figP = px.bar(_pav, y='AnoStr', x='Analisadas', color='Produto',
-                      orientation='h', barmode='group', height=380, text_auto='.0f')
+        figP = px.bar(_pav, x='AnoStr', y='Analisadas', color='Produto',
+                      barmode='group', height=380, text_auto='.0f')
         figP.update_traces(textposition='outside', textfont_size=9, cliponaxis=False)
-        figP.update_layout(yaxis=dict(categoryorder='category ascending', title=None),
-                           xaxis_title='Analisadas',
-                           legend=dict(orientation='h', y=1.14, title=None), **_layout)
+        figP.update_layout(
+            xaxis=dict(type='category', categoryorder='array',
+                       categoryarray=_ordem_anos, title='Ano'),
+            yaxis_title='Volume analisado',
+            legend=dict(orientation='h', y=1.14, title=None), **_layout)
         st.plotly_chart(figP, use_container_width=True)
 
-    # Volume analisado por ano — total (barras horizontais)
+    # Volume analisado por ano — total
     with vb:
         st.markdown("**Volume analisado por ano** · total de cotações analisadas")
         _pat = _ana.groupby('AnoStr').size().reset_index(name='Analisadas')
         figT = go.Figure()
-        figT.add_bar(y=_pat['AnoStr'], x=_pat['Analisadas'], orientation='h',
-                     marker_color=_AZUL,
+        figT.add_bar(x=_pat['AnoStr'], y=_pat['Analisadas'], marker_color=_AZUL,
                      text=_pat['Analisadas'].map(lambda v: f"{int(v):,}".replace(',', '.')),
                      textposition='outside')
         figT.update_traces(textfont_size=11, cliponaxis=False)
-        figT.update_layout(yaxis=dict(categoryorder='category ascending', title=None),
-                           xaxis_title='Analisadas', height=380, **_layout)
+        figT.update_layout(
+            xaxis=dict(type='category', categoryorder='array',
+                       categoryarray=_ordem_anos, title='Ano'),
+            yaxis_title='Volume analisado', height=380, **_layout)
         st.plotly_chart(figT, use_container_width=True)
 
     # ── Evolução mensal do volume analisado (linha com rótulos) ───────────────
