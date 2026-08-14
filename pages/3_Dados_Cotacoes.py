@@ -575,145 +575,66 @@ else:
 # 📈 PRODUÇÃO DA SUBSCRIÇÃO — cotações analisadas pelo departamento
 #
 # Reaproveita o que a página já cria: d, Analisada_Subscricao, Data Criação,
-# Ano, Produto, _AZUL, _VERDE, _LARANJA, _layout, formatar_valor_br.
-# "Analisadas pelo departamento" = coluna Subscritor (analista) preenchida,
-# exatamente o mesmo critério da seção de Efetivação (Analisada_Subscricao).
+# Ano, Produto, _AZUL, _layout. "Analisadas pelo departamento" = coluna
+# Subscritor (analista) preenchida (mesmo critério da seção de Efetivação).
 # ══════════════════════════════════════════════════════════════════════════════
 
 st.write("---")
 st.markdown("#### 📈 Produção da Subscrição — cotações analisadas pelo departamento")
 st.caption(
     "Considera **analisadas pelo departamento** as cotações com a coluna "
-    "**Subscritor (analista da cotação)** preenchida. As visões abaixo respondem: "
-    "*houve aumento no volume analisado?* (por ano e por dia) e *qual produto mais analisamos?*"
+    "**Subscritor (analista da cotação)** preenchida."
 )
 
-# Base: analisadas COM data de criação válida (as visões temporais dependem da data)
+# Base: analisadas COM data de criação válida
 _ana = d[d['Analisada_Subscricao'] & d['Data Criação'].notna()].copy()
 
 if _ana.empty:
     st.info("Nenhuma cotação analisada pela subscrição (com data de criação) no recorte atual.")
 else:
-    # ── Agregação por ANO: volume, dias com movimento e média diária ──────────
-    _prod_ano = _ana.groupby('Ano').agg(
-        Analisadas=('Data Criação', 'size'),
-        Dias=('Data Criação', lambda s: s.dt.normalize().nunique()),
-    ).reset_index()
-    _prod_ano['Ano'] = _prod_ano['Ano'].astype(int)
-    _prod_ano = _prod_ano.sort_values('Ano')
-    _prod_ano['Media_dia'] = (_prod_ano['Analisadas'] / _prod_ano['Dias']).round(1)
-    _prod_ano['Cresc'] = _prod_ano['Analisadas'].pct_change() * 100
+    _ana['AnoStr'] = _ana['Ano'].astype(int).astype(str)
 
-    _ano_atual = _prod_ano['Ano'].max()
-    _ana_prod_lider = _ana.groupby('Produto').size().sort_values(ascending=False)
+    # ── Dois gráficos lado a lado ─────────────────────────────────────────────
+    va, vb = st.columns(2)
 
-    # ── KPIs de produção ──────────────────────────────────────────────────────
-    p1, p2, p3, p4 = st.columns(4)
-    p1.metric("Analisadas pelo Departamento", f"{len(_ana):,}".replace(',', '.'),
-              help="Cotações com subscritor analista atribuído (com data válida).")
-    p2.metric("Média por Dia com Movimento",
-              f"{(len(_ana) / _ana['Data Criação'].dt.normalize().nunique()):.1f}".replace('.', ','),
-              help="Total analisado ÷ nº de dias distintos em que houve pelo menos uma análise.")
-    _pct_ana = (len(_ana) / len(d) * 100) if len(d) else 0
-    p3.metric("% do Total de Cotações", f"{_pct_ana:.1f}%".replace('.', ','),
-              help="Participação das analisadas no total de cotações do recorte.")
-    p4.metric("Produto Mais Analisado",
-              _ana_prod_lider.index[0] if len(_ana_prod_lider) else '-',
-              help=f"{int(_ana_prod_lider.iloc[0]):,} análises".replace(',', '.') if len(_ana_prod_lider) else None)
+    # Volume analisado por ano, aberto por tipo de produto (barras horizontais)
+    with va:
+        st.markdown("**Volume analisado por ano** · por tipo de produto")
+        _pav = _ana.groupby(['AnoStr', 'Produto']).size().reset_index(name='Analisadas')
+        figP = px.bar(_pav, y='AnoStr', x='Analisadas', color='Produto',
+                      orientation='h', barmode='group', height=380, text_auto='.0f')
+        figP.update_traces(textposition='outside', textfont_size=9, cliponaxis=False)
+        figP.update_layout(yaxis=dict(categoryorder='category ascending', title=None),
+                           xaxis_title='Analisadas',
+                           legend=dict(orientation='h', y=1.14, title=None), **_layout)
+        st.plotly_chart(figP, use_container_width=True)
 
-    # Aviso de ano incompleto (evita ler queda falsa no último ano)
-    import datetime as _dt
-    if _ano_atual == _dt.date.today().year:
-        st.caption(
-            f"⚠️ **{_ano_atual}** ainda está em andamento: compare o crescimento pela "
-            "**média por dia** (comparação justa), não pelo total do ano."
-        )
-
-    # ── Visão 1a: Volume analisado POR ANO (barras + crescimento) ─────────────
-    v1, v2 = st.columns(2)
-    with v1:
-        st.markdown("**Volume analisado por ano** · houve aumento?")
-        _pa = _prod_ano.copy()
-        _pa['AnoStr'] = _pa['Ano'].astype(str)
-        _txt = _pa.apply(
-            lambda r: f"{int(r['Analisadas']):,}".replace(',', '.') +
-                      ('' if pd.isna(r['Cresc']) else f"  ({r['Cresc']:+.0f}%)"), axis=1)
-        figA = go.Figure()
-        figA.add_bar(x=_pa['AnoStr'], y=_pa['Analisadas'], marker_color=_AZUL,
-                     text=_txt, textposition='outside')
-        figA.update_traces(textfont_size=11, cliponaxis=False)
-        figA.update_layout(height=340, **_layout)
-        st.plotly_chart(figA, use_container_width=True)
-        st.caption("Rótulo entre parênteses = variação vs. o ano anterior.")
-
-    # ── Visão 1b: Média POR DIA por ano (comparação justa entre anos) ──────────
-    with v2:
-        st.markdown("**Média por dia (com movimento) por ano** · ritmo real")
-        _pd_ = _prod_ano.copy()
-        _pd_['AnoStr'] = _pd_['Ano'].astype(str)
-        figB = go.Figure()
-        figB.add_bar(x=_pd_['AnoStr'], y=_pd_['Media_dia'], marker_color=_VERDE,
-                     text=_pd_['Media_dia'].map(lambda v: f"{v:.1f}".replace('.', ',')),
+    # Volume analisado por ano — total (barras horizontais)
+    with vb:
+        st.markdown("**Volume analisado por ano** · total de cotações analisadas")
+        _pat = _ana.groupby('AnoStr').size().reset_index(name='Analisadas')
+        figT = go.Figure()
+        figT.add_bar(y=_pat['AnoStr'], x=_pat['Analisadas'], orientation='h',
+                     marker_color=_AZUL,
+                     text=_pat['Analisadas'].map(lambda v: f"{int(v):,}".replace(',', '.')),
                      textposition='outside')
-        figB.update_traces(textfont_size=11, cliponaxis=False)
-        figB.update_layout(height=340, **_layout)
-        st.plotly_chart(figB, use_container_width=True)
-        st.caption("Neutraliza o efeito do ano incompleto: analisadas ÷ dias com movimento.")
+        figT.update_traces(textfont_size=11, cliponaxis=False)
+        figT.update_layout(yaxis=dict(categoryorder='category ascending', title=None),
+                           xaxis_title='Analisadas', height=380, **_layout)
+        st.plotly_chart(figT, use_container_width=True)
 
-    # ── Visão 1c: Evolução mensal (tendência fina do volume) ──────────────────
+    # ── Evolução mensal do volume analisado (linha com rótulos) ───────────────
     st.markdown("**Evolução mensal do volume analisado** · tendência ao longo do tempo")
     _mes = (_ana.set_index('Data Criação').sort_index()
             .resample('MS').size().reset_index(name='Analisadas'))
     figC = go.Figure()
-    figC.add_scatter(x=_mes['Data Criação'], y=_mes['Analisadas'], mode='lines+markers',
-                     line=dict(color=_AZUL, width=2), marker=dict(size=5), name='Analisadas/mês')
-    # Média móvel de 3 meses para suavizar a leitura da tendência
-    if len(_mes) >= 3:
-        _mes['MM3'] = _mes['Analisadas'].rolling(3, min_periods=1).mean()
-        figC.add_scatter(x=_mes['Data Criação'], y=_mes['MM3'], mode='lines',
-                         line=dict(color=_LARANJA, width=2, dash='dash'), name='Média móvel 3m')
-    figC.update_layout(height=320, legend=dict(orientation='h', y=1.12), **_layout)
+    figC.add_scatter(x=_mes['Data Criação'], y=_mes['Analisadas'],
+                     mode='lines+markers+text',
+                     line=dict(color=_AZUL, width=2), marker=dict(size=6),
+                     text=_mes['Analisadas'].map(lambda v: f"{int(v)}"),
+                     textposition='top center', textfont_size=9, cliponaxis=False)
+    figC.update_layout(height=340, **_layout)
     st.plotly_chart(figC, use_container_width=True)
-
-    st.write("")
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # Visão 2: PRODUTO mais analisado
-    # ══════════════════════════════════════════════════════════════════════════
-    st.markdown("**Produtos mais analisados** · o que a subscrição mais avalia")
-    w1, w2 = st.columns(2)
-
-    with w1:
-        _pr = _ana.groupby('Produto').size().reset_index(name='Analisadas')
-        _pr['Part'] = _pr['Analisadas'] / _pr['Analisadas'].sum() * 100
-        _pr = _pr.sort_values('Analisadas', ascending=True)
-        figD = go.Figure()
-        figD.add_bar(y=_pr['Produto'], x=_pr['Analisadas'], orientation='h', marker_color=_AZUL,
-                     text=_pr.apply(lambda r: f"{int(r['Analisadas']):,}".replace(',', '.') +
-                                    f"  ·  {r['Part']:.1f}%".replace('.', ','), axis=1),
-                     textposition='outside')
-        figD.update_traces(textfont_size=10, cliponaxis=False)
-        figD.update_layout(height=360, **_layout)
-        st.plotly_chart(figD, use_container_width=True)
-        st.caption("Rótulo = nº de análises e participação no total analisado.")
-
-    with w2:
-        st.markdown("&nbsp;&nbsp;_Como cada produto evoluiu por ano_", unsafe_allow_html=True)
-        _pav = _ana.groupby(['Ano', 'Produto']).size().reset_index(name='Analisadas')
-        _pav['Ano'] = _pav['Ano'].astype(int).astype(str)
-        figE = px.bar(_pav, x='Ano', y='Analisadas', color='Produto', height=330, text_auto='.0f')
-        figE.update_traces(textposition='inside', textfont_size=9)
-        figE.update_layout(barmode='stack', legend=dict(orientation='h', y=1.12), **_layout)
-        st.plotly_chart(figE, use_container_width=True)
-
-    # ── Tabela-resumo por produto × ano (números exatos) ──────────────────────
-    _piv = (_ana.groupby(['Produto', 'Ano']).size().reset_index(name='Analisadas')
-            .pivot(index='Produto', columns='Ano', values='Analisadas').fillna(0).astype(int))
-    _piv.columns = [str(int(c)) for c in _piv.columns]
-    _piv['Total'] = _piv.sum(axis=1)
-    _piv = _piv.sort_values('Total', ascending=False).reset_index()
-    st.dataframe(_piv, hide_index=True, use_container_width=True)
-    st.caption("Quantidade de cotações analisadas pela subscrição, por produto e ano.")
 
 st.write("---")
 
