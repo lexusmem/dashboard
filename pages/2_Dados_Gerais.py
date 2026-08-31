@@ -406,6 +406,7 @@ st.sidebar.header('Navegação')
 st.sidebar.page_link("app.py", label="📋  Apólice / Segurado")
 st.sidebar.page_link("pages/2_Dados_Gerais.py", label="📊  Dados Gerais")
 st.sidebar.page_link("pages/3_Dados_Cotacoes.py", label="📝  Dados Cotações")
+st.sidebar.page_link("pages/4_Analise_Carteira_RCO.py", label="📈  Análise Carteira RCO")
 
 # Recupera os dados do session_state (carregados na página principal)
 if 'dados_calculados' not in st.session_state or st.session_state['dados_calculados'].empty:
