@@ -6,33 +6,23 @@ import logging
 import plotly.graph_objects as go
 import plotly.express as px
 import streamlit_antd_components as sac
-from datetime import datetime
 
-# Helper para normalização de nomes nos filtros (case-insensitive + espaços).
-# NÃO altera dados subjacentes — usado só ao listar opções e filtrar,
-# para evitar que 'REAL MAIA', 'Real Maia' e 'real maia' apareçam como
-# 3 registros distintos nos multiselects.
-def _norm_nome(serie):
-    """'REAL MAIA', 'Real Maia', 'real maia' → todos 'Real Maia'"""
-    return (
-        serie.astype(str)
-             .str.strip()
-             .str.replace(r'\s+', ' ', regex=True)
-             .str.title()
-    )
-
-st.set_page_config(layout='wide', page_title='Análise Carteira RCO — Allseg', page_icon='📈')
+# Configura a página para layout amplo
+st.set_page_config(layout='wide', page_title='Painel Allseg', page_icon='📊')
 
 ALLSEG_CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
 
+/* ── Variáveis — tema claro com cards elevados ─────────────────── */
 :root {
     --bg-page:       #f0f2f6;
     --bg-card:       #ffffff;
+    --bg-card-hover: #f8f9fc;
     --bg-sidebar:    #ffffff;
     --accent:        #1a56db;
     --accent-soft:   #e8effd;
+    --accent-hover:  #1648c0;
     --text-primary:  #111827;
     --text-secondary:#6b7280;
     --text-muted:    #9ca3af;
@@ -49,10 +39,18 @@ ALLSEG_CSS = """
     --font-mono:     'DM Mono', monospace;
 }
 
-html, body, [class*="css"] { font-family: var(--font-main) !important; color: var(--text-primary) !important; }
+html, body, [class*="css"] {
+    font-family: var(--font-main) !important;
+    color: var(--text-primary) !important;
+}
 
-.stApp { background-color: var(--bg-page) !important; background-image: none !important; }
+/* ── Fundo da página ──────────────────────────────────────────── */
+.stApp {
+    background-color: var(--bg-page) !important;
+    background-image: none !important;
+}
 
+/* ── Layout principal ─────────────────────────────────────────── */
 .main .block-container {
     overflow-y: visible !important;
     max-width: 96% !important;
@@ -60,12 +58,14 @@ html, body, [class*="css"] { font-family: var(--font-main) !important; color: va
     background: transparent !important;
 }
 
+/* ── Sidebar ──────────────────────────────────────────────────── */
 [data-testid="stSidebar"] {
     background-color: var(--bg-sidebar) !important;
     border-right: 1px solid var(--border) !important;
     box-shadow: 2px 0 12px rgba(0,0,0,0.06) !important;
 }
 [data-testid="stSidebarNav"] { display: none !important; }
+
 [data-testid="stSidebar"] h1,
 [data-testid="stSidebar"] h2,
 [data-testid="stSidebar"] h3 {
@@ -78,9 +78,14 @@ html, body, [class*="css"] { font-family: var(--font-main) !important; color: va
     margin-bottom: 0.4rem !important;
 }
 
-h1, h2, h3, h4, h5, h6 { color: var(--text-primary) !important; font-family: var(--font-main) !important; }
+/* ── Títulos globais ──────────────────────────────────────────── */
+h1, h2, h3, h4, h5, h6 {
+    color: var(--text-primary) !important;
+    font-family: var(--font-main) !important;
+}
 h1 { font-size: 1.5rem !important; font-weight: 700 !important; letter-spacing: -0.025em !important; }
 
+/* st.subheader — recebe estilo de "título de seção de card" */
 [data-testid="stHeading"] h2 {
     font-size: 0.9rem !important;
     font-weight: 700 !important;
@@ -88,10 +93,20 @@ h1 { font-size: 1.5rem !important; font-weight: 700 !important; letter-spacing: 
     text-transform: uppercase !important;
     letter-spacing: 0.06em !important;
     margin-top: 0.5rem !important;
+    margin-bottom: 0.25rem !important;
     padding-bottom: 0.6rem !important;
     border-bottom: 2px solid var(--accent-soft) !important;
 }
 
+/* ── Card wrapper — aplicado em cada bloco principal ─────────── */
+/* KPI row e cada linha de conteúdo ganham aparência de card via
+   column containers e element containers  */
+[data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"],
+[data-testid="column"] {
+    background: transparent !important;
+}
+
+/* KPI Métricas ─ card individual */
 [data-testid="stMetric"] {
     background: var(--bg-card) !important;
     border: 1px solid var(--border) !important;
@@ -121,7 +136,9 @@ h1 { font-size: 1.5rem !important; font-weight: 700 !important; letter-spacing: 
     white-space: normal !important;
     line-height: 1.25 !important;
 }
+[data-testid="stMetricDelta"] { font-size: 0.8rem !important; }
 
+/* ── DataFrames — card com sombra ─────────────────────────────── */
 [data-testid="stDataFrame"] {
     background: var(--bg-card) !important;
     border: 1px solid var(--border) !important;
@@ -131,6 +148,7 @@ h1 { font-size: 1.5rem !important; font-weight: 700 !important; letter-spacing: 
     padding: 0 !important;
 }
 
+/* ── Gráficos Plotly — card com sombra ───────────────────────── */
 [data-testid="stPlotlyChart"] > div {
     background: var(--bg-card) !important;
     border: 1px solid var(--border) !important;
@@ -140,6 +158,7 @@ h1 { font-size: 1.5rem !important; font-weight: 700 !important; letter-spacing: 
     overflow: visible !important;
 }
 
+/* ── st.text — label de seção estilizado ─────────────────────── */
 [data-testid="stText"] {
     font-size: 0.65rem !important;
     font-weight: 700 !important;
@@ -149,6 +168,7 @@ h1 { font-size: 1.5rem !important; font-weight: 700 !important; letter-spacing: 
     margin-bottom: 0.4rem !important;
 }
 
+/* ── Controles da sidebar ─────────────────────────────────────── */
 [data-testid="stSelectbox"] > div > div,
 [data-testid="stMultiSelect"] > div > div {
     background: #f9fafb !important;
@@ -161,6 +181,7 @@ h1 { font-size: 1.5rem !important; font-weight: 700 !important; letter-spacing: 
     box-shadow: 0 0 0 3px var(--accent-soft) !important;
 }
 
+/* ── File Uploader ────────────────────────────────────────────── */
 [data-testid="stFileUploader"] {
     background: var(--bg-card) !important;
     border: 1.5px dashed #cbd5e1 !important;
@@ -168,6 +189,7 @@ h1 { font-size: 1.5rem !important; font-weight: 700 !important; letter-spacing: 
     box-shadow: var(--shadow-sm) !important;
 }
 
+/* ── Botões ───────────────────────────────────────────────────── */
 .stButton > button {
     background: var(--bg-card) !important;
     color: var(--accent) !important;
@@ -185,6 +207,7 @@ h1 { font-size: 1.5rem !important; font-weight: 700 !important; letter-spacing: 
     box-shadow: 0 4px 14px rgba(26,86,219,0.35) !important;
 }
 
+/* ── Alerts ───────────────────────────────────────────────────── */
 [data-testid="stAlert"] {
     border-radius: var(--radius) !important;
     border-left: 4px solid var(--accent) !important;
@@ -193,6 +216,7 @@ h1 { font-size: 1.5rem !important; font-weight: 700 !important; letter-spacing: 
     font-size: 0.84rem !important;
 }
 
+/* ── Tabs ─────────────────────────────────────────────────────── */
 [data-testid="stTabs"] {
     background: var(--bg-card) !important;
     border-radius: var(--radius) !important;
@@ -220,16 +244,30 @@ h1 { font-size: 1.5rem !important; font-weight: 700 !important; letter-spacing: 
     border-bottom: 2px solid var(--accent) !important;
     background: var(--accent-soft) !important;
 }
-[data-testid="stTabs"] [role="tabpanel"] { padding: 1rem 0.25rem 0.75rem !important; }
+[data-testid="stTabs"] [role="tabpanel"] {
+    padding: 1rem 0.25rem 0.75rem !important;
+}
 
-hr { border: none !important; border-top: 1px solid var(--border) !important; margin: 2rem 0 !important; }
-[data-testid="stCaption"] { color: var(--text-muted) !important; font-size: 0.72rem !important; }
+/* ── Divider ──────────────────────────────────────────────────── */
+hr {
+    border: none !important;
+    border-top: 1px solid var(--border) !important;
+    margin: 2rem 0 !important;
+}
 
+/* ── Caption ──────────────────────────────────────────────────── */
+[data-testid="stCaption"] {
+    color: var(--text-muted) !important;
+    font-size: 0.72rem !important;
+}
+
+/* ── Scrollbar ────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg-page); }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
+/* ── Botão "voltar ao topo" ───────────────────────────────────── */
 a.btn-topo, a.btn-topo:link, a.btn-topo:visited {
     position: fixed; bottom: 4.5rem; right: 1.5rem; z-index: 9999;
     background: var(--bg-card);
@@ -247,12 +285,20 @@ a.btn-topo:hover {
     box-shadow: 0 6px 20px rgba(26,86,219,0.35) !important;
 }
 
+/* ── Slider ───────────────────────────────────────────────────── */
 [data-testid="stSlider"] [role="slider"] {
     background: var(--accent) !important;
     box-shadow: 0 2px 6px rgba(26,86,219,0.4) !important;
 }
 
-/* ── Info Cards — idêntico ao st.metric ──────────────────────── */
+/* ── Info box de upload ───────────────────────────────────────── */
+[data-testid="stInfo"] {
+    background: #eff6ff !important;
+    border-left: 4px solid var(--accent) !important;
+    border-radius: var(--radius) !important;
+}
+
+/* ── Info Cards (Segurado, Corretor etc) — idêntico ao st.metric ─ */
 .info-card {
     background: var(--bg-card);
     border: 1px solid var(--border);
@@ -286,6 +332,7 @@ a.btn-topo:hover {
 }
 
 /* ── Labels de seção (st.text acima de df/gráfico) ─────────────── */
+/* Unifica st.text, st.subheader quando usado como label de bloco   */
 [data-testid="stText"] p,
 [data-testid="stText"] {
     font-size: 0.65rem !important;
@@ -295,6 +342,17 @@ a.btn-topo:hover {
     color: var(--text-primary) !important;
     font-family: var(--font-main) !important;
     margin-bottom: 0.4rem !important;
+}
+
+
+/* Cards de texto (Segurado, Corretor…) — valor em fonte de texto, menor */
+.text-metric-row [data-testid="stMetricValue"] {
+    font-size: 1rem !important;
+    font-weight: 400 !important;
+    font-family: var(--font-main) !important;
+    letter-spacing: 0 !important;
+    white-space: normal !important;
+    line-height: 1.3 !important;
 }
 
 /* ── Label de seção (df e gráficos) — igual ao stMetricLabel ──── */
@@ -317,7 +375,239 @@ a.btn-topo:hover {
 footer { display: none !important; }
 </style>
 """
+
 st.markdown(ALLSEG_CSS, unsafe_allow_html=True)
+
+st.markdown(
+    '<a href="#topo-pagina" class="btn-topo" title="Voltar ao topo">&#8679;</a>',
+    unsafe_allow_html=True
+)
+
+
+# --- Upload dos arquivos na Sidebar ---
+from datetime import datetime
+
+# Helper para normalização de nomes (case-insensitive + limpeza de espaços).
+# Usado nas comparações entre 'Segurado' (tabela de apólices) e 'nm_cliente'
+# (tabela de sinistros) — as duas bases podem gravar o mesmo cliente com
+# variações de caixa ('REAL MAIA' vs 'Real Maia'), o que fazia a comparação
+# direta retornar vazio. Não altera dados subjacentes.
+def _norm_nome(serie):
+    """'REAL MAIA', 'Real Maia', 'real maia' → todos 'Real Maia'"""
+    return (
+        serie.astype(str)
+             .str.strip()
+             .str.replace(r'\s+', ' ', regex=True)
+             .str.title()
+    )
+
+# Verifica se os dados já estão carregados no session_state
+dados_ja_carregados = (
+    'dados_calculados' in st.session_state and
+    'df_sinistros'     in st.session_state and
+    'df_cobertura'     in st.session_state and
+    not st.session_state['dados_calculados'].empty and
+    not st.session_state['df_sinistros'].empty
+)
+
+if not dados_ja_carregados:
+    # Mostra os uploaders apenas enquanto os dados não estiverem carregados
+    st.sidebar.header("📂 Carregar Arquivos")
+    st.sidebar.caption("Faça o upload dos três arquivos TXT para carregar o dashboard. Caminho: F:\Fechamento_ADMSEG\RCO\Precificacao")
+
+    upload_apolice   = st.sidebar.file_uploader("apolice_endosso.txt",   type=["txt", "csv"])
+    upload_cobertura = st.sidebar.file_uploader("cobertura_agrupada.txt",type=["txt", "csv"])
+    upload_sinistro  = st.sidebar.file_uploader("sinistro.txt",          type=["txt", "csv"])
+
+    if not upload_apolice or not upload_sinistro or not upload_cobertura:
+        st.info("👈 Faça o upload dos três arquivos TXT na barra lateral para iniciar o dashboard.")
+        st.stop()
+else:
+    # Dados já carregados — sidebar limpa, sem nenhuma referência aos arquivos
+    upload_apolice   = None
+    upload_sinistro  = None
+    upload_cobertura = None
+
+# Função para processar os dados de sinistro.
+# DF com dados de Sinistros por apólice:
+@st.cache_data
+def carregar_e_processar_dados_sinistro(arquivo):
+    try:
+        # Aceita BytesIO já preparado, objeto de upload ou caminho local (string)
+        if isinstance(arquivo, io.BytesIO):
+            arquivo.seek(0)   # garante que está no início
+            fonte = arquivo
+        elif hasattr(arquivo, 'read'):
+            fonte = io.BytesIO(arquivo.read())
+        else:
+            fonte = arquivo
+        aba_sinistro = pd.read_csv(
+            fonte,
+            sep=';',
+            encoding='latin-1',
+            decimal=',',
+            low_memory=False
+        )
+
+        # Garante que as colunas de valor são numéricas (proteção extra)
+        colunas_valor = [
+            'vl_sinistro_total', 'vl_despesa_total',
+            'vl_honorario_total', 'vl_salvado_total'
+        ]
+        for col in colunas_valor:
+            aba_sinistro[col] = pd.to_numeric(aba_sinistro[col], errors='coerce').fillna(0)
+
+        # Cálculo unificado do Sinistro
+        aba_sinistro['Total Sinistro'] = (
+            aba_sinistro['vl_sinistro_total'] +
+            aba_sinistro['vl_despesa_total'] +
+            aba_sinistro['vl_honorario_total'] -
+            aba_sinistro['vl_salvado_total']
+        )
+
+        # Limpeza e Renomeação
+        aba_sinistro.reset_index(drop=True, inplace=True)
+        aba_sinistro.rename(columns={'cd_apolice': 'N° Apólice'}, inplace=True)
+
+        return aba_sinistro.fillna(0)
+
+    except Exception as e:
+        st.error(f"Erro ao carregar sinistros: {e}")
+        return pd.DataFrame()
+
+
+# Dados agrupado de apólices e sinistros:
+@st.cache_data
+def carregar_e_processar_dados(arquivo_apolice, arquivo_sinistro):
+    """
+    Carrega e processa os dados dos arquivos TXT separados por ";".
+    Esta função é cacheada para evitar recarregar e reprocessar os dados
+    a cada interação do usuário, tornando a aplicação mais rápida.
+    """
+    try:
+        # Aceita BytesIO já preparado, objeto de upload ou caminho local (string)
+        if isinstance(arquivo_apolice, io.BytesIO):
+            arquivo_apolice.seek(0)
+            fonte_apolice = arquivo_apolice
+        elif hasattr(arquivo_apolice, 'read'):
+            fonte_apolice = io.BytesIO(arquivo_apolice.read())
+        else:
+            fonte_apolice = arquivo_apolice
+        # Carrega o arquivo apolice_endosso.txt
+        aba_apolice_endosso = pd.read_csv(
+            fonte_apolice,
+            sep=';',
+            encoding='latin-1',
+            decimal=',',
+            low_memory=False
+        )
+
+        # Garante que vl_tarifario_pago é numérico (proteção extra)
+        aba_apolice_endosso['vl_tarifario_pago'] = pd.to_numeric(
+            aba_apolice_endosso['vl_tarifario_pago'], errors='coerce'
+        ).fillna(0)
+
+        # Fazer a soma dos prêmios agrupado por apólice:
+        soma_por_apolice = aba_apolice_endosso.groupby('cd_apolice')['vl_tarifario_pago'].sum().reset_index()
+        # reset_index cria coluna com index por linha
+
+        soma_por_apolice.rename(columns={'cd_apolice': 'N° Apólice', 'vl_tarifario_pago': 'Soma Prêmio Pago por Apolice'}, inplace=True)
+        # inplace=true faz alteração na propria variavel sem necessidade de cria uma nova variavel com a alteração.
+
+        # Dados adicionais dos dados das apólices:
+        colunas_adicionais = [
+            'cd_apolice',
+            'nm_estipulante',
+            'dt_ini_vig_apo',
+            'dt_fim_vig_apo',
+            'nm_auto_utilizacao',
+            'nm_corretor',
+            'nm_representante',
+            'nr_ramo',
+            'nm_tp_apolice',
+            'nm_tp_cobranca',
+            'nm_regiao_circulacao',
+            'nm_uf_cliente',
+            'nm_cidade',
+            'nm_produto'
+        ]
+
+        # Selecionar as colunas adicionais, eliminando duplicatas por 'cd_apolice'
+        dados_adicionais = aba_apolice_endosso[colunas_adicionais].drop_duplicates(subset='cd_apolice')
+        # seleciona as colunas indicadas em colunas adicionais no data frame criado "aba_apolice_endosso"
+        # e remove as duplicadas e considera apolice indicado no subset
+        
+
+        dados_adicionais.rename(
+            columns={'cd_apolice': 'N° Apólice', 'nm_tp_apolice': 'Tipo de Apólice', 'nm_tp_cobranca': 'Tipo de Cobrança',
+            'nm_regiao_circulacao': 'Região de Circulação', 'nm_auto_utilizacao': 'Utilização', 'dt_ini_vig_apo': 'Inicio Vigência Apólice',
+            'dt_fim_vig_apo' : 'Fim Vigência Apólice', 'nm_uf_cliente': 'Estado', 'nm_cidade': 'Cidade', 'nm_estipulante': 'Segurado',
+            'nm_produto': 'Produto', 'nm_corretor':'Corretor', 'nm_representante':'Representante','nr_ramo':'Ramo'}, inplace=True)
+
+        # Garante que a coluna é do tipo data
+        dados_adicionais['Inicio Vigência Apólice'] = pd.to_datetime(dados_adicionais['Inicio Vigência Apólice'], dayfirst=True)
+        # Cria a coluna numérica do ano
+        dados_adicionais['Ano Vigência'] = dados_adicionais['Inicio Vigência Apólice'].dt.year
+
+        # Merge dos dados de prêmio com os dados adicionais
+        premio_com_dados = pd.merge(
+            soma_por_apolice,
+            dados_adicionais,
+            on='N° Apólice',
+            how='left'
+        )
+        # how='left' (Esquerda): Garante que o que as colunas da tabela que tem dados de apolice e dinheiro (prêmio) nunca suma.
+        # Mesmo que os dados adicionais estejam incompletos, a linha da apólice continua lá com o valor somado.
+
+
+        # Carrega o arquivo sinistro.txt
+        df_sinistros_detalhado = carregar_e_processar_dados_sinistro(arquivo_sinistro)
+
+        # Soma dos sinistros por apólice (chama a função que cria os dados de sinistro):
+        soma_sinistro_por_apolice = df_sinistros_detalhado.groupby('N° Apólice')['Total Sinistro'].sum().reset_index()
+        soma_sinistro_por_apolice.rename(columns={'Total Sinistro': 'Soma Sinistro Por Apolice'}, inplace=True)
+        
+        # Merge dos resultados finais
+        resultado_final = pd.merge(
+            premio_com_dados,
+            soma_sinistro_por_apolice,
+            on='N° Apólice',
+            how='outer'
+        ).fillna(0) # Preenche valores NaN com 0
+
+        return resultado_final
+    
+    except Exception as e:
+        st.error(f"Erro no processamento geral: {e}")
+        return pd.DataFrame()
+
+
+# Função para carregar cobertura_agrupada
+@st.cache_data
+def carregar_cobertura(arquivo):
+    try:
+        if isinstance(arquivo, io.BytesIO):
+            arquivo.seek(0)
+            fonte = arquivo
+        elif hasattr(arquivo, 'read'):
+            fonte = io.BytesIO(arquivo.read())
+        else:
+            fonte = arquivo
+        df = pd.read_csv(fonte, sep=';', encoding='latin-1', decimal=',', low_memory=False)
+        df.rename(columns={
+            'cd_apolice'  : 'N° Apólice',
+            'nm_comercial': 'Cobertura Apólice',
+            'vl_franquia' : 'Franquia Apólice'
+        }, inplace=True)
+        df['Franquia Apólice'] = pd.to_numeric(df['Franquia Apólice'], errors='coerce').fillna(0)
+        # Para cada apólice, mantém apenas o endosso mais recente (nr_endosso máximo)
+        # e deduplica por apólice + cobertura — franquia vigente
+        df = df.sort_values('nr_endosso', ascending=False)
+        df = df.drop_duplicates(subset=['N° Apólice', 'Cobertura Apólice'], keep='first')
+        return df[['N° Apólice', 'nr_endosso', 'Cobertura Apólice', 'Franquia Apólice']]
+    except Exception as e:
+        st.error(f"Erro ao carregar coberturas: {e}")
+        return pd.DataFrame()
 
 
 # Mapeamento fuzzy de coberturas — com cache para evitar recálculo
@@ -364,67 +654,147 @@ def mapear_franquia_por_cobertura(df_sinistro, df_cobertura_filtrado, threshold=
     return df_sinistro
 
 
-
-@st.cache_data
-def _filtrar_sinistros_por_apolices(df_sin_tuple, apolices_tuple):
-    """Filtra sinistros pelas apólices — cacheado para não refiltrar a cada rerun."""
-    import pandas as pd
-    df = pd.DataFrame(list(df_sin_tuple[1]), columns=df_sin_tuple[0])
-    apolices = set(apolices_tuple)
-    return df[df['N° Apólice'].isin(apolices)].copy()
-
-@st.cache_data
-def _calcular_periodo_max_aviso(dt_aviso_series_tuple, dt_ocorrencia_series_tuple):
-    """Calcula o período máximo da base — executa uma única vez."""
-    import pandas as pd
-    dt_av  = pd.to_datetime(pd.Series(list(dt_aviso_series_tuple)),     dayfirst=True, errors='coerce')
-    dt_oc  = pd.to_datetime(pd.Series(list(dt_ocorrencia_series_tuple)),dayfirst=True, errors='coerce')
-    return int((dt_av.dropna().max() - dt_oc.dropna().min()).days)
-
-@st.cache_data
-def _calcular_media_dias_aviso(apolices_tuple, dt_aviso_tuple, dt_ocorrencia_tuple, periodo_max):
-    """Calcula média de dias para aviso — cacheado por conjunto de apólices."""
-    import pandas as pd
-    import numpy as np
-    dt_av = pd.to_datetime(pd.Series(list(dt_aviso_tuple)),     dayfirst=True, errors='coerce')
-    dt_oc = pd.to_datetime(pd.Series(list(dt_ocorrencia_tuple)),dayfirst=True, errors='coerce')
-    dias  = (dt_av - dt_oc).dt.days
-    dias_validos = dias[(dias >= 0) & (dias <= periodo_max)]
-    media = dias_validos.mean()
-    return f"{media:.0f} dias" if not pd.isna(media) else "—"
-
 # Função de Formatação de Valores para o padrão Brasileiro
 def formatar_valor_br(valor):
+    """
+    Formata um valor numérico para o padrão monetário brasileiro (R$ X.XXX,XX).
+    Lida com valores NaN retornando uma string vazia.
+    """
     if pd.isna(valor):
         return ""
+    # Formata como float com 2 casas decimais e separador de milhar (padrão US)
     valor_us_format = f"{valor:,.2f}"
-    return valor_us_format.replace(",", "X").replace(".", ",").replace("X", ".")
+    # Inverte os separadores para o padrão brasileiro
+    valor_br_format = valor_us_format.replace(
+        ",", "X").replace(".", ",").replace("X", ".")
+    return valor_br_format
 
-# Recupera os dados do session_state (carregados na página principal)
-if 'dados_calculados' not in st.session_state or st.session_state['dados_calculados'].empty:
-    st.warning("⚠️ Os dados ainda não foram carregados. Volte à página principal e faça o upload dos arquivos.")
-    st.stop()
+# --- Aplicação Streamlit ---
+# Carrega do session_state se já existir, senão processa os uploads
+if dados_ja_carregados:
+    dados_calculados = st.session_state['dados_calculados']
+    df_sinistros     = st.session_state['df_sinistros']
+    df_cobertura     = st.session_state.get('df_cobertura', pd.DataFrame())
+else:
+    # Lê os bytes uma única vez para evitar problema de ponteiro consumido
+    bytes_apolice  = upload_apolice.read()  if hasattr(upload_apolice,  'read') else None
+    bytes_sinistro = upload_sinistro.read() if hasattr(upload_sinistro, 'read') else None
 
-dados_calculados = st.session_state['dados_calculados']
-df_sinistros     = st.session_state['df_sinistros']
-df_cobertura     = st.session_state.get('df_cobertura', pd.DataFrame())
+    fonte_apolice  = io.BytesIO(bytes_apolice)  if bytes_apolice  is not None else upload_apolice
+    fonte_sinistro = io.BytesIO(bytes_sinistro) if bytes_sinistro is not None else upload_sinistro
 
-# Prepara dados_exibicao
+    dados_calculados = carregar_e_processar_dados(fonte_apolice, io.BytesIO(bytes_sinistro) if bytes_sinistro is not None else upload_sinistro)
+    if dados_calculados.empty:
+        st.stop()
+    df_sinistros = carregar_e_processar_dados_sinistro(fonte_sinistro)
+    if df_sinistros.empty:
+        st.stop()
+    # Carrega coberturas
+    bytes_cobertura = upload_cobertura.read() if hasattr(upload_cobertura, 'read') else None
+    fonte_cobertura = io.BytesIO(bytes_cobertura) if bytes_cobertura is not None else upload_cobertura
+    df_cobertura = carregar_cobertura(fonte_cobertura)
+    # Salva no session_state e força rerun para esconder os uploaders imediatamente
+    st.session_state['dados_calculados'] = dados_calculados
+    st.session_state['df_sinistros']     = df_sinistros
+    st.session_state['df_cobertura']     = df_cobertura
+    st.session_state['data_upload']      = datetime.now().strftime('%d/%m/%Y %H:%M')
+    st.rerun()
+
+# Cria uma cópia para exibição e cálculos de porcentagem/formatação
+# Converte para object antes de formatar para evitar TypeError no pandas 2.x+
 dados_exibicao = dados_calculados.copy()
 dados_exibicao['Soma Prêmio Pago por Apolice'] = dados_exibicao['Soma Prêmio Pago por Apolice'].astype(object)
 dados_exibicao['Soma Sinistro Por Apolice']     = dados_exibicao['Soma Sinistro Por Apolice'].astype(object)
-dados_exibicao['% Sin'] = (dados_exibicao['Soma Sinistro Por Apolice'] / dados_exibicao['Soma Prêmio Pago por Apolice'].replace(0, float('nan'))).fillna(0).map(lambda x: f"{x:.2%}")
+
+# Cria o percentual de sinistro, tratando divisão por zero
+dados_exibicao['% Sin'] = dados_exibicao.apply(
+    lambda row: '{:.2%}'.format(
+        row['Soma Sinistro Por Apolice'] / row['Soma Prêmio Pago por Apolice'])
+    if row['Soma Prêmio Pago por Apolice'] != 0 else '0.00%', axis=1
+)
+
+# Formata as colunas para exibição
 dados_exibicao['Soma Prêmio Pago por Apolice'] = dados_exibicao['Soma Prêmio Pago por Apolice'].map(formatar_valor_br)
 dados_exibicao['Soma Sinistro Por Apolice']     = dados_exibicao['Soma Sinistro Por Apolice'].map(formatar_valor_br)
+
+# Reordenar as colunas para que 'Soma Sinistro Por Apolice' e '% Sin' fiquem nas posições desejadas
 colunas = list(dados_exibicao.columns)
+
+# Remove as colunas que vamos inserir manualmente, se existirem
 for col in ['Soma Sinistro Por Apolice', '% Sin']:
     if col in colunas:
         colunas.remove(col)
+
+# Insere nas posições desejadas
 colunas.insert(2, 'Soma Sinistro Por Apolice')
 colunas.insert(3, '% Sin')
-dados_exibicao = dados_exibicao[colunas].sort_values('N° Apólice')
 
-# ── PÁGINA 2: DADOS GERAIS ────────────────────────────────────────────────────
+# Reordena o DataFrame
+dados_exibicao = dados_exibicao[colunas]
+
+# Ordenando por numero da apólice inicialmente
+dados_exibicao = dados_exibicao.sort_values('N° Apólice')
+
+
+# copia do DF da base de sinistro para utilizar
+df_sinistro_utilizar = df_sinistros.copy()
+
+
+# '''
+# imagem sidebar
+#
+#
+#
+#
+#
+#
+# '''
+
+
+def img_to_base64(image_path):
+    """Convert image to base64."""
+    try:
+        with open(image_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode()
+    except Exception as e:
+        logging.error(f"Error converting image to base64: {str(e)}")
+        return None
+
+
+# Load and display sidebar image
+img_path = r'C:\Users\alex.sousa\Documents\Dados_Sinistros\image\lexus_gemine_II-Photoroom_menor80.png'
+img_base64 = img_to_base64(img_path)
+if img_base64:
+    st.sidebar.markdown(
+        # essa função para colocar glowing effect na imagem
+        # f'<img src="data:image/png;base64,{img_base64}" class="cover-glow">',
+        f'<img src="data:image/png;base64,{img_base64}" style="width: 100px; height: auto; display: block; margin-left: auto; margin-right: auto; margin-top: -40px;margin-bottom: 5px">',
+        unsafe_allow_html=True,
+    )
+
+# '''
+# imagem sidebar
+#
+#
+#
+#
+#
+#
+# '''
+
+
+# '''
+# para baixo trabalho filtro apólice
+#
+#
+#
+#
+#
+#
+# '''
+
+
+# ── PÁGINA 1: APÓLICE / SEGURADO ────────────────────────────────────────────
 
 # Navegação na sidebar (mesmo padrão da página de Dados Cotações)
 st.sidebar.header('Navegação')
@@ -433,901 +803,633 @@ st.sidebar.page_link("pages/2_Dados_Gerais.py", label="📊  Dados Gerais")
 st.sidebar.page_link("pages/3_Dados_Cotacoes.py", label="📝  Dados Cotações")
 st.sidebar.page_link("pages/4_Analise_Carteira_RCO.py", label="📈  Análise Carteira RCO")
 
-# --- Lógica de Filtragem Hierárquica na Sidebar ---
-st.sidebar.header('Filtros Dados Gerais')
+# --- Filtragem dados da Apólice ---
+st.sidebar.header('Filtro Apólice')
 
-# Botão para Resetar Filtros — limpa todas as keys do session_state
-_filtro_keys = ['filtro_rep', 'filtro_cor', 'filtro_seg', 'filtro_ramo', 'filtro_util', 'filtro_tp_emissao', 'filtro_regiao', 'filtro_uf', 'filtro_apolice']
+# Filtro por Apólice - Obtém as apólices únicas
+apolices_filtro_apolice = sorted(dados_exibicao['N° Apólice'].unique())
 
-st.sidebar.markdown('<div style="margin-top:1rem"></div>', unsafe_allow_html=True)
+# Define o índice padrão para selectbox
+default_index_apolice = 0 if apolices_filtro_apolice else None
 
-# Limpeza dos filtros via CALLBACK on_click — método robusto. O callback roda
-# ANTES de o script reexecutar e recriar os widgets; atribuir [] a cada key de
-# multiselect (em vez de apagar a key com pop) reseta de fato o valor exibido.
-# Para o slider, marca a flag que força o valor padrão no rerun. Os multiselect
-# NÃO usam mais default=[] (isso, junto com key, causava o aviso do Streamlit
-# "created with a default value but also had its value set via Session State").
-def _limpar_todos_filtros():
-    for k in _filtro_keys:
-        st.session_state[k] = []
-    st.session_state['resetar_slider'] = True
-
-st.sidebar.button('Limpar Todos os Filtros', on_click=_limpar_todos_filtros)
-
-# 1. Filtro por Representante (case-insensitive)
-representantes_unicos = sorted(_norm_nome(dados_exibicao['Representante']).unique())
-representantes_selecionados = st.sidebar.multiselect('Representante(s)', options=representantes_unicos, key='filtro_rep')
-
-dados_filtrados_rep = dados_exibicao.copy()
-if representantes_selecionados:
-    dados_filtrados_rep = dados_filtrados_rep[_norm_nome(dados_filtrados_rep['Representante']).isin(representantes_selecionados)]
-
-# 2. Filtro por Corretor (case-insensitive)
-corretores_unicos = sorted(_norm_nome(dados_filtrados_rep['Corretor']).unique())
-corretores_selecionados = st.sidebar.multiselect('Corretor(es)', options=corretores_unicos, key='filtro_cor')
-
-dados_filtrados_corr = dados_filtrados_rep.copy()
-if corretores_selecionados:
-    dados_filtrados_corr = dados_filtrados_corr[_norm_nome(dados_filtrados_corr['Corretor']).isin(corretores_selecionados)]
-
-# 3. Filtro por Segurado (case-insensitive)
-segurados_unicos = sorted(_norm_nome(dados_filtrados_corr['Segurado']).unique())
-segurados_selecionados = st.sidebar.multiselect('Segurado(s)', options=segurados_unicos, key='filtro_seg')
-
-dados_filtrados_segurado = dados_filtrados_corr.copy()
-if segurados_selecionados:
-    dados_filtrados_segurado = dados_filtrados_segurado[_norm_nome(dados_filtrados_segurado['Segurado']).isin(segurados_selecionados)]
-
-# 4. Filtro por Ramo
-ramos_unicos = sorted(dados_filtrados_segurado['Ramo'].unique())
-ramos_selecionados = st.sidebar.multiselect('Ramo(s)', options=ramos_unicos, key='filtro_ramo')
-
-dados_filtrados_ramo = dados_filtrados_segurado.copy()
-if ramos_selecionados:
-    dados_filtrados_ramo = dados_filtrados_ramo[dados_filtrados_ramo['Ramo'].isin(ramos_selecionados)]
-
-# 5. Filtro por Utilização
-utilizacoes_unicas = sorted(dados_filtrados_ramo['Utilização'].astype(str).unique())
-utilizacoes_selecionadas = st.sidebar.multiselect('Utilização(ões)', options=utilizacoes_unicas, key='filtro_util')
-
-dados_filtrados_util = dados_filtrados_ramo.copy()
-if utilizacoes_selecionadas:
-    dados_filtrados_util = dados_filtrados_util[dados_filtrados_util['Utilização'].astype(str).isin(utilizacoes_selecionadas)]
-
-# 6. Filtro por Tipo de Emissão
-tipos_emissao_unicos = sorted(dados_filtrados_util['Tipo de Apólice'].astype(str).unique())
-tipos_emissao_selecionados = st.sidebar.multiselect('Tipo de Emissão', options=tipos_emissao_unicos, key='filtro_tp_emissao')
-
-dados_filtrados_tp_emissao = dados_filtrados_util.copy()
-if tipos_emissao_selecionados:
-    dados_filtrados_tp_emissao = dados_filtrados_tp_emissao[dados_filtrados_tp_emissao['Tipo de Apólice'].astype(str).isin(tipos_emissao_selecionados)]
-
-# 7. Filtro por Região de Circulação
-regioes_unicas = sorted(dados_filtrados_tp_emissao['Região de Circulação'].astype(str).unique())
-regioes_selecionadas = st.sidebar.multiselect('Região de Circulação', options=regioes_unicas, key='filtro_regiao')
-
-dados_filtrados_regiao = dados_filtrados_tp_emissao.copy()
-if regioes_selecionadas:
-    dados_filtrados_regiao = dados_filtrados_regiao[dados_filtrados_regiao['Região de Circulação'].astype(str).isin(regioes_selecionadas)]
-
-# 8. Filtro por UF (extraída dos 2 primeiros caracteres da Região de Circulação)
-dados_filtrados_regiao['_UF'] = dados_filtrados_regiao['Região de Circulação'].astype(str).str[:2].str.strip()
-ufs_unicas = sorted(dados_filtrados_regiao['_UF'].unique())
-ufs_selecionadas = st.sidebar.multiselect('UF', options=ufs_unicas, key='filtro_uf')
-
-dados_filtrados_uf = dados_filtrados_regiao.copy()
-if ufs_selecionadas:
-    dados_filtrados_uf = dados_filtrados_uf[dados_filtrados_uf['_UF'].isin(ufs_selecionadas)]
-
-# 9. Filtro por Apólice (filtrado por todos os anteriores)
-apolices_unicas = sorted(dados_filtrados_uf['N° Apólice'].unique())
-apolices_selecionadas = st.sidebar.multiselect('Apólice(s)', options=apolices_unicas, key='filtro_apolice')
-
-resultado_final_filtrado = dados_filtrados_uf.copy()
-if apolices_selecionadas:
-    resultado_final_filtrado = resultado_final_filtrado[resultado_final_filtrado['N° Apólice'].isin(apolices_selecionadas)]
-
-# --- AJUSTE AQUI: Filtragem do Sinistro Geral ---
-# Pegamos a lista de apólices que sobraram após TODOS os filtros acima
-lista_apolices_filtradas = resultado_final_filtrado['N° Apólice'].unique()
-
-# Filtramos a base de sinistros original para conter apenas essas apólices
-df_sinistro_geral_filtrado = df_sinistros[df_sinistros['N° Apólice'].isin(lista_apolices_filtradas)].copy()
-
-# Fazemos o merge para trazer os nomes de Representante e Corretor para a tabela de sinistros
-df_sinistro_geral_com_rep_cor = pd.merge(
-    df_sinistro_geral_filtrado,
-    dados_exibicao[['N° Apólice', 'Representante', 'Corretor']],
-    on='N° Apólice',
-    how='left'
+apolices_selecionadas_filtro_apolice = st.sidebar.selectbox(
+    'Apólice',
+    options=apolices_filtro_apolice,
+    index=default_index_apolice  # Selecionar o primeiro registro por padrão
 )
 
-# Formata a coluna de valor para exibição (apenas se houver dados)
-if not df_sinistro_geral_com_rep_cor.empty:
-    df_sinistro_geral_com_rep_cor['Total Sinistro'] = df_sinistro_geral_com_rep_cor['Total Sinistro'].map(formatar_valor_br)
+st.markdown('<div id="topo-pagina" style="margin-top:-60px;padding-top:60px;"></div>', unsafe_allow_html=True)
 
-# --- Indicadores Chave (KPIs) ---
+st.subheader(f'Dados Apólice - {apolices_selecionadas_filtro_apolice}')
+dados_filtrados_filtro_apolice = dados_exibicao.copy()
+if apolices_selecionadas_filtro_apolice:
+    dados_filtrados_filtro_apolice = dados_filtrados_filtro_apolice[
+        dados_filtrados_filtro_apolice['N° Apólice'] == apolices_selecionadas_filtro_apolice]
 
-# sac.divider(label='Dados Gerais', icon=sac.BsIcon(name='gear', size=20), align='start', color='gray')
-# 'https://nicedouble-streamlitantdcomponentsdemo-app-middmy.streamlit.app/'
+# Converte as colunas de volta para numérico para somar
+# É importante fazer isso em uma cópia para não afetar a exibição formatada
+df_para_filtro_apolice = dados_filtrados_filtro_apolice.copy()
+df_para_filtro_apolice['Soma Prêmio Pago por Apolice'] = df_para_filtro_apolice['Soma Prêmio Pago por Apolice'].str.replace(
+    '.', '').str.replace(',', '.').astype(float)
+df_para_filtro_apolice['Soma Sinistro Por Apolice'] = df_para_filtro_apolice['Soma Sinistro Por Apolice'].str.replace(
+    '.', '').str.replace(',', '.').astype(float)
 
-# Âncora invisível no topo + botão flutuante (estilizado via ALLSEG_CSS)
-st.markdown(
-    '<div id="topo-pagina"></div>'
-    '<a href="#topo-pagina" class="btn-topo" title="Voltar ao topo">&#8679;</a>',
-    unsafe_allow_html=True
+total_premio_filtro_apolice = df_para_filtro_apolice['Soma Prêmio Pago por Apolice'].sum(
 )
-
-st.subheader("Análise Carteira RCO")
-
-# ── Resumo dos filtros ativos (só exibe se houver algum filtro selecionado) ───
-_filtros_ativos = {
-    'Representante':        representantes_selecionados,
-    'Corretor':             corretores_selecionados,
-    'Segurado':             segurados_selecionados,
-    'Ramo':                 ramos_selecionados,
-    'Utilização':           utilizacoes_selecionadas,
-    'Tipo de Emissão':      tipos_emissao_selecionados,
-    'Região de Circulação': regioes_selecionadas,
-    'UF':                   ufs_selecionadas,
-    'Apólice':              apolices_selecionadas,
-}
-_filtros_com_valor = {k: v for k, v in _filtros_ativos.items() if v}
-
-if _filtros_com_valor:
-    _partes = []
-    for k, v in _filtros_com_valor.items():
-        _vals = ', '.join(str(x) for x in v)
-        _partes.append(f'<b>{k}:</b> {_vals}')
-    _texto = '&nbsp;&nbsp;|&nbsp;&nbsp;'.join(_partes)
-    st.markdown(
-        f'<div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;'
-        f'padding:8px 14px;margin-bottom:8px;font-size:13px;color:#1E40AF;">'
-        f'🔍 <b>Filtros ativos:</b>&nbsp;&nbsp;{_texto}</div>',
-        unsafe_allow_html=True
-    )
-
-# ============= PARTE REFERENTE AO SLIDER PARA SELECIONAR ANO =============
-col_esq, col_meio, col_dir = st.columns([4,1,1])
-
-# Definir os limites do slider com base nos dados filtrados pela sidebar
-ano_min_absoluto = int(resultado_final_filtrado['Ano Vigência'].min())
-ano_max_absoluto = int(resultado_final_filtrado['Ano Vigência'].max())
-
-with col_esq:
-    # Criar o Slider de Intervalo (Range Slider)
-    if ano_min_absoluto < ano_max_absoluto:
-        # Título customizado com espaçamento para não colar no slider
-        st.write("")
-        st.markdown('<p class="section-label">Selecione o Intervalo de Anos (Início de Vigência Apólice)</p>', unsafe_allow_html=True)
-        # Reset do slider: se o botão limpar foi clicado, apaga a key ANTES de o
-        # widget ser criado, para ele voltar ao value= padrão sem o aviso de
-        # "default value + Session State" (não se atribui valor a uma key de
-        # widget que também define value=).
-        if st.session_state.get('resetar_slider', False):
-            st.session_state.pop('slider_anos', None)
-            st.session_state['resetar_slider'] = False
-
-        anos_selecionados = st.slider(
-            label='Seletor de Anos Vigência',
-            label_visibility="collapsed",
-            min_value=ano_min_absoluto,
-            max_value=ano_max_absoluto,
-            value=(ano_min_absoluto, ano_max_absoluto),
-            step=1,
-            key='slider_anos'
-        )
-    else:
-        # Se só houver um ano, o intervalo é fixo nesse ano
-        st.info(f"Período único disponível: {ano_min_absoluto}")
-        anos_selecionados = (ano_min_absoluto, ano_max_absoluto)
-
-# Filtrar o DataFrame com base no Slider (Este DF agora manda em tudo abaixo dele)
-df_geral_periodo = resultado_final_filtrado[
-    (resultado_final_filtrado['Ano Vigência'] >= anos_selecionados[0]) & 
-    (resultado_final_filtrado['Ano Vigência'] <= anos_selecionados[1])
-].copy()
-
-# Converte as colunas de volta para numérico para somar usando o DF do período selecionado
-df_para_soma = df_geral_periodo.copy()
-
-df_para_soma['Soma Prêmio Pago por Apolice'] = df_para_soma['Soma Prêmio Pago por Apolice'].str.replace(
-    '.', '').str.replace(',', '.').astype(float)
-df_para_soma['Soma Sinistro Por Apolice'] = df_para_soma['Soma Sinistro Por Apolice'].str.replace(
-    '.', '').str.replace(',', '.').astype(float)
+total_sinistro_filtro_apolice = df_para_filtro_apolice['Soma Sinistro Por Apolice'].sum(
+)
 
 # Calcula o percentual de sinistro total
-total_premio = df_para_soma['Soma Prêmio Pago por Apolice'].sum()
-total_sinistro = df_para_soma['Soma Sinistro Por Apolice'].sum()
-percentual_sinistro_total = (total_sinistro / total_premio) if total_premio != 0 else 0
+percentual_sinistro_total_filtro_apolice = (
+    total_sinistro_filtro_apolice / total_premio_filtro_apolice) if total_premio_filtro_apolice != 0 else 0
 
-# --- CORREÇÃO DAS QUANTIDADES ---
-# 1. Qtd. Apólices: Contar apólices únicas no DF filtrado pelo slider
-qtd_apolice_geral = df_geral_periodo['N° Apólice'].nunique()
+# criação do de DF com dados de sinistro de apólice selecionada.
+df_sinistro_apolice = df_sinistro_utilizar.loc[df_sinistro_utilizar['N° Apólice'] == apolices_selecionadas_filtro_apolice]
 
-# 2. Qtd. Sinistros: Filtrar a base de sinistros para as apólices do período do slider
-lista_apos_periodo = df_geral_periodo['N° Apólice'].unique()
-df_sinistro_periodo_atualizado = df_sinistro_geral_filtrado[df_sinistro_geral_filtrado['N° Apólice'].isin(lista_apos_periodo)].copy()
-# Pré-processa datas uma única vez — evita pd.to_datetime repetido nas seções de análise
-if not df_sinistro_periodo_atualizado.empty:
-    df_sinistro_periodo_atualizado['dt_aviso_dt']      = pd.to_datetime(df_sinistro_periodo_atualizado['dt_aviso'],      dayfirst=True, errors='coerce')
-    df_sinistro_periodo_atualizado['dt_ocorrencia_dt'] = pd.to_datetime(df_sinistro_periodo_atualizado['dt_ocorrencia'], dayfirst=True, errors='coerce')
-    df_sinistro_periodo_atualizado['Ano_Aviso']        = df_sinistro_periodo_atualizado['dt_aviso_dt'].dt.year
-    df_sinistro_periodo_atualizado['AnoMes']           = df_sinistro_periodo_atualizado['dt_aviso_dt'].dt.to_period('M').astype(str)
-qtd_sinistros_geral = df_sinistro_periodo_atualizado['nr_sinistro'].nunique()
-# --------------------------------
+# Quantidade de sinistros por apólice
+qtd_sinistros_apólice = df_sinistro_apolice['nr_sinistro'].nunique()
 
-# Colunas para informações do dados gerias
-st.markdown("<br>", unsafe_allow_html=True) # Espaço antes dos KPIs
+# Df para apresentação de sinistro por cobertura NA APOLICE
+if df_sinistro_apolice.empty:
+    df_sinistro_apolice_cobertura = pd.DataFrame({
+        'Cobertura' : [''],
+        'Total Sinistro' : [''],
+        'Qtd Sinistro' : ['']
+    })
+else:
+    df_sinistro_apolice_cobertura = df_sinistro_apolice.groupby('Cobertura', as_index=False).agg(**{
+        'Total Sinistro': ('Total Sinistro', 'sum'),
+        'Qtd Sinistros': ('nr_sinistro', 'nunique')
+    })
+    df_sinistro_apolice_cobertura['Total Sinistro'] = (df_sinistro_apolice_cobertura['Total Sinistro'].map(formatar_valor_br))
 
-# Média de dias para aviso — dados gerais (sem outliers: descarta dias > período total da base)
-# Período max cacheado — calcula uma única vez para toda a base
-_periodo_max_geral = _calcular_periodo_max_aviso(
-    tuple(df_sinistros['dt_aviso'].tolist()),
-    tuple(df_sinistros['dt_ocorrencia'].tolist())
-) if not df_sinistros.empty else 9999
+# Tipo de Emissão da apólice selecionada
+tipo_emissao_apolice = list(dados_filtrados_filtro_apolice['Tipo de Apólice'].unique())
+tipo_emissao_valor = str(tipo_emissao_apolice[0]).title() if tipo_emissao_apolice else "—"
 
-# Média de dias cacheada por conjunto de apólices do período filtrado
-media_dias_geral_str = _calcular_media_dias_aviso(
-    tuple(df_sinistro_periodo_atualizado['N° Apólice'].tolist()),
-    tuple(df_sinistro_periodo_atualizado['dt_aviso'].tolist()),
-    tuple(df_sinistro_periodo_atualizado['dt_ocorrencia'].tolist()),
-    _periodo_max_geral
-) if not df_sinistro_periodo_atualizado.empty else "—"
+# Média de dias para aviso — apólice (sem outliers acima do P95)
+_sin_ap = df_sinistros[df_sinistros['N° Apólice'] == apolices_selecionadas_filtro_apolice].copy()
+_sin_ap['dt_aviso_dt']     = pd.to_datetime(_sin_ap['dt_aviso'],     dayfirst=True, errors='coerce')
+_sin_ap['dt_ocorrencia_dt']= pd.to_datetime(_sin_ap['dt_ocorrencia'],dayfirst=True, errors='coerce')
+_sin_ap['dias_aviso']      = (_sin_ap['dt_aviso_dt'] - _sin_ap['dt_ocorrencia_dt']).dt.days
+_dias_ap = _sin_ap[_sin_ap['dias_aviso'] >= 0]['dias_aviso']
+_p95_ap  = _dias_ap.quantile(0.95) if not _dias_ap.empty else 0
+_media_dias_ap = _dias_ap[_dias_ap <= _p95_ap].mean()
+media_dias_ap_str = f"{_media_dias_ap:.0f} dias" if not pd.isna(_media_dias_ap) else "—"
 
-col1, col2, col3, col4, col5, col6 = st.columns(6)
+col_apl_1, col_apl_2, col_apl_3, col_apl_4, col_apl_5, col_apl_6 = st.columns(6)
 
-with col1:
-    st.metric(label="Total Prêmio Pago", value=f"R$ {formatar_valor_br(total_premio)}")
-with col2:
-    st.metric(label="Total Sinistro", value=f"R$ {formatar_valor_br(total_sinistro)}")
-with col3:
-    st.metric(label="% Sinistralidade", value=f"{percentual_sinistro_total:.2%}")
-with col4:
-    st.metric(label="Qtd. Apólices", value=qtd_apolice_geral)
-with col5:
-    st.metric(label="Qtd. Sinistros", value=qtd_sinistros_geral)
-with col6:
-    st.metric(label="Média Dias p/ Aviso", value=media_dias_geral_str)
-
-# ============= PARTE REFERENTE AO EVOLUÇÃO TEMPORAL - PREMIO X SINISTRO =============
-# Agrupar os dados por ano para o gráfico
-df_evolucao = df_para_soma.groupby('Ano Vigência').agg({
-    'Soma Prêmio Pago por Apolice': 'sum',
-    'Soma Sinistro Por Apolice': 'sum'
-}).reset_index()
-
-# Criar o gráfico de linhas com Plotly
-fig_evolucao = go.Figure()
-
-# Linha de Prêmios
-fig_evolucao.add_trace(go.Scatter(
-    x=df_evolucao['Ano Vigência'], 
-    y=df_evolucao['Soma Prêmio Pago por Apolice'],
-    mode='lines+markers',
-    name='Total Prêmio',
-    line=dict(color='#36A2EB', width=4),
-    hovertemplate='Ano: %{x}<br>Prêmio: R$ %{y:,.2f}'
-))
-
-# Linha de Sinistros
-fig_evolucao.add_trace(go.Scatter(
-    x=df_evolucao['Ano Vigência'], 
-    y=df_evolucao['Soma Sinistro Por Apolice'],
-    mode='lines+markers',
-    name='Total Sinistro',
-    line=dict(color='red', width=4),
-    hovertemplate='Ano: %{x}<br>Sinistro: R$ %{y:,.2f}'
-))
-
-fig_evolucao.update_layout(
-    xaxis=dict(tickmode='linear', dtick=1), # Força a exibição de ano em ano
-    yaxis_title="Valores (R$)",
-    hovermode="x unified",
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-    margin=dict(l=0, r=0, t=40, b=0)
-)
-# ============= PARTE REFERENTE AO EVOLUÇÃO TEMPORAL - PREMIO X SINISTRO =============
+with col_apl_1:
+    st.metric(label="Total Prêmio Pago",
+              value=f"R$ {formatar_valor_br(total_premio_filtro_apolice)}")
+with col_apl_2:
+    st.metric(label="Total Sinistro",
+              value=f"R$ {formatar_valor_br(total_sinistro_filtro_apolice)}")
+with col_apl_3:
+    st.metric(label="% Sinistro Total",
+              value=f"{percentual_sinistro_total_filtro_apolice:.2%}")
+with col_apl_4:
+    st.metric(label='Qtd Sinistro', value=qtd_sinistros_apólice)
+with col_apl_5:
+    st.metric(label='Tipo de Emissão', value=tipo_emissao_valor)
+with col_apl_6:
+    st.metric(label='Média Dias p/ Aviso', value=media_dias_ap_str)
 
 
-# ============= GRÁFICO DE BARRAS HORIZONTAIS - PRÊMIO X SINISTRO POR ANO =============
+# st.subheader('Segurado: ')
+# st.caption('Segurado: ')
+# st.write('Segurado: ')
+# st.markdown('<p class="section-label">Segurado: </p>', unsafe_allow_html=True)
+# st.markdown("**Segurado:**")
 
-# Criar o gráfico de barras horizontais
-fig_barras_h = go.Figure()
+col_seg_1, col_cor_2, col_rep_3, col_util_4 = st.columns(4)
 
-# Barra de Prêmios (Horizontal)
-fig_barras_h.add_trace(go.Bar(
-    y=df_evolucao['Ano Vigência'].astype(str), # Ano no eixo Y para ficar na horizontal
-    x=df_evolucao['Soma Prêmio Pago por Apolice'],
-    name='Total Prêmio',
-    orientation='h',
-    marker_color='#36A2EB',
-    text=df_evolucao['Soma Prêmio Pago por Apolice'].apply(formatar_valor_br),
-    textposition='auto'
-))
-
-# Barra de Sinistros (Horizontal)
-fig_barras_h.add_trace(go.Bar(
-    y=df_evolucao['Ano Vigência'].astype(str),
-    x=df_evolucao['Soma Sinistro Por Apolice'],
-    name='Total Sinistro',
-    orientation='h',
-    marker_color='red',
-    text=df_evolucao['Soma Sinistro Por Apolice'].apply(formatar_valor_br),
-    textposition='auto'
-))
-
-fig_barras_h.update_layout(
-    barmode='group',
-    xaxis_title="Valores (R$)",
-    yaxis_title="Ano",
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-    margin=dict(l=0, r=0, t=30, b=0),
-    height=400 # Você pode ajustar a altura conforme a quantidade de anos
-)
-# ============= GRÁFICO DE BARRAS HORIZONTAIS - PRÊMIO X SINISTRO POR ANO =============
+segurado = list(dados_filtrados_filtro_apolice['Segurado'].unique())
+corretor = list(dados_filtrados_filtro_apolice['Corretor'].unique())
+representante = list(
+    dados_filtrados_filtro_apolice['Representante'].unique())
+utilização = list(
+    dados_filtrados_filtro_apolice['Utilização'].unique())
 
 
-# ============= PLOT DO GRAFICOS LINHAS E BARRAS 2 COLUNAS =============
-st.markdown("<br>", unsafe_allow_html=True) # Espaço antes dos KPIs
-col_linha_barra_1, col_linha_barra_2 = st.columns(2)
-with col_linha_barra_1:
-    # plot grafico linhas premio x sinistro
-    st.markdown('<p class="section-label">Evolução Anual</p>', unsafe_allow_html=True)
-    st.plotly_chart(fig_evolucao, use_container_width=True, config={'displayModeBar': False})
-with col_linha_barra_2:
-    # plot grafico barras premio x sinistro
-    # st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown('<p class="section-label">Prêmio x Sinistro Anual</p>', unsafe_allow_html=True)
-    st.plotly_chart(fig_barras_h, use_container_width=True, config={'displayModeBar': False})
-    st.markdown("<br><br>", unsafe_allow_html=True)
+st.markdown('<div class="text-metric-row">', unsafe_allow_html=True)
+with col_seg_1:
+    st.metric(label="Segurado", value=str(segurado[0]).title())
+with col_cor_2:
+    st.metric(label="Corretor", value=str(corretor[0]).title())
+with col_rep_3:
+    st.metric(label="Representante", value=str(representante[0]).title())
+with col_util_4:
+    st.metric(label="Utilização", value=str(utilização[0]).title())
+st.markdown('</div>', unsafe_allow_html=True)
 
+st.markdown('<p class="section-label">Dados da Apólice</p>', unsafe_allow_html=True)
+st.dataframe(dados_filtrados_filtro_apolice, hide_index=True)
 
-# ============= ANÁLISE CONSOLIDADA POR ANO (DADOS GERAIS) =============
-# 1. Agrupamento por Ano (Prêmio, Sinistro e Qtd Apólices)
-# Utilizamos o df_para_soma que já contém os dados filtrados
-# ── Seletor de visão: Ano de Subscrição (UWY) × Ano do Acidente (AY) ─────────
-with st.container(border=True):
-    st.markdown(
-        '<div style="font-size:12px;color:#64748B;margin-bottom:6px;">'
-        '🔁 <b>A seleção abaixo altera somente</b> a tabela <b>Desempenho Consolidado por Ano</b> '
-        'e o gráfico <b>Evolução da Sinistralidade (%)</b> dentro deste quadro.</div>',
-        unsafe_allow_html=True
-    )
-    _visao_ano = st.radio(
-        "**Visão de alocação de sinistros:**",
-        options=["Ano de Subscrição (UWY)", "Ano do Acidente (AY)"],
-        horizontal=True,
-        key="radio_visao_ano",
-        help=(
-            "**Ano de Subscrição (UWY):** prêmio, sinistro e quantidade de sinistros alocados "
-            "ao ano de vigência da apólice. Ideal para análise de subscrição — mostra o "
-            "resultado técnico de cada safra de apólices.\n\n"
-            "**Ano do Acidente (AY):** sinistros alocados ao ano em que o evento ocorreu, "
-            "independente da vigência da apólice. Ideal para análise de exposição a "
-            "risco e eventos climáticos/judiciais por período."
-        )
-    )
+# Adiciona Franquia por apólice + cobertura usando fuzzy match de nomes
+# (nomes diferem entre sistemas — usa similaridade de texto com threshold 0.75)
+if not df_cobertura.empty and not df_sinistro_apolice.empty:
+    _cob_ap = df_cobertura[df_cobertura['N° Apólice'] == apolices_selecionadas_filtro_apolice]
+    df_sinistro_apolice = mapear_franquia_por_cobertura(df_sinistro_apolice, _cob_ap)
+else:
+    df_sinistro_apolice['Franquia Apólice'] = 0.0
 
-    # Descrição visual da visão selecionada
-    if _visao_ano == "Ano de Subscrição (UWY)":
-        st.caption(
-            "📋 **Ano de Subscrição / Underwriting Year (UWY):** prêmio e sinistros agrupados pelo **ano de vigência da apólice**. "
-            "Permite avaliar o resultado técnico de cada coorte de contratos subscritos."
-        )
-    else:
-        st.caption(
-            "📋 **Ano do Acidente / Accident Year (AY):** sinistros agrupados pelo **ano em que o evento ocorreu**. "
-            "Prêmio mantido por ano de vigência. Permite analisar a concentração de eventos por período."
-        )
+# Formatar como numero as colunas do df de dados da apólice
+df_sinistro_apolice['vl_sinistro_pago'] = (df_sinistro_apolice['vl_sinistro_pago'].map(formatar_valor_br))
+df_sinistro_apolice['vl_sinistro_pendente'] = (df_sinistro_apolice['vl_sinistro_pendente'].map(formatar_valor_br))
+df_sinistro_apolice['vl_sinistro_total'] = (df_sinistro_apolice['vl_sinistro_total'].map(formatar_valor_br))
+df_sinistro_apolice['vl_despesa_pago'] = (df_sinistro_apolice['vl_despesa_pago'].map(formatar_valor_br))
+df_sinistro_apolice['vl_despesa_pendente'] = (df_sinistro_apolice['vl_despesa_pendente'].map(formatar_valor_br))
+df_sinistro_apolice['vl_despesa_total'] = (df_sinistro_apolice['vl_despesa_total'].map(formatar_valor_br))
+df_sinistro_apolice['vl_honorario_pago'] = (df_sinistro_apolice['vl_honorario_pago'].map(formatar_valor_br))
+df_sinistro_apolice['vl_honorario_pendente'] = (df_sinistro_apolice['vl_honorario_pendente'].map(formatar_valor_br))
+df_sinistro_apolice['vl_honorario_total'] = (df_sinistro_apolice['vl_honorario_total'].map(formatar_valor_br))
+df_sinistro_apolice['vl_salvado_pago'] = (df_sinistro_apolice['vl_salvado_pago'].map(formatar_valor_br))
+df_sinistro_apolice['vl_salvado_pendente'] = (df_sinistro_apolice['vl_salvado_pendente'].map(formatar_valor_br))
+df_sinistro_apolice['vl_salvado_total'] = (df_sinistro_apolice['vl_salvado_total'].map(formatar_valor_br))
+df_sinistro_apolice['Total Sinistro'] = (df_sinistro_apolice['Total Sinistro'].map(formatar_valor_br))
+df_sinistro_apolice['Franquia Apólice'] = df_sinistro_apolice['Franquia Apólice'].map(formatar_valor_br)
 
-    # ── Base de sinistros filtrada pelas apólices do período ─────────────────────
-    lista_apos_ano = df_para_soma['N° Apólice'].unique()
-    df_sin_filtrado_ano = df_sinistros[df_sinistros['N° Apólice'].isin(lista_apos_ano)].copy()
-
-    # ── Cálculo conforme visão selecionada ───────────────────────────────────────
-    if _visao_ano == "Ano de Subscrição (UWY)":
-        # Ano de Subscrição (UWY): qtd sinistros pelo Ano Vigência da apólice
-        _apo_uw = df_para_soma[['N° Apólice', 'Ano Vigência']].drop_duplicates('N° Apólice')
-        _sin_uw = pd.merge(df_sin_filtrado_ano, _apo_uw, on='N° Apólice', how='left')
-        qtd_sin_por_ano = _sin_uw.groupby('Ano Vigência')['nr_sinistro'].nunique().reset_index()
-        qtd_sin_por_ano.rename(columns={'nr_sinistro': 'Qtd_Sinistros'}, inplace=True)
-        df_ano_geral = df_para_soma.groupby('Ano Vigência').agg(
-            Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
-            Total_Sinistro=('Soma Sinistro Por Apolice', 'sum'),
-            Qtd_Apolices=('N° Apólice', 'nunique')
-        ).reset_index()
-        df_final_ano = pd.merge(df_ano_geral, qtd_sin_por_ano, on='Ano Vigência', how='left').fillna(0)
-    else:
-        # Ano do Acidente (AY): sinistros alocados ao ano de ocorrência
-        if 'dt_ocorrencia_dt' in df_sin_filtrado_ano.columns:
-            df_sin_filtrado_ano['Ano_Ocorrencia'] = df_sin_filtrado_ano['dt_ocorrencia_dt'].dt.year
-        else:
-            df_sin_filtrado_ano['Ano_Ocorrencia'] = pd.to_datetime(
-                df_sin_filtrado_ano['dt_ocorrencia'], dayfirst=True, errors='coerce').dt.year
-        # Sinistro por ano de ocorrência
-        _sin_oc = df_sin_filtrado_ano.copy()
-        _sin_oc['Total Sinistro'] = (_sin_oc['vl_sinistro_total'].fillna(0) + _sin_oc['vl_despesa_total'].fillna(0)
-                                      + _sin_oc['vl_honorario_total'].fillna(0) - _sin_oc['vl_salvado_total'].fillna(0))
-        _sin_oc_ano = _sin_oc.groupby('Ano_Ocorrencia').agg(
-            Total_Sinistro_AY=('Total Sinistro', 'sum'),
-            Qtd_Sinistros=('nr_sinistro', 'nunique')
-        ).reset_index().rename(columns={'Ano_Ocorrencia': 'Ano Vigência'})
-        df_ano_geral = df_para_soma.groupby('Ano Vigência').agg(
-            Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
-            Qtd_Apolices=('N° Apólice', 'nunique')
-        ).reset_index()
-        df_final_ano = pd.merge(df_ano_geral, _sin_oc_ano, on='Ano Vigência', how='outer').fillna(0)
-        df_final_ano.rename(columns={'Total_Sinistro_AY': 'Total_Sinistro'}, inplace=True)
-        df_final_ano = df_final_ano.sort_values('Ano Vigência')
-
-    df_final_ano['Qtd_Sinistros'] = df_final_ano['Qtd_Sinistros'].astype(int)
-
-    # 4. Cálculo da Sinistralidade (numérico para o gráfico)
-    df_final_ano['Sinistralidade_Num'] = (
-        df_final_ano['Total_Sinistro'] / df_final_ano['Total_Premio'].replace(0, float('nan'))
-    ).fillna(0)
-
-    # 5. Formatação para a Tabela de Exibição
-    df_ano_view = df_final_ano.copy()
-    df_ano_view['Total_Premio'] = df_ano_view['Total_Premio'].map(formatar_valor_br)
-    df_ano_view['Total_Sinistro'] = df_ano_view['Total_Sinistro'].map(formatar_valor_br)
-    df_ano_view['% Sinistralidade'] = df_ano_view['Sinistralidade_Num'].map(lambda x: f"{x:.2%}")
-    df_ano_view['Qtd_Sinistros'] = df_ano_view['Qtd_Sinistros'].astype(int)
-
-    # 6. Gráfico de Visualização de Sinistralidade por Ano
-    fig_sin_ano = px.line(
-        df_final_ano,
-        x='Ano Vigência',
-        y='Sinistralidade_Num',
-        markers=True,
-        text=df_final_ano['Sinistralidade_Num'].map(lambda x: f"{x:.2%}"),
-        labels={'Sinistralidade_Num': 'Sinistralidade', 'Ano Vigência': 'Ano'},
-        template="plotly_white"
-    )
-
-    fig_sin_ano.update_traces(
-        line_color='red', 
-        textposition="top center",
-        hovertemplate="Ano: %{x}<br>Sinistralidade: %{y:.2%}"
-    )
-
-    fig_sin_ano.update_layout(
-        yaxis_tickformat='.0%', # Formata o eixo Y como porcentagem
-        xaxis=dict(dtick=1),     # Garante que mostre ano a ano
-        height=400,
-        margin=dict(l=0, r=0, t=30, b=0)
-    )
-
-    # Exibição da Tabela ano ramo
-    col_ano_1,col_ano_2 = st.columns(2)
-
-    with col_ano_1:
-        st.markdown('<p class="section-label">Desempenho Consolidado por Ano</p>', unsafe_allow_html=True)
-        st.dataframe(df_ano_view[['Ano Vigência','Total_Premio', 'Total_Sinistro', '% Sinistralidade', 'Qtd_Apolices', 'Qtd_Sinistros']], 
-                    hide_index=True, use_container_width=True)
-    with col_ano_2:
-        st.markdown('<p class="section-label">Evolução da Sinistralidade (%)</p>', unsafe_allow_html=True)
-        st.plotly_chart(fig_sin_ano, use_container_width=True, config={'displayModeBar': False})
-
-# --- Exibição dos Resultados ---
-col_final_1, col_final_2, col_final_3 = st.columns(3)
-
-with col_final_1:
-    st.markdown('<p class="section-label">Sinistros</p>', unsafe_allow_html=True)
-    # Trazemos os nomes de Representante e Corretor para o DF que já está filtrado por ANO
-    df_sinistro_final_exibicao = pd.merge(
-        df_sinistro_periodo_atualizado, # Este já está filtrado pelo Slider
-        dados_exibicao[['N° Apólice', 'Representante', 'Corretor']],
-        on='N° Apólice',
-        how='left'
-    )
-    
-    if not df_sinistro_final_exibicao.empty:
-        # Adiciona Franquia Apólice por Cobertura — deduplica para evitar duplicatas no merge
-        if not df_cobertura.empty:
-            # Franquia por apólice + cobertura usando fuzzy match de nomes
-            _cob_geral = df_cobertura[df_cobertura['N° Apólice'].isin(df_sinistro_final_exibicao['N° Apólice'].unique())]
-            df_sinistro_final_exibicao = mapear_franquia_por_cobertura(df_sinistro_final_exibicao, _cob_geral)
-        else:
-            df_sinistro_final_exibicao['Franquia Apólice'] = 0.0
-        # Formata para exibição
-        # Formata todas as colunas de valor no padrão BR — igual aos DFs do app
-        _colunas_valor = [
-            'vl_sinistro_pago', 'vl_sinistro_pendente', 'vl_sinistro_total',
-            'vl_despesa_pago', 'vl_despesa_pendente', 'vl_despesa_total',
-            'vl_honorario_pago', 'vl_honorario_pendente', 'vl_honorario_total',
-            'vl_salvado_pago', 'vl_salvado_pendente', 'vl_salvado_total',
-            'Total Sinistro', 'Franquia Apólice'
-        ]
-        for _col in _colunas_valor:
-            if _col in df_sinistro_final_exibicao.columns:
-                df_sinistro_final_exibicao[_col] = df_sinistro_final_exibicao[_col].map(formatar_valor_br)
-        # Colunas na mesma sequência dos DFs do app_homologacao
-        colunas_base = [
-            'nr_sinistro', 'nr_ramo', 'N° Apólice', 'nr_endosso', 'nm_cliente', 'Cobertura',
-            'dt_aviso', 'dt_ocorrencia',
-            'vl_sinistro_pago', 'vl_sinistro_pendente', 'vl_sinistro_total',
-            'vl_despesa_pago', 'vl_despesa_pendente', 'vl_despesa_total',
-            'vl_honorario_pago', 'vl_honorario_pendente', 'vl_honorario_total',
-            'vl_salvado_pago', 'vl_salvado_pendente', 'vl_salvado_total',
-            'status_processo', 'status_movimento', 'nm_causa', 'id_endosso', 't',
-            'Total Sinistro', 'Representante', 'Corretor', 'Franquia Apólice'
-        ]
-        colunas_exibir = [c for c in colunas_base if c in df_sinistro_final_exibicao.columns]
-        st.dataframe(df_sinistro_final_exibicao[colunas_exibir], hide_index=True)
-    else:
-        st.info("Nenhum sinistro no período selecionado.")
-        
-with col_final_2:
-    st.markdown('<p class="section-label">Prêmios e Sinistros Apólices</p>', unsafe_allow_html=True)
-    # Usamos o df_geral_periodo que contém o filtro do Slider de Ano
-    if not df_geral_periodo.empty:
-        # --- Adiciona coluna Qtd. Sinistros por apólice ---
-        # Conta sinistros únicos (nr_sinistro) por N° Apólice na base de sinistros do período
-        qtd_sin_por_apolice = (
-            df_sinistro_periodo_atualizado.groupby('N° Apólice')['nr_sinistro']
-            .nunique()
-            .reset_index()
-            .rename(columns={'nr_sinistro': 'Qtd. Sinistros'})
-        )
-
-        df_geral_periodo_exibicao = df_geral_periodo.merge(
-            qtd_sin_por_apolice, on='N° Apólice', how='left'
-        )
-        df_geral_periodo_exibicao['Qtd. Sinistros'] = (
-            df_geral_periodo_exibicao['Qtd. Sinistros'].fillna(0).astype(int)
-        )
-
-        # Reordena: posiciona Qtd. Sinistros logo após Soma Sinistro Por Apolice
-        cols = list(df_geral_periodo_exibicao.columns)
-        cols.remove('Qtd. Sinistros')
-        if 'Soma Sinistro Por Apolice' in cols:
-            idx = cols.index('Soma Sinistro Por Apolice') + 1
-            cols.insert(idx, 'Qtd. Sinistros')
-        else:
-            cols.append('Qtd. Sinistros')
-        df_geral_periodo_exibicao = df_geral_periodo_exibicao[cols]
-
-        st.dataframe(df_geral_periodo_exibicao, hide_index=True)
-    else:
-        st.info("Nenhum dado encontrado com os filtros selecionados.")
-
-with col_final_3:
-    st.markdown('<p class="section-label">Dados de Segurado</p>', unsafe_allow_html=True)
-    if not df_geral_periodo.empty:
-        # 1. Converte as colunas de valor (string BR) de volta para float para somar
-        df_seg_calc = df_geral_periodo.copy()
-        # Normaliza o nome do segurado (mesma regra do filtro _norm_nome) ANTES
-        # de agrupar, para que variações só de maiúsculas/minúsculas ou espaços
-        # (ex.: "Britacal Ind e Com..." vs "Britacal Ind E Com...") sejam somadas
-        # como um único segurado, em vez de aparecerem como linhas separadas.
-        df_seg_calc['Segurado'] = _norm_nome(df_seg_calc['Segurado'])
-        df_seg_calc['Premio_Num'] = (
-            df_seg_calc['Soma Prêmio Pago por Apolice']
-            .str.replace('.', '', regex=False)
-            .str.replace(',', '.', regex=False)
-            .astype(float)
-        )
-        df_seg_calc['Sinistro_Num'] = (
-            df_seg_calc['Soma Sinistro Por Apolice']
-            .str.replace('.', '', regex=False)
-            .str.replace(',', '.', regex=False)
-            .astype(float)
-        )
-
-        # 2. Agrupamento por Segurado — soma de prêmio/sinistro e contagem de apólices únicas
-        df_segurado = df_seg_calc.groupby('Segurado').agg(
-            Premio=('Premio_Num', 'sum'),
-            Sinistro=('Sinistro_Num', 'sum'),
-            Qtd_Apolice=('N° Apólice', 'nunique')
-        ).reset_index()
-
-        # 3. Quantidade de sinistros por Segurado
-        # Mapeia N° Apólice → Segurado a partir do df_geral_periodo
-        mapa_apolice_seg = df_seg_calc[['N° Apólice', 'Segurado']].drop_duplicates('N° Apólice')
-        df_sin_seg = df_sinistro_periodo_atualizado.merge(
-            mapa_apolice_seg, on='N° Apólice', how='left'
-        )
-        qtd_sin_por_seg = (
-            df_sin_seg.groupby('Segurado')['nr_sinistro'].nunique().reset_index()
-            .rename(columns={'nr_sinistro': 'Qtd_Sinistros'})
-        )
-
-        df_segurado = df_segurado.merge(qtd_sin_por_seg, on='Segurado', how='left').fillna({'Qtd_Sinistros': 0})
-        df_segurado['Qtd_Sinistros'] = df_segurado['Qtd_Sinistros'].astype(int)
-
-        # 4. Sinistralidade do Segurado
-        df_segurado['Sinistralidade do Segurado %'] = df_segurado.apply(
-            lambda r: '{:.2%}'.format(r['Sinistro'] / r['Premio']) if r['Premio'] > 0 else '0,00%',
-            axis=1
-        )
-
-        # 5. Formatação de valores no padrão BR
-        df_segurado['Premio']   = df_segurado['Premio'].map(formatar_valor_br)
-        df_segurado['Sinistro'] = df_segurado['Sinistro'].map(formatar_valor_br)
-
-        # 6. Renomeação e ordenação das colunas conforme solicitado
-        df_segurado = df_segurado.rename(columns={
-            'Segurado': 'Nm. Segurado',
-            'Qtd_Apolice': 'Qtd. Apólice',
-            'Qtd_Sinistros': 'Qtd. Sinistros'
-        })
-        df_segurado = df_segurado[[
-            'Nm. Segurado', 'Premio', 'Sinistro',
-            'Sinistralidade do Segurado %', 'Qtd. Apólice', 'Qtd. Sinistros'
-        ]].sort_values(by='Qtd. Apólice', ascending=False)
-
-        st.dataframe(
-            df_segurado,
-            hide_index=True,
-            use_container_width=True,
-            column_config={
-                "Nm. Segurado":                  st.column_config.Column(width=200),
-                "Premio":                        st.column_config.Column(width=110),
-                "Sinistro":                      st.column_config.Column(width=110),
-                "Sinistralidade do Segurado %":  st.column_config.Column(width=90),
-                "Qtd. Apólice":                  st.column_config.Column(width=60),
-                "Qtd. Sinistros":                st.column_config.Column(width=60),
-            }
-        )
-    else:
-        st.info("Nenhum dado de segurado disponível.")
-
-# --- Dados de Prêmio e Sinistro por Tipo de Emissão (Dados Gerais) ---
-st.markdown('<p class="section-label">Prêmio e Sinistro por Tipo de Emissão</p>', unsafe_allow_html=True)
-
-if not df_geral_periodo.empty:
-    df_tp_em = df_geral_periodo.copy()
-    df_tp_em['Soma Prêmio Pago por Apolice'] = df_tp_em['Soma Prêmio Pago por Apolice'].str.replace('.', '').str.replace(',', '.').astype(float)
-    df_tp_em['Soma Sinistro Por Apolice']    = df_tp_em['Soma Sinistro Por Apolice'].str.replace('.', '').str.replace(',', '.').astype(float)
-
-    groupby_tp_emissao = df_tp_em.groupby('Tipo de Apólice').agg(
-        Qtd_Apolices=('N° Apólice', 'nunique'),
-        Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
-        Total_Sinistro=('Soma Sinistro Por Apolice', 'sum')
-    ).reset_index()
-
-    # Cruzamento com sinistros para Qtd_Sinistros
-    df_sin_tp_contagem = df_sinistro_periodo_atualizado.merge(
-        df_tp_em[['N° Apólice', 'Tipo de Apólice']],
+st.markdown('<p class="section-label">Dados de Sinistro da Apólice</p>', unsafe_allow_html=True)
+if not df_sinistro_apolice.empty:
+    df_sinistro_apolice = pd.merge(
+        df_sinistro_apolice,
+        dados_exibicao[['N° Apólice', 'Representante', 'Corretor']].drop_duplicates('N° Apólice'),
         on='N° Apólice', how='left'
     )
-    qtd_sin_tp = df_sin_tp_contagem.groupby('Tipo de Apólice')['nr_sinistro'].nunique().reset_index()
-    qtd_sin_tp.rename(columns={'nr_sinistro': 'Qtd_Sinistros'}, inplace=True)
-
-    groupby_tp_emissao = pd.merge(groupby_tp_emissao, qtd_sin_tp, on='Tipo de Apólice', how='left').fillna(0)
-    groupby_tp_emissao['Qtd_Sinistros'] = groupby_tp_emissao['Qtd_Sinistros'].astype(int)
-    groupby_tp_emissao['% Sinistralidade'] = groupby_tp_emissao.apply(
-        lambda row: '{:.2%}'.format(row['Total_Sinistro'] / row['Total_Premio'])
-        if row['Total_Premio'] != 0 else '0.00%', axis=1
-    )
-    groupby_tp_emissao['Total_Premio']   = groupby_tp_emissao['Total_Premio'].map(formatar_valor_br)
-    groupby_tp_emissao['Total_Sinistro'] = groupby_tp_emissao['Total_Sinistro'].map(formatar_valor_br)
-    groupby_tp_emissao = groupby_tp_emissao[
-        ['Tipo de Apólice', 'Qtd_Apolices', 'Qtd_Sinistros', 'Total_Premio', 'Total_Sinistro', '% Sinistralidade']
-    ].sort_values(by='Qtd_Apolices', ascending=False)
-
-    st.dataframe(groupby_tp_emissao, hide_index=True, use_container_width=True)
+    _cols_ap = ['nr_sinistro', 'nr_ramo', 'N° Apólice', 'nr_endosso', 'nm_cliente', 'Cobertura', 'dt_aviso', 'dt_ocorrencia', 'vl_sinistro_pago', 'vl_sinistro_pendente', 'vl_sinistro_total', 'vl_despesa_pago', 'vl_despesa_pendente', 'vl_despesa_total', 'vl_honorario_pago', 'vl_honorario_pendente', 'vl_honorario_total', 'vl_salvado_pago', 'vl_salvado_pendente', 'vl_salvado_total', 'status_processo', 'status_movimento', 'nm_causa', 'id_endosso', 't', 'Total Sinistro', 'Representante', 'Corretor', 'Franquia Apólice']
+    _cols_ap = [c for c in _cols_ap if c in df_sinistro_apolice.columns]
+    st.dataframe(df_sinistro_apolice[_cols_ap], hide_index=True)
 else:
-    st.info("Nenhum dado disponível para agrupar por Tipo de Emissão.")
+    st.info("Apólice não possui sinistro.")
 
-# --- Dados de Prêmio e Sinistro por Utilização ---
-col_pr_sin_util_1, col_pr_sin_util_2 = st.columns(2)
 
-with col_pr_sin_util_1:
-    st.markdown('<p class="section-label">Prêmio e Sinistro por Utilização</p>', unsafe_allow_html=True)
+col_cob_sin_1, col_cob_sin_2 = st.columns(2)
 
-    if not df_geral_periodo.empty:
-        # 1. Preparação dos dados numéricos para soma
-        df_util = df_geral_periodo.copy()
-        
-        # Convertemos as strings formatadas de volta para float para permitir cálculos
-        df_util['Soma Prêmio Pago por Apolice'] = df_util['Soma Prêmio Pago por Apolice'].str.replace(
-            '.', '').str.replace(',', '.').astype(float)
-        df_util['Soma Sinistro Por Apolice'] = df_util['Soma Sinistro Por Apolice'].str.replace(
-            '.', '').str.replace(',', '.').astype(float)
-
-        # 2. Agrupamento principal
-        # Aqui contamos as apólices únicas e somamos os valores
-        groupby_utilizacao = df_util.groupby('Utilização').agg(
-            Qtd_Apolices=('N° Apólice', 'nunique'),
-            Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
-            Total_Sinistro=('Soma Sinistro Por Apolice', 'sum')
-        ).reset_index()
-
-        # 3. Cruzamento para obter a Quantidade de Sinistros
-        # Precisamos contar os sinistros na base de sinistros filtrada, usando a 'Utilização' que está no df_util
-        df_sinistros_contagem = df_sinistro_periodo_atualizado.merge(
-            df_util[['N° Apólice', 'Utilização']], 
-            on='N° Apólice', 
-            how='left'
-        )
-        
-        qtd_sin_por_util = df_sinistros_contagem.groupby('Utilização')['nr_sinistro'].nunique().reset_index()
-        qtd_sin_por_util.rename(columns={'nr_sinistro': 'Qtd_Sinistros'}, inplace=True)
-
-        # 4. Merge final dos dados agrupados com a contagem de sinistros
-        groupby_utilizacao = pd.merge(groupby_utilizacao, qtd_sin_por_util, on='Utilização', how='left').fillna(0)
-
-        # 5. Cálculos de Performance
-        groupby_utilizacao['% Sinistralidade'] = groupby_utilizacao.apply(
-            lambda row: '{:.2%}'.format(row['Total_Sinistro'] / row['Total_Premio'])
-            if row['Total_Premio'] != 0 else '0.00%', axis=1
-        )
-
-        # 6. Formatação para exibição
-        groupby_utilizacao['Total_Premio'] = groupby_utilizacao['Total_Premio'].map(formatar_valor_br)
-        groupby_utilizacao['Total_Sinistro'] = groupby_utilizacao['Total_Sinistro'].map(formatar_valor_br)
-        
-        # Converte Qtd_Sinistros para inteiro (caso o merge tenha gerado floats por causa de NaNs)
-        groupby_utilizacao['Qtd_Sinistros'] = groupby_utilizacao['Qtd_Sinistros'].astype(int)
-
-        # Reordenar colunas para ficar intuitivo
-        ordem_colunas = ['Utilização', 'Qtd_Apolices', 'Qtd_Sinistros', 'Total_Premio', 'Total_Sinistro', '% Sinistralidade']
-        groupby_utilizacao = groupby_utilizacao[ordem_colunas].sort_values(by='Qtd_Apolices', ascending=False)
-
-        # Exibição
-        st.dataframe(
-            groupby_utilizacao,
-            hide_index=True,
-            use_container_width=True,
-            column_config={
-                "Utilização":       st.column_config.Column(width=210),
-                "Qtd_Apolices":     st.column_config.Column(width=50),
-                "Qtd_Sinistros":    st.column_config.Column(width=50),
-                "% Sinistralidade":  st.column_config.Column(width=50),
-            })
+with col_cob_sin_1:
+    st.markdown('<p class="section-label">Sinistros por Cobertura da Apólice</p>', unsafe_allow_html=True)
+    if df_sinistro_apolice.empty:
+        st.info("Apólice não possui sinistro.")
     else:
-        st.info("Nenhum dado disponível para agrupar por Utilização.")
+        st.dataframe(df_sinistro_apolice_cobertura, hide_index=True)
+
+with col_cob_sin_2:
+    # --- Coberturas e Franquia da Apólice ---
+    st.markdown('<p class="section-label">Coberturas e Franquia da Apólice</p>', unsafe_allow_html=True)
+
+    # Franquias vigentes da apólice (endosso mais recente, já deduplicado na função)
+    df_cob_ap = df_cobertura[df_cobertura['N° Apólice'] == apolices_selecionadas_filtro_apolice][
+        ['Cobertura Apólice', 'Franquia Apólice']
+    ].copy() if not df_cobertura.empty else pd.DataFrame(columns=['Cobertura Apólice', 'Franquia Apólice'])
+
+    # Sinistros da apólice agrupados por cobertura
+    df_sin_ap = df_sinistros[df_sinistros['N° Apólice'] == apolices_selecionadas_filtro_apolice]        .groupby('Cobertura')['Total Sinistro'].sum().reset_index()
+    df_sin_ap.rename(columns={'Cobertura': 'Cobertura Apólice'}, inplace=True)
+
+    # Cobertura como base (left) — todas as coberturas aparecem sempre
+    # Sinistro entra como right — coberturas sem sinistro ficam com 0,00
+    if df_cob_ap.empty:
+        df_cob_view_ap = df_sin_ap.copy()
+        df_cob_view_ap['Franquia Apólice'] = 0.0
+    else:
+        # Os nomes de cobertura diferem entre os sistemas de origem (textos
+        # truncados em tamanhos diferentes, grafias distintas), então o merge
+        # exato pelo nome deixava sinistros sem correspondência (exibia 0,00).
+        # Usa o mesmo fuzzy match da franquia (SequenceMatcher, threshold 0.75)
+        # para alocar o sinistro na cobertura correspondente da apólice.
+        from difflib import SequenceMatcher
+        _nomes_cob_ap = df_cob_ap['Cobertura Apólice'].astype(str).tolist()
+
+        def _melhor_cobertura_ap(nome_sin, threshold=0.75):
+            _scores = [(SequenceMatcher(None, str(nome_sin).lower(), c.lower()).ratio(), c)
+                       for c in _nomes_cob_ap]
+            _best_score, _best_cob = max(_scores, key=lambda x: x[0])
+            return _best_cob if _best_score >= threshold else None
+
+        df_sin_ap['Cobertura Match'] = df_sin_ap['Cobertura Apólice'].map(_melhor_cobertura_ap)
+
+        # Sinistros com correspondência: soma na cobertura da apólice casada
+        _sin_match_ap = df_sin_ap.dropna(subset=['Cobertura Match'])\
+            .groupby('Cobertura Match')['Total Sinistro'].sum().reset_index()\
+            .rename(columns={'Cobertura Match': 'Cobertura Apólice'})
+
+        df_cob_view_ap = pd.merge(df_cob_ap, _sin_match_ap, on='Cobertura Apólice', how='left')
+        df_cob_view_ap['Total Sinistro'] = df_cob_view_ap['Total Sinistro'].fillna(0)
+        df_cob_view_ap['Franquia Apólice'] = df_cob_view_ap['Franquia Apólice'].fillna(0)
+
+        # Sinistros SEM correspondência (similaridade < 0.75): exibe mesmo
+        # assim como linha adicional, para o valor nunca sumir da tabela
+        _sin_sem_match_ap = df_sin_ap[df_sin_ap['Cobertura Match'].isna()]
+        if not _sin_sem_match_ap.empty:
+            _extra_ap = _sin_sem_match_ap[['Cobertura Apólice', 'Total Sinistro']].copy()
+            _extra_ap['Franquia Apólice'] = 0.0
+            df_cob_view_ap = pd.concat([df_cob_view_ap, _extra_ap], ignore_index=True)
+
+    df_cob_view_ap['Franquia Apólice'] = df_cob_view_ap['Franquia Apólice'].map(formatar_valor_br)
+    df_cob_view_ap['Total Sinistro']   = df_cob_view_ap['Total Sinistro'].map(formatar_valor_br)
+    df_cob_view_ap = df_cob_view_ap[['Cobertura Apólice', 'Franquia Apólice', 'Total Sinistro']]
+    if df_cob_view_ap.empty:
+        st.info("Apólice sem dados de Coberturas.")
+    else:
+        st.dataframe(df_cob_view_ap, hide_index=True, use_container_width=True)
+
+#
+#
+#
+#
+# DADOS DO SEGURADO PARA APRESENTAÇÃO
+#
+#
+#
+#
+
+st.subheader(f'Dados do Segurado - {str(segurado[0]).title()}')
+
+# 1. Preparação dos Dados do Segurado (Numéricos para cálculos)
+# df_segurado_calculo = dados_calculados[dados_calculados['Segurado'] == segurado[0]].copy()
+# df_sinistro_segurado = df_sinistros[df_sinistros['nm_cliente'] == segurado[0]].copy()
 
 
-with col_pr_sin_util_2:
-    # === Gráfico de Sinistralidade por Utilização ===
-    st.markdown('<p class="section-label">Gráfico Sinistralidade por Utilização</p>', unsafe_allow_html=True)
+# 1. Preparação dos Dados do Segurado (Filtro inicial numérico)
+# Normalização case-insensitive: 'REAL MAIA' na apólice e 'Real Maia' em
+# sinistro passam a casar (antes o filtro retornava vazio nesses casos).
+_seg_alvo_norm = _norm_nome(pd.Series([segurado[0]])).iloc[0]
+df_segurado_calculo = dados_calculados[_norm_nome(dados_calculados['Segurado']) == _seg_alvo_norm].copy()
+df_sinistro_segurado = df_sinistros[_norm_nome(df_sinistros['nm_cliente']) == _seg_alvo_norm].copy()
 
-    # 1. Criamos o DF auxiliar para o gráfico
-    df_grafico_util = groupby_utilizacao.copy()
+# 2. Criar a coluna de percentual de sinistro (MANTENDO COMO NÚMERO para cálculos)
+df_segurado_calculo['% Sin'] = df_segurado_calculo.apply(
+    lambda row: row['Soma Sinistro Por Apolice'] / row['Soma Prêmio Pago por Apolice'] 
+    if row['Soma Prêmio Pago por Apolice'] != 0 else 0, axis=1
+)
 
-    # 2. Convertemos a porcentagem para float para o gráfico (Removendo formatação BR)
-    df_grafico_util['Sinistralidade_Float'] = df_grafico_util['% Sinistralidade'].str.replace('%', '').str.replace(',', '.').astype(float)
+# --- AQUI ESTÁ O PULO DO GATO: Cálculos de Totais ---
+# Fazemos os cálculos usando o DF que ainda tem NÚMEROS (antes da formatação de R$)
+total_pr_segurado = df_segurado_calculo['Soma Prêmio Pago por Apolice'].sum()
+total_sinistro_segurado = df_segurado_calculo['Soma Sinistro Por Apolice'].sum()
+sinistralidade_segurado = (total_sinistro_segurado / total_pr_segurado) if total_pr_segurado != 0 else 0
 
-    # 3. FILTRO: Removemos a utilização com nome "0" e também valores zerados para limpar o visual
-    df_grafico_util = df_grafico_util[
-        (df_grafico_util['Utilização'].astype(str) != '0') & 
-        (df_grafico_util['Sinistralidade_Float'] > 0)
+# 3. Criar uma CÓPIA para exibição e aplicar a formatação visual
+df_segurado_exibicao = df_segurado_calculo.copy()
+
+df_segurado_exibicao['Soma Prêmio Pago por Apolice'] = df_segurado_exibicao['Soma Prêmio Pago por Apolice'].map(formatar_valor_br)
+df_segurado_exibicao['Soma Sinistro Por Apolice'] = df_segurado_exibicao['Soma Sinistro Por Apolice'].map(formatar_valor_br)
+df_segurado_exibicao['% Sin'] = df_segurado_exibicao['% Sin'].map(lambda x: '{:.2%}'.format(x))
+
+# 4. Reordenar as colunas para seguir a sequência exata de 'dados_exibicao' (df_geral_periodo)
+colunas_referencia = [
+    'N° Apólice', 'Soma Prêmio Pago por Apolice', 'Soma Sinistro Por Apolice', '% Sin',
+    'Segurado', 'Inicio Vigência Apólice', 'Fim Vigência Apólice', 'Utilização',
+    'Corretor', 'Representante', 'Ramo', 'Tipo de Apólice', 'Tipo de Cobrança',
+    'Região de Circulação', 'Estado', 'Cidade', 'Produto', 'Ano Vigência'
+]
+# Filtra apenas as colunas que existem no df (evita erro se alguma coluna estiver ausente)
+colunas_referencia = [c for c in colunas_referencia if c in df_segurado_exibicao.columns]
+df_segurado_exibicao = df_segurado_exibicao[colunas_referencia]
+
+# KPIs do Segurado
+total_pr_segurado = df_segurado_calculo['Soma Prêmio Pago por Apolice'].sum()
+total_sinistro_segurado = df_segurado_calculo['Soma Sinistro Por Apolice'].sum()
+sinistralidade_segurado = (total_sinistro_segurado / total_pr_segurado) if total_pr_segurado != 0 else 0
+qtd_apolice_segurado = df_segurado_calculo['N° Apólice'].nunique()
+qtd_sinistros_segurado = df_sinistro_segurado['nr_sinistro'].nunique()
+
+# Média de dias para aviso — segurado (sem outliers acima do P95)
+_sin_seg = df_sinistros[df_sinistros['N° Apólice'].isin(df_segurado_calculo['N° Apólice'].unique())].copy()
+_sin_seg['dt_aviso_dt']      = pd.to_datetime(_sin_seg['dt_aviso'],     dayfirst=True, errors='coerce')
+_sin_seg['dt_ocorrencia_dt'] = pd.to_datetime(_sin_seg['dt_ocorrencia'],dayfirst=True, errors='coerce')
+_sin_seg['dias_aviso']       = (_sin_seg['dt_aviso_dt'] - _sin_seg['dt_ocorrencia_dt']).dt.days
+_dias_seg = _sin_seg[_sin_seg['dias_aviso'] >= 0]['dias_aviso']
+# Descarta apenas registros que ultrapassam o período total da base (erros de data)
+_periodo_max_seg = int((pd.to_datetime(df_sinistros['dt_aviso'], dayfirst=True, errors='coerce').dropna().max() - pd.to_datetime(df_sinistros['dt_ocorrencia'], dayfirst=True, errors='coerce').dropna().min()).days) if not df_sinistros.empty else 9999
+_media_dias_seg = _dias_seg[_dias_seg <= _periodo_max_seg].mean()
+media_dias_seg_str = f"{_media_dias_seg:.0f} dias" if not pd.isna(_media_dias_seg) else "—"
+
+seg_apl_1, seg_apl_2, seg_apl_3, seg_apl_4, seg_apl_5, seg_apl_6 = st.columns(6)
+with seg_apl_1:
+    st.metric(label="Total Prêmio Pago", value=f"R$ {formatar_valor_br(total_pr_segurado)}")
+with seg_apl_2:
+    st.metric(label="Total Sinistro", value=f"R$ {formatar_valor_br(total_sinistro_segurado)}")
+with seg_apl_3:
+    st.metric(label="% Sinistro Total", value=f"{sinistralidade_segurado:.2%}")
+with seg_apl_4:
+    st.metric(label='Qtd. Apolices', value=qtd_apolice_segurado)
+with seg_apl_5:
+    st.metric(label='Qtd Sinistros', value=qtd_sinistros_segurado)
+with seg_apl_6:
+    st.metric(label='Média Dias p/ Aviso', value=media_dias_seg_str)
+
+# --- NOVO: Prêmio x Sinistro / Desempenho Consolidado por Ano ---
+col_graf_seg_1, col_graf_seg_2 = st.columns(2)
+
+with col_graf_seg_1:
+    # --- GRÁFICO CORRIGIDO: EVOLUÇÃO POR ANO DO SEGURADO ---
+    st.markdown(f'<p class="section-label">Evolução Anual - Segurado</p>', unsafe_allow_html=True)
+
+    # 1. Preparar os dados (utilizando a coluna 'Ano Vigência' já existente)
+    df_evolucao_segurado = df_segurado_calculo.copy()
+
+    # 2. Agrupar por Ano Vigência
+    df_anual_seg = df_evolucao_segurado.groupby('Ano Vigência').agg({
+        'Soma Prêmio Pago por Apolice': 'sum',
+        'Soma Sinistro Por Apolice': 'sum'
+    }).reset_index()
+
+    # 3. Garantir ordenação e tipo string para o eixo X
+    df_anual_seg = df_anual_seg.sort_values('Ano Vigência')
+    df_anual_seg['Ano'] = df_anual_seg['Ano Vigência'].astype(str)
+
+    # 4. Criar o gráfico seguindo o estilo do fig_evolucao (Linhas com Marcadores)
+    fig_evolucao_seg = go.Figure()
+
+    fig_evolucao_seg.add_trace(go.Scatter(
+        x=df_anual_seg['Ano'], 
+        y=df_anual_seg['Soma Prêmio Pago por Apolice'],
+        mode='lines+markers', 
+        name='Prêmio Líquido', 
+        line=dict(color='#36A2EB', width=3)
+    ))
+
+    fig_evolucao_seg.add_trace(go.Scatter(
+        x=df_anual_seg['Ano'], 
+        y=df_anual_seg['Soma Sinistro Por Apolice'],
+        mode='lines+markers', 
+        name='Sinistro', 
+        line=dict(color='red', width=3)
+    ))
+
+    fig_evolucao_seg.update_layout(
+        xaxis_title='Ano',
+        yaxis_title='Valor (R$)',
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=20, r=20, t=60, b=20),
+        hovermode="x unified"
+    )
+
+    st.plotly_chart(fig_evolucao_seg, use_container_width=True, config={'displayModeBar': False})
+
+with col_graf_seg_2:
+    st.markdown('<p class="section-label">Prêmio x Sinistro - Segurado</p>', unsafe_allow_html=True)
+    
+    # Agrupamento por Ano para o Segurado
+    df_ano_seg = df_segurado_calculo.groupby('Ano Vigência').agg({
+        'Soma Prêmio Pago por Apolice': 'sum',
+        'Soma Sinistro Por Apolice': 'sum'
+    }).reset_index()
+    
+    # Garantir que o Ano seja string para o eixo Y
+    df_ano_seg['Ano Vigência'] = df_ano_seg['Ano Vigência'].astype(str)
+
+    fig_barras_h_seg = go.Figure()
+
+    # Barra de Prêmios (Horizontal)
+    fig_barras_h_seg.add_trace(go.Bar(
+        y=df_ano_seg['Ano Vigência'], 
+        x=df_ano_seg['Soma Prêmio Pago por Apolice'],
+        name='Total Prêmio',
+        orientation='h',
+        marker_color='#36A2EB',
+        text=df_ano_seg['Soma Prêmio Pago por Apolice'].apply(formatar_valor_br),
+        textposition='auto'
+    ))
+
+    # Barra de Sinistros (Horizontal)
+    fig_barras_h_seg.add_trace(go.Bar(
+        y=df_ano_seg['Ano Vigência'],
+        x=df_ano_seg['Soma Sinistro Por Apolice'],
+        name='Total Sinistro',
+        orientation='h',
+        marker_color='red',
+        text=df_ano_seg['Soma Sinistro Por Apolice'].apply(formatar_valor_br),
+        textposition='auto'
+    ))
+
+    fig_barras_h_seg.update_layout(
+        barmode='group',
+        xaxis_title="Valores (R$)",
+        yaxis_title="Ano",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=0, r=0, t=30, b=0),
+        height=400 
+    )
+
+    st.plotly_chart(fig_barras_h_seg, use_container_width=True, config={'displayModeBar': False})
+
+
+col_graf_seg_3, col_graf_seg_4 = st.columns(2)
+
+with col_graf_seg_3:
+    # --- TABELA: DESEMPENHO CONSOLIDADO POR ANO (SEGURADO) ---
+    # 1. Agrupamento dos dados por Ano de Vigência
+    # Underwriting Year: prêmio, sinistro e qtd sinistros todos pelo Ano Vigência da apólice
+    df_consolidado_ano_seg = df_segurado_calculo.groupby('Ano Vigência').agg(
+        Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
+        Total_Sinistro=('Soma Sinistro Por Apolice', 'sum'),
+        Qtd_Apolices=('N° Apólice', 'nunique')
+    ).reset_index()
+
+    # Qtd Sinistros por Underwriting Year — via merge sinistro → apólice → Ano Vigência
+    _sin_uw = df_sinistros[df_sinistros['N° Apólice'].isin(df_segurado_calculo['N° Apólice'].unique())].copy()
+    _apo_uw = df_segurado_calculo[['N° Apólice', 'Ano Vigência']].drop_duplicates('N° Apólice')
+    _sin_uw = pd.merge(_sin_uw, _apo_uw, on='N° Apólice', how='left')
+    _qtd_sin_seg = _sin_uw.groupby('Ano Vigência')['nr_sinistro'].nunique().reset_index()
+    _qtd_sin_seg.rename(columns={'nr_sinistro': 'Qtd_Sinistros'}, inplace=True)
+    df_consolidado_ano_seg = pd.merge(df_consolidado_ano_seg, _qtd_sin_seg, on='Ano Vigência', how='left').fillna(0)
+    df_consolidado_ano_seg['Qtd_Sinistros'] = df_consolidado_ano_seg['Qtd_Sinistros'].astype(int)
+
+    # Sinistralidade — vetorizado (sem .apply)
+    df_consolidado_ano_seg['% Sinistralidade'] = (
+        df_consolidado_ano_seg['Total_Sinistro'] / df_consolidado_ano_seg['Total_Premio'].replace(0, float('nan'))
+    ).fillna(0)
+
+    # Formata para exibição
+    df_consolidado_view = df_consolidado_ano_seg.copy()
+    df_consolidado_view['Total_Premio']     = df_consolidado_view['Total_Premio'].map(formatar_valor_br)
+    df_consolidado_view['Total_Sinistro']   = df_consolidado_view['Total_Sinistro'].map(formatar_valor_br)
+    df_consolidado_view['% Sinistralidade'] = df_consolidado_view['% Sinistralidade'].map(lambda x: f"{x:.2%}")
+    df_consolidado_view.rename(columns={
+        'Ano Vigência': 'Ano Vigência',
+        'Total_Premio': 'Total_Premio',
+        'Total_Sinistro': 'Total_Sinistro'
+    }, inplace=True)
+
+    st.markdown(f'<p class="section-label">Desempenho Consolidado por Ano - Segurado</p>', unsafe_allow_html=True)
+    st.dataframe(
+        df_consolidado_view[['Ano Vigência','Total_Premio','Total_Sinistro','% Sinistralidade','Qtd_Apolices','Qtd_Sinistros']],
+        hide_index=True, use_container_width=True
+    )
+
+with col_graf_seg_4:
+    st.markdown('<p class="section-label">Evolução da Sinistralidade (%)  - Segurado</p>', unsafe_allow_html=True)
+    
+    # Cálculo da Sinistralidade por Ano
+    df_ano_seg['% Sin'] = (df_ano_seg['Soma Sinistro Por Apolice'] / df_ano_seg['Soma Prêmio Pago por Apolice']).fillna(0)
+    
+    # Gráfico de Linha (Evolução)
+    fig_line_sin_seg = px.line(
+        df_ano_seg, 
+        x='Ano Vigência', 
+        y='% Sin', 
+        markers=True,
+        text=df_ano_seg['% Sin'].map(lambda x: f"{x:.2%}")
+    )
+    
+    fig_line_sin_seg.update_traces(textposition="top center", line_color='red')
+    fig_line_sin_seg.update_yaxes(tickformat=".1%")
+    fig_line_sin_seg.update_layout(
+        height=400, 
+        margin=dict(t=30, b=20, l=0, r=0),
+        xaxis_title="Ano",
+        yaxis_title="Sinistralidade (%)"
+    )
+    st.plotly_chart(fig_line_sin_seg, use_container_width=True, config={'displayModeBar': False})
+
+
+# --- Prêmio e Sinistro por Utilização ---
+col_util_1, col_util_2 = st.columns(2)
+
+with col_util_1:
+    st.markdown('<p class="section-label">Desempenho por Utilização - Segurado</p>', unsafe_allow_html=True)
+    df_util_seg = df_segurado_calculo.groupby('Utilização').agg({
+        'Soma Prêmio Pago por Apolice': 'sum',
+        'Soma Sinistro Por Apolice': 'sum'
+    }).reset_index()
+    
+    # Tabela formatada
+    df_util_view = df_util_seg.copy()
+    df_util_view['Sinistralidade'] = (df_util_view['Soma Sinistro Por Apolice'] / df_util_view['Soma Prêmio Pago por Apolice']).map(lambda x: f"{x:.2%}")
+    df_util_view['Soma Prêmio Pago por Apolice'] = df_util_view['Soma Prêmio Pago por Apolice'].map(formatar_valor_br)
+    df_util_view['Soma Sinistro Por Apolice'] = df_util_view['Soma Sinistro Por Apolice'].map(formatar_valor_br)
+    st.dataframe(df_util_view, hide_index=True, use_container_width=True)
+
+with col_util_2:
+    st.markdown('<p class="section-label">Sinistralidade por Utilização - Segurado</p>', unsafe_allow_html=True)
+
+    # 1. Criamos o DF auxiliar para o gráfico a partir do df_util_seg já agrupado
+    df_grafico_util_seg = df_util_seg.copy()
+
+    # 2. Cálculo da sinistralidade como float para o gráfico
+    df_grafico_util_seg['Sinistralidade_Float'] = df_grafico_util_seg.apply(
+        lambda row: row['Soma Sinistro Por Apolice'] / row['Soma Prêmio Pago por Apolice']
+        if row['Soma Prêmio Pago por Apolice'] != 0 else 0, axis=1
+    )
+
+    # 3. Colunas de texto formatado para exibir no rótulo
+    df_grafico_util_seg['% Sinistralidade'] = df_grafico_util_seg['Sinistralidade_Float'].map(lambda x: f"{x:.2%}")
+
+    # 4. FILTRO: Remove utilização "0" e valores zerados para limpar o visual
+    df_grafico_util_seg = df_grafico_util_seg[
+        (df_grafico_util_seg['Utilização'].astype(str) != '0') &
+        (df_grafico_util_seg['Sinistralidade_Float'] > 0)
     ]
 
-    if not df_grafico_util.empty:
-        # 4. Ordenamos para que a maior sinistralidade fique no topo do gráfico horizontal
-        df_grafico_util = df_grafico_util.sort_values(by='Sinistralidade_Float', ascending=True)
+    if not df_grafico_util_seg.empty:
+        # 5. Ordena para que a maior sinistralidade fique no topo do gráfico horizontal
+        df_grafico_util_seg = df_grafico_util_seg.sort_values(by='Sinistralidade_Float', ascending=True)
 
-        # 5. Criação do gráfico de barras horizontais
-        fig_util_sin = px.bar(
-            df_grafico_util,
-            x='Sinistralidade_Float', # Valor no eixo X
-            y='Utilização',           # Categoria no eixo Y
-            orientation='h',          # Define como Horizontal
-            text='% Sinistralidade',  # Rótulo de texto dentro/ao lado da barra
+        # 6. Criação do gráfico de barras horizontais (idêntico ao fig_util_sin dos Dados Gerais)
+        fig_util_seg = px.bar(
+            df_grafico_util_seg,
+            x='Sinistralidade_Float',
+            y='Utilização',
+            orientation='h',
+            text='% Sinistralidade',
             labels={'Sinistralidade_Float': 'Sinistralidade (%)'},
             color='Sinistralidade_Float',
             color_continuous_scale='Reds',
         )
 
-        fig_util_sin.update_traces(
-            textposition='outside',   # Garante que o % apareça fora da barra
+        fig_util_seg.update_traces(
+            textposition='outside',
             hovertemplate="Utilização: %{y}<br>Sinistralidade: %{text}"
         )
 
-        fig_util_sin.update_layout(
+        fig_util_seg.update_layout(
             xaxis_title="Sinistralidade (%)",
             yaxis_title="",
             coloraxis_showscale=False,
-            margin=dict(l=0, r=50, t=30, b=0), # Aumentei a margem direita para o texto não cortar
-            height=max(300, len(df_grafico_util) * 40) # Altura dinâmica baseada na quantidade de itens
+            margin=dict(l=0, r=50, t=30, b=0),
+            height=max(300, len(df_grafico_util_seg) * 40)
         )
 
-        st.plotly_chart(
-            fig_util_sin,
-            use_container_width=True,
-            config={
-                'displayModeBar': False})
+        st.plotly_chart(fig_util_seg, use_container_width=True, config={'displayModeBar': False})
     else:
         st.info("Sem dados de Sinistro.")
 
+# ── Evolução da Sinistralidade (%) por Utilização — Segurado ─────────────────
+st.markdown('<p class="section-label">Evolução da Sinistralidade (%) por Utilização - Segurado</p>', unsafe_allow_html=True)
 
-# ── Evolução da Sinistralidade (%) por Utilização ────────────────────────────
-st.markdown('<p class="section-label">Evolução da Sinistralidade (%) por Utilização</p>', unsafe_allow_html=True)
-
-if not df_para_soma.empty:
-    df_util_ano = df_para_soma.groupby(['Ano Vigência', 'Utilização']).agg(
-        Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
-        Total_Sinistro=('Soma Sinistro Por Apolice', 'sum')
-    ).reset_index()
-    df_util_ano['Sinistralidade'] = df_util_ano.apply(
-        lambda row: row['Total_Sinistro'] / row['Total_Premio'] if row['Total_Premio'] != 0 else 0, axis=1
+df_util_ano_seg = df_segurado_calculo.groupby(['Ano Vigência', 'Utilização']).agg(
+    Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
+    Total_Sinistro=('Soma Sinistro Por Apolice', 'sum')
+).reset_index()
+df_util_ano_seg['Sinistralidade'] = df_util_ano_seg.apply(
+    lambda row: row['Total_Sinistro'] / row['Total_Premio'] if row['Total_Premio'] != 0 else 0, axis=1
+)
+utils_com_sin_seg = df_util_ano_seg[df_util_ano_seg['Sinistralidade'] > 0]['Utilização'].unique()
+df_util_ano_seg = df_util_ano_seg[
+    (df_util_ano_seg['Utilização'].astype(str) != '0') &
+    (df_util_ano_seg['Utilização'].isin(utils_com_sin_seg))
+]
+if not df_util_ano_seg.empty:
+    fig_sin_util_seg = go.Figure()
+    for util in sorted(df_util_ano_seg['Utilização'].unique()):
+        df_u = df_util_ano_seg[df_util_ano_seg['Utilização'] == util].sort_values('Ano Vigência')
+        fig_sin_util_seg.add_trace(go.Scatter(
+            x=df_u['Ano Vigência'],
+            y=df_u['Sinistralidade'],
+            mode='lines+markers+text',
+            name=str(util),
+            text=df_u['Sinistralidade'].map(lambda x: f"{x:.1%}"),
+            textposition='top center',
+            textfont=dict(size=10),
+            marker=dict(size=7),
+            line=dict(width=2),
+        ))
+    fig_sin_util_seg.update_layout(
+        xaxis=dict(title='Ano', tickmode='linear', dtick=1),
+        yaxis=dict(title='Sinistralidade (%)', tickformat='.0%'),
+        legend=dict(orientation='v', yanchor='top', y=1, xanchor='left', x=1.01, font=dict(size=10)),
+        margin=dict(t=40, b=20, l=0, r=180),
+        height=430,
+        hovermode='x unified'
     )
-    utils_com_sin = df_util_ano[df_util_ano['Sinistralidade'] > 0]['Utilização'].unique()
-    df_util_ano = df_util_ano[
-        (df_util_ano['Utilização'].astype(str) != '0') &
-        (df_util_ano['Utilização'].isin(utils_com_sin))
-    ]
-    if not df_util_ano.empty:
-        fig_sin_util_ano = go.Figure()
-        for util in sorted(df_util_ano['Utilização'].unique()):
-            df_u = df_util_ano[df_util_ano['Utilização'] == util].sort_values('Ano Vigência')
-            fig_sin_util_ano.add_trace(go.Scatter(
-                x=df_u['Ano Vigência'],
-                y=df_u['Sinistralidade'],
-                mode='lines+markers+text',
-                name=str(util),
-                text=df_u['Sinistralidade'].map(lambda x: f"{x:.1%}"),
-                textposition='top center',
-                textfont=dict(size=10),
-                marker=dict(size=7),
-                line=dict(width=2),
-            ))
-        fig_sin_util_ano.update_layout(
-            xaxis=dict(title='Ano', tickmode='linear', dtick=1),
-            yaxis=dict(title='Sinistralidade (%)', tickformat='.0%'),
-            legend=dict(orientation='v', yanchor='top', y=1, xanchor='left', x=1.01, font=dict(size=10)),
-            margin=dict(t=40, b=20, l=0, r=180),
-            height=430,
-            hovermode='x unified'
-        )
-        fig_sin_util_ano.update_traces(hovertemplate='%{y:.2%}')
-        st.plotly_chart(fig_sin_util_ano, use_container_width=True, config={'displayModeBar': False})
-    else:
-        st.info("Sem dados suficientes para o gráfico de sinistralidade por utilização.")
+    fig_sin_util_seg.update_traces(hovertemplate='%{y:.2%}')
+    st.plotly_chart(fig_sin_util_seg, use_container_width=True, config={'displayModeBar': False})
+else:
+    st.info("Sem dados suficientes para o gráfico de sinistralidade por utilização.")
 
-# ============= ANÁLISE POR RAMO E COBERTURA =============
-# 1. Agrupamento principal por Ramo (Prêmio, Sinistro e Qtd Apólices)
-groupby_geral_ramo = df_para_soma.groupby('Ramo').agg(
+
+# 1. Agrupamento de prêmios, sinistros e contagem de apólices únicas
+groupby_segurado_ramo = df_segurado_calculo.groupby('Ramo').agg(
     Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
     Total_Sinistro=('Soma Sinistro Por Apolice', 'sum'),
     Qtd_Apolices=('N° Apólice', 'nunique')
 ).reset_index()
 
-# 2. Busca a quantidade de sinistros por ramo para o período selecionado
-# Usamos o df_sinistro_periodo_atualizado que você já definiu anteriormente
-qtd_sin_geral_por_ramo = df_sinistro_periodo_atualizado.groupby('nr_ramo')['nr_sinistro'].nunique().reset_index()
-qtd_sin_geral_por_ramo.rename(columns={'nr_ramo': 'Ramo', 'nr_sinistro': 'Qtd_Sinistros'}, inplace=True)
+# 2. Busca a quantidade de sinistros por ramo (cruzando com a base de sinistros do segurado)
+qtd_sin_por_ramo = df_sinistro_segurado.groupby('nr_ramo')['nr_sinistro'].nunique().reset_index()
+qtd_sin_por_ramo.rename(columns={'nr_ramo': 'Ramo', 'nr_sinistro': 'Qtd_Sinistros'}, inplace=True)
 
-# 3. Une as informações de prêmio/apólice com a contagem de sinistros
-groupby_geral_ramo = pd.merge(groupby_geral_ramo, qtd_sin_geral_por_ramo, on='Ramo', how='left').fillna(0)
+# 3. Une as informações
+groupby_segurado_ramo = pd.merge(groupby_segurado_ramo, qtd_sin_por_ramo, on='Ramo', how='left').fillna(0)
 
 # 4. Cálculo da Sinistralidade
-groupby_geral_ramo['Sinistralidade'] = groupby_geral_ramo.apply(
+groupby_segurado_ramo['Sinistralidade'] = groupby_segurado_ramo.apply(
     lambda row: row['Total_Sinistro'] / row['Total_Premio'] if row['Total_Premio'] != 0 else 0, axis=1
 )
 
-# 5. Criar DataFrame de exibição com formatações
-df_geral_ramo_exibicao = groupby_geral_ramo.copy()
-df_geral_ramo_exibicao['Total_Premio'] = df_geral_ramo_exibicao['Total_Premio'].map(formatar_valor_br)
-df_geral_ramo_exibicao['Total_Sinistro'] = df_geral_ramo_exibicao['Total_Sinistro'].map(formatar_valor_br)
-df_geral_ramo_exibicao['Sinistralidade'] = df_geral_ramo_exibicao['Sinistralidade'].map(lambda x: f"{x:.2%}")
-df_geral_ramo_exibicao['Qtd_Sinistros'] = df_geral_ramo_exibicao['Qtd_Sinistros'].astype(int)
+# 5. Criar DataFrame de exibição com as formatações solicitadas
+df_ramo_segurado_view = groupby_segurado_ramo.copy()
+df_ramo_segurado_view['Total_Premio'] = df_ramo_segurado_view['Total_Premio'].map(formatar_valor_br)
+df_ramo_segurado_view['Total_Sinistro'] = df_ramo_segurado_view['Total_Sinistro'].map(formatar_valor_br)
+df_ramo_segurado_view['Sinistralidade'] = df_ramo_segurado_view['Sinistralidade'].map(lambda x: f"{x:.2%}")
+df_ramo_segurado_view['Qtd_Sinistros'] = df_ramo_segurado_view['Qtd_Sinistros'].astype(int)
 
-# Reordenar colunas para a tabela ficar organizada
-colunas_geral_view = ['Ramo', 'Total_Premio', 'Total_Sinistro', 'Sinistralidade', 'Qtd_Apolices', 'Qtd_Sinistros', ]
-df_geral_ramo_exibicao = df_geral_ramo_exibicao[colunas_geral_view]
+# Reordenar colunas para a tabela
+colunas_view = ['Ramo', 'Total_Premio', 'Total_Sinistro', 'Sinistralidade', 'Qtd_Apolices', 'Qtd_Sinistros']
+df_ramo_segurado_view = df_ramo_segurado_view[colunas_view]
 
-# 6. Agrupamento por Cobertura (Geral - Mantendo sua lógica original)
-df_sinistro_geral_cobertura = df_sinistro_periodo_atualizado.groupby('Cobertura', as_index=False).agg(**{
-    'Total Sinistro': ('Total Sinistro', 'sum'),
-    'Qtd Sinistros': ('nr_sinistro', 'nunique')
-})
-
-# 3. Preparação do Gráfico de Pizza Geral
-df_pizza_geral = df_sinistro_geral_cobertura[df_sinistro_geral_cobertura['Total Sinistro'] > 0].copy()
-fig_pizza_geral = px.pie(
-    df_pizza_geral,
-    values='Total Sinistro',
-    names='Cobertura',
-    hole=0.4,
-    height=400
-)
-fig_pizza_geral.update_traces(textposition='outside', textinfo='percent+value')
 
 
 # Defina a largura das barras e a posição (offset) para que fiquem coladas
@@ -1335,18 +1437,17 @@ bar_width = 0.45
 offset_premio = -bar_width / 2
 offset_sinistro = bar_width / 2
 
-# Gráfico de colunas para prêmio e sinistro dos ramos
-fig_ramo_geral = go.Figure(data=[
+fig = go.Figure(data=[
     go.Bar(
         name='Total Prêmio',
-        x=groupby_geral_ramo['Ramo'],
-        y=groupby_geral_ramo['Total_Premio'],
+        x=groupby_segurado_ramo['Ramo'],
+        y=groupby_segurado_ramo['Total_Premio'],
         marker_color='rgba(54, 162, 235, 0.8)',
         width=bar_width,
         offset=offset_premio,  # Desloca a barra para a esquerda
         
         # === Adicione estas linhas para o rótulo da barra de Prêmio ===
-        text=groupby_geral_ramo['Total_Premio'].map(formatar_valor_br),
+        text=groupby_segurado_ramo['Total_Premio'].map(formatar_valor_br),
         textposition='outside',
         textfont=dict(
             color='black',
@@ -1355,13 +1456,13 @@ fig_ramo_geral = go.Figure(data=[
     ),
     go.Bar(
         name='Total Sinistro',
-        x=groupby_geral_ramo['Ramo'],
-        y=groupby_geral_ramo['Total_Sinistro'],
+        x=groupby_segurado_ramo['Ramo'],
+        y=groupby_segurado_ramo['Total_Sinistro'],
         marker_color='red',
         width=bar_width,
         offset=offset_sinistro, # Desloca a barra para a direita
         # === Adicione estas linhas para o rótulo da barra de Sinistro ===
-        text=groupby_geral_ramo['Total_Sinistro'].map(formatar_valor_br),
+        text=groupby_segurado_ramo['Total_Sinistro'].map(formatar_valor_br),
         textposition='outside',
         textfont=dict(
             color='black',
@@ -1370,12 +1471,12 @@ fig_ramo_geral = go.Figure(data=[
     )
 ])
 
-fig_ramo_geral.update_layout(
+fig.update_layout(
     xaxis=dict(
         title='Ramo',
         type='category', # <--- Adicione esta linha!
         tickmode='array', # <--- Adicione esta linha!
-        tickvals=groupby_geral_ramo['Ramo'] # <--- Adicione esta linha!
+        tickvals=groupby_segurado_ramo['Ramo'] # <--- Adicione esta linha!
     ),
     yaxis_title='Valores (R$)',
     barmode='overlay', # Usa o modo overlay para sobrepor as barras
@@ -1391,49 +1492,95 @@ fig_ramo_geral.update_layout(
     # === ADICIONE ESTA LINHA PARA REMOVER O ESPAÇO SUPERIOR ===
     margin=dict(t=0, b=0, l=0, r=0)
 )
-fig_ramo_geral.update_layout(barmode='group', margin=dict(t=20, b=0, l=0, r=0), height=400)
 
-# Exibição em Colunas
-c1, c2 = st.columns(2)
-with c1:
-    st.markdown('<p class="section-label">Prêmio e Sinistro por Ramo</p>', unsafe_allow_html=True)
-    st.dataframe(df_geral_ramo_exibicao, hide_index=True, use_container_width=True)
-with c2:
+# dados de sinistro por cobertura NO SEGURADO
+if df_sinistro_segurado.empty:
+    df_sinistro_segurado_cobertura = pd.DataFrame({
+        'Cobertura' : [''],
+        'Total Sinistro' : [''],
+        'Qtd Sinistro' : ['']
+    })
+else:
+    df_sinistro_segurado_cobertura = df_sinistro_segurado.groupby('Cobertura', as_index=False).agg(**{
+        'Total Sinistro': ('Total Sinistro', 'sum'),
+        'Qtd Sinistros': ('nr_sinistro', 'nunique')
+    })
+    df_sinistro_segurado_cobertura['Total Sinistro'] = (df_sinistro_segurado_cobertura['Total Sinistro'].map(formatar_valor_br))
+
+
+# GRÁFICO DE PIZZA - SINISTRO POR COBERTURA
+# Garanta que a coluna 'Total Sinistro' seja numérica para o gráfico
+df_para_grafico = df_sinistro_segurado_cobertura.copy()
+# Apenas converta se não for string vazia
+df_para_grafico = df_para_grafico[df_para_grafico['Total Sinistro'] != '']
+df_para_grafico['Total Sinistro'] = df_para_grafico['Total Sinistro'].str.replace(
+    '.', '').str.replace(',', '.').astype(float)
+    
+# gráfico de pizza
+fig_pizza = None # Inicializa a variável do gráfico
+
+# Verifique se o DataFrame não está vazio antes de criar o gráfico
+if not df_para_grafico.empty:
+    fig_pizza = px.pie(
+        df_para_grafico,
+        values='Total Sinistro',
+        names='Cobertura',
+        # title='Distribuição de Sinistro por Cobertura',
+        hole=0.4, # Cria um gráfico de rosca
+        height=400
+    )
+    
+    # Atualiza o layout para melhorar a aparência
+    fig_pizza.update_traces(textposition='outside', textinfo='percent+value')
+    fig_pizza.update_layout(showlegend=True) # Exibe a legenda
+
+
+dados_chart_1, dados_chart_2 = st.columns(2)
+
+with dados_chart_1:
+    st.markdown('<p class="section-label">Sinistro por Ramo</p>', unsafe_allow_html=True)
+    # Exibe a tabela formatada (com Qtd Apolices, Qtd Sinistros e % Sinistralidade)
+    st.dataframe(df_ramo_segurado_view, hide_index=True, use_container_width=True) 
+
+with dados_chart_2:
     st.markdown('<p class="section-label">Sinistros por Cobertura</p>', unsafe_allow_html=True)
-    # Formatação apenas para exibição
-    df_disp_cob = df_sinistro_geral_cobertura.copy()
-    df_disp_cob['Total Sinistro'] = df_disp_cob['Total Sinistro'].map(formatar_valor_br)
-    st.dataframe(df_disp_cob, hide_index=True, use_container_width=True)
+    # Exibe a tabela de coberturas que você criou anteriormente (df_sinistro_segurado_cobertura)
+    st.dataframe(df_sinistro_segurado_cobertura, hide_index=True, use_container_width=True)
 
-# exibir grafico de linhas ramos e pizza das coberturas
-c1, c2 = st.columns(2)
-with c1:
-    st.markdown('<p class="section-label">Prêmio e Sinistro por Ramo</p>', unsafe_allow_html=True)
-    st.plotly_chart(fig_ramo_geral, use_container_width=True, config={'displayModeBar': False})
-with c2:
-    st.markdown('<p class="section-label">Sinistros por Cobertura</p>', unsafe_allow_html=True)
-    st.plotly_chart(fig_pizza_geral, use_container_width=True, config={'displayModeBar': False})
+seg_chart_1, seg_chart_2 = st.columns(2)
 
-# ── Evolução da Sinistralidade (%) por Ramo ──────────────────────────────────
-st.markdown('<p class="section-label">Evolução da Sinistralidade (%) por Ramo</p>', unsafe_allow_html=True)
+with seg_chart_1:
+    st.markdown('<p class="section-label">Gráfico Sinistro Por Ramo</p>', unsafe_allow_html=True)
+    if fig:
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+    else:
+        st.info('Segurado sem Sinistro')
+with seg_chart_2:
+    st.markdown('<p class="section-label">Gráfico Sinistro Por Cobertura</p>', unsafe_allow_html=True)
+    if fig_pizza: # Verifica se o gráfico foi criado antes de exibi-lo
+        st.plotly_chart(fig_pizza, use_container_width=True, config={'displayModeBar': False})
+    else:
+        st.info("Segurado sem Sinistro")
 
-df_ramo_ano = df_para_soma.groupby(['Ano Vigência', 'Ramo']).agg(
+# ── Evolução da Sinistralidade (%) por Ramo — Segurado ───────────────────────
+st.markdown('<p class="section-label">Evolução da Sinistralidade (%) por Ramo - Segurado</p>', unsafe_allow_html=True)
+
+df_ramo_ano_seg = df_segurado_calculo.groupby(['Ano Vigência', 'Ramo']).agg(
     Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
     Total_Sinistro=('Soma Sinistro Por Apolice', 'sum')
 ).reset_index()
-df_ramo_ano['Sinistralidade'] = df_ramo_ano.apply(
+df_ramo_ano_seg['Sinistralidade'] = df_ramo_ano_seg.apply(
     lambda row: row['Total_Sinistro'] / row['Total_Premio'] if row['Total_Premio'] != 0 else 0, axis=1
 )
-df_ramo_ano['Ramo'] = df_ramo_ano['Ramo'].astype(str)
+df_ramo_ano_seg['Ramo'] = df_ramo_ano_seg['Ramo'].astype(str)
+ramos_com_sin_seg = df_ramo_ano_seg[df_ramo_ano_seg['Sinistralidade'] > 0]['Ramo'].unique()
+df_ramo_ano_seg = df_ramo_ano_seg[df_ramo_ano_seg['Ramo'].isin(ramos_com_sin_seg)]
 
-ramos_com_sin = df_ramo_ano[df_ramo_ano['Sinistralidade'] > 0]['Ramo'].unique()
-df_ramo_ano = df_ramo_ano[df_ramo_ano['Ramo'].isin(ramos_com_sin)]
-
-if not df_ramo_ano.empty:
-    fig_sin_ramo_ano = go.Figure()
-    for ramo in sorted(df_ramo_ano['Ramo'].unique()):
-        df_r = df_ramo_ano[df_ramo_ano['Ramo'] == ramo].sort_values('Ano Vigência')
-        fig_sin_ramo_ano.add_trace(go.Scatter(
+if not df_ramo_ano_seg.empty:
+    fig_sin_ramo_seg = go.Figure()
+    for ramo in sorted(df_ramo_ano_seg['Ramo'].unique()):
+        df_r = df_ramo_ano_seg[df_ramo_ano_seg['Ramo'] == ramo].sort_values('Ano Vigência')
+        fig_sin_ramo_seg.add_trace(go.Scatter(
             x=df_r['Ano Vigência'],
             y=df_r['Sinistralidade'],
             mode='lines+markers+text',
@@ -1444,7 +1591,7 @@ if not df_ramo_ano.empty:
             marker=dict(size=8),
             line=dict(width=2),
         ))
-    fig_sin_ramo_ano.update_layout(
+    fig_sin_ramo_seg.update_layout(
         xaxis=dict(title='Ano', tickmode='linear', dtick=1),
         yaxis=dict(title='Sinistralidade (%)', tickformat='.0%'),
         legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
@@ -1452,2239 +1599,191 @@ if not df_ramo_ano.empty:
         height=400,
         hovermode='x unified'
     )
-    fig_sin_ramo_ano.update_traces(hovertemplate='%{y:.2%}')
-    st.plotly_chart(fig_sin_ramo_ano, use_container_width=True, config={'displayModeBar': False})
+    fig_sin_ramo_seg.update_traces(hovertemplate='%{y:.2%}')
+    st.plotly_chart(fig_sin_ramo_seg, use_container_width=True, config={'displayModeBar': False})
 else:
     st.info("Sem dados suficientes para o gráfico de sinistralidade por ramo.")
 
-# 5. Detalhamento por Ramos Específicos (23, 28, 82)
-ramos_alvo = [23, 28, 82]
-ramos_com_dados = []
-for r in ramos_alvo:
-    if not df_sinistro_periodo_atualizado[df_sinistro_periodo_atualizado['nr_ramo'] == r].empty:
-        ramos_com_dados.append(r)
+# Lista dos ramos que desejamos detalhar
+ramos_detalhar = [23, 28, 82]
 
-# Condição: Só executa o loop de plotagem se houver 2 ou mais ramos com informações
-if len(ramos_com_dados) >= 2:
-    for r in ramos_com_dados:
-        df_r_especifico = df_sinistro_periodo_atualizado[df_sinistro_periodo_atualizado['nr_ramo'] == r]
+# Verificar quantos ramos possuem dados antes de plotar
+ramos_ativos = []
+
+for r in ramos_detalhar:
+    # Filtra temporariamente para ver se há dados
+    if not df_sinistro_segurado[df_sinistro_segurado['nr_ramo'] == r].empty:
+        ramos_ativos.append(r)
+
+# Condição: Só apresenta se existir no mínimo 2 ramos com sinistro (conforme seu pedido)
+if len(ramos_ativos) >= 2:
+    
+    for ramo in ramos_ativos:
+        # 1. Filtra os dados (já sabemos que não está vazio por causa da verificação acima)
+        df_sinistro_ramo = df_sinistro_segurado[df_sinistro_segurado['nr_ramo'] == ramo].copy()
         
-        df_cob_r = df_r_especifico.groupby('Cobertura', as_index=False).agg(**{
+        # 2. Agrupamento por Cobertura
+        df_cobertura_ramo = df_sinistro_ramo.groupby('Cobertura', as_index=False).agg(**{
             'Total Sinistro': ('Total Sinistro', 'sum'),
             'Qtd Sinistros': ('nr_sinistro', 'nunique')
         })
         
-        col_t, col_g = st.columns(2)
-        with col_t:
-            st.markdown(f'<p class="section-label">Dados de Sinistro por Cobertura - Ramo {r}</p>', unsafe_allow_html=True)
-            df_cob_r_view = df_cob_r.copy()
-            df_cob_r_view['Total Sinistro'] = df_cob_r_view['Total Sinistro'].map(formatar_valor_br)
-            st.dataframe(df_cob_r_view, hide_index=True, use_container_width=True)
+        # 3. Preparação do Gráfico (Removendo zeros)
+        df_pizza_ramo = df_cobertura_ramo[df_cobertura_ramo['Total Sinistro'] > 0].copy()
+        
+        # 4. Formatação para exibição na tabela
+        df_cobertura_ramo_exibicao = df_cobertura_ramo.copy()
+        df_cobertura_ramo_exibicao['Total Sinistro'] = df_cobertura_ramo_exibicao['Total Sinistro'].map(formatar_valor_br)
+        
+        # 5. Layout e Plotagem
+        # st.markdown(f"---") # Linha separadora entre ramos
+        col_ramo_tab, col_ramo_chart = st.columns(2)
+        
+        with col_ramo_tab:
+            st.markdown(f'<p class="section-label">Dados de Sinistro por Cobertura - Ramo {ramo}</p>', unsafe_allow_html=True)
+            st.dataframe(df_cobertura_ramo_exibicao, hide_index=True, use_container_width=True)
             
-        with col_g:
-            st.markdown(f'<p class="section-label">Gráfico Sinistro Por Cobertura - Ramo {r}</p>', unsafe_allow_html=True)
-            fig_r = px.pie(df_cob_r, values='Total Sinistro', names='Cobertura', hole=0.4, height=300)
-            fig_r.update_layout(
-                margin=dict(t=20, b=20, l=0, r=0),
-                annotations=[dict(text=f'{r}', x=0.5, y=0.5, font_size=15, showarrow=False)]
-            )
-            st.plotly_chart(fig_r, use_container_width=True, config={'displayModeBar': False})
-# ============================================================================
+        with col_ramo_chart:
+            st.markdown(f'<p class="section-label">Gráfico Sinistro Por Cobertura - Ramo {ramo}</p>', unsafe_allow_html=True)
+            if not df_pizza_ramo.empty:
+                fig_ramo = px.pie(
+                    df_pizza_ramo,
+                    values='Total Sinistro',
+                    names='Cobertura',
+                    hole=0.4,
+                    height=300 # tamanho do grafico pizza
+                )
+                fig_ramo.update_traces(textposition='outside', textinfo='percent+value')
+                fig_ramo.update_layout(
+                    margin=dict(t=20, b=20, l=0, r=0),
+                    annotations=[dict(text=f'{ramo}', x=0.5, y=0.5, font_size=15, showarrow=False)] # texto de dentro do grafico piza o numero do ramo
+                )
+                st.plotly_chart(fig_ramo, use_container_width=True, config={'displayModeBar': False})
 
-def gerar_ranking_piores_avancado(df_base, coluna_agrupadora, limite_sinistralidade=0.50, min_apolices=2):
-    """
-    Calcula o Score de Criticidade 100 baseando-se em:
-    - Volume Financeiro (30%)
-    - Sinistralidade % (40%)
-    - Frequência: Sinistros por Apólice (30%)
-    """
-    if df_base.empty:
-        return pd.DataFrame()
+#
+#
+#
+#
+# DADOS DO SEGURADO PARA APRESENTAÇÃO
+#
+#
+#
+#
 
-    df_temp = df_base.copy()
-    # Normaliza o nome da entidade antes de agrupar, para unir variações que
-    # diferem só em maiúsculas/minúsculas ou espaços (ex.: mesmo segurado grafado
-    # de duas formas), evitando linhas duplicadas no ranking.
-    df_temp[coluna_agrupadora] = _norm_nome(df_temp[coluna_agrupadora])
+#
+#
+#
+#
+# DADOS DE SINISTRO
+#
+#
+#
+#
 
-    # Função interna para limpar valores que venham como string formatada
-    def para_float(x):
-        if isinstance(x, str):
-            return float(x.replace('R$', '').replace('.', '').replace(',', '.').strip())
-        return float(x)
+df_segurado_calculo['Soma Prêmio Pago por Apolice'] = (df_segurado_calculo['Soma Prêmio Pago por Apolice'].map(formatar_valor_br))
+df_segurado_calculo['Soma Sinistro Por Apolice'] = (df_segurado_calculo['Soma Sinistro Por Apolice'].map(formatar_valor_br))
 
-    # Preparação dos dados numéricos
-    df_temp['Premio_Num'] = df_temp['Soma Prêmio Pago por Apolice'].apply(para_float)
-    df_temp['Sinistro_Num'] = df_temp['Soma Sinistro Por Apolice'].apply(para_float)
+# Adiciona Franquia por apólice + cobertura usando fuzzy match de nomes
+# (nomes diferem entre sistemas — usa similaridade de texto com threshold 0.75)
+if not df_cobertura.empty and not df_sinistro_segurado.empty:
+    _cob_seg = df_cobertura[df_cobertura['N° Apólice'].isin(df_sinistro_segurado['N° Apólice'].unique())]
+    df_sinistro_segurado = mapear_franquia_por_cobertura(df_sinistro_segurado, _cob_seg)
+else:
+    df_sinistro_segurado['Franquia Apólice'] = 0.0
 
-    # Agrupamento por Entidade (Segurado/Corretor/Representante)
-    ranking = df_temp.groupby(coluna_agrupadora).agg(
-        Total_Premio=('Premio_Num', 'sum'),
-        Total_Sinistro=('Sinistro_Num', 'sum'),
-        Qtd_Apolices=('N° Apólice', 'nunique'),
-        # Contamos quantas apólices tiveram valor de sinistro > 0
-        Qtd_Sinistros=('Sinistro_Num', lambda x: (x > 0).sum())
-    ).reset_index()
+# Formatar como numero as colunas do df de dados da apólice
+df_sinistro_segurado['vl_sinistro_pago'] = (df_sinistro_segurado['vl_sinistro_pago'].map(formatar_valor_br))
+df_sinistro_segurado['vl_sinistro_pendente'] = (df_sinistro_segurado['vl_sinistro_pendente'].map(formatar_valor_br))
+df_sinistro_segurado['vl_sinistro_total'] = (df_sinistro_segurado['vl_sinistro_total'].map(formatar_valor_br))
+df_sinistro_segurado['vl_despesa_pago'] = (df_sinistro_segurado['vl_despesa_pago'].map(formatar_valor_br))
+df_sinistro_segurado['vl_despesa_pendente'] = (df_sinistro_segurado['vl_despesa_pendente'].map(formatar_valor_br))
+df_sinistro_segurado['vl_despesa_total'] = (df_sinistro_segurado['vl_despesa_total'].map(formatar_valor_br))
+df_sinistro_segurado['vl_honorario_pago'] = (df_sinistro_segurado['vl_honorario_pago'].map(formatar_valor_br))
+df_sinistro_segurado['vl_honorario_pendente'] = (df_sinistro_segurado['vl_honorario_pendente'].map(formatar_valor_br))
+df_sinistro_segurado['vl_honorario_total'] = (df_sinistro_segurado['vl_honorario_total'].map(formatar_valor_br))
+df_sinistro_segurado['vl_salvado_pago'] = (df_sinistro_segurado['vl_salvado_pago'].map(formatar_valor_br))
+df_sinistro_segurado['vl_salvado_pendente'] = (df_sinistro_segurado['vl_salvado_pendente'].map(formatar_valor_br))
+df_sinistro_segurado['vl_salvado_total'] = (df_sinistro_segurado['vl_salvado_total'].map(formatar_valor_br))
+df_sinistro_segurado['Total Sinistro'] = (df_sinistro_segurado['Total Sinistro'].map(formatar_valor_br))
+df_sinistro_segurado['Franquia Apólice'] = df_sinistro_segurado['Franquia Apólice'].map(formatar_valor_br)
 
-    # Cálculo da Sinistralidade Real
-    ranking['% Sinistralidade'] = ranking.apply(
-        lambda x: x['Total_Sinistro'] / x['Total_Premio'] if x['Total_Premio'] > 0 else 0, axis=1
-    )
 
-    # FILTROS DE RELEVÂNCIA:
-    # Removemos quem está "dentro da meta" e quem tem pouquíssimas apólices (evita casos isolados)
-    ranking_filtrado = ranking[
-        (ranking['% Sinistralidade'] > limite_sinistralidade) & 
-        (ranking['Qtd_Apolices'] >= min_apolices)
-    ].copy()
+df_apolices_segurado_1, df_sinistro_segurado_2 = st.columns(2)
 
-    if ranking_filtrado.empty:
-        return pd.DataFrame()
-
-    # CÁLCULO DA FREQUÊNCIA (Sinistros por Apólice)
-    ranking_filtrado['Frequencia_Relativa'] = ranking_filtrado['Qtd_Sinistros'] / ranking_filtrado['Qtd_Apolices']
-
-    # NORMALIZAÇÃO PARA O SCORE (0 a 1)
-    def normalizar(serie):
-        if (serie.max() - serie.min()) == 0: return 1.0
-        return (serie - serie.min()) / (serie.max() - serie.min())
-
-    # Pesos: 30% Volume, 40% Sinistralidade, 30% Frequência
-    ranking_filtrado['Score'] = (
-        (normalizar(ranking_filtrado['Total_Sinistro']) * 0.3) +
-        (normalizar(ranking_filtrado['% Sinistralidade']) * 0.4) +
-        (normalizar(ranking_filtrado['Frequencia_Relativa']) * 0.3)
-    ) * 100
-
-    # Ordenar pelos "Piores" (maior Score)
-    ranking_filtrado = ranking_filtrado.sort_values(by='Score', ascending=False).head(10)
-
-    # Formatação Final para exibição
-    ranking_final = ranking_filtrado.copy()
-    ranking_final['Total_Premio'] = ranking_final['Total_Premio'].apply(formatar_valor_br)
-    ranking_final['Total_Sinistro'] = ranking_final['Total_Sinistro'].apply(formatar_valor_br)
-    ranking_final['% Sinistralidade'] = ranking_final['% Sinistralidade'].map(lambda x: f"{x:.2%}")
-    ranking_final['Score'] = ranking_final['Score'].map('{:,.1f}'.format)
-    
-    return ranking_final[[coluna_agrupadora, 'Qtd_Apolices', 'Qtd_Sinistros', 'Total_Premio', 'Total_Sinistro', '% Sinistralidade', 'Score']]
-
-if not df_geral_periodo.empty:
-    # 1. Prepara os dados numéricos
-    df_regiao = df_geral_periodo.copy()
-    df_regiao['Soma Prêmio Pago por Apolice'] = df_regiao['Soma Prêmio Pago por Apolice'].str.replace('.', '').str.replace(',', '.').astype(float)
-    df_regiao['Soma Sinistro Por Apolice']    = df_regiao['Soma Sinistro Por Apolice'].str.replace('.', '').str.replace(',', '.').astype(float)
-
-    # 2. Agrupamento por Região de Circulação
-    groupby_regiao = df_regiao.groupby('Região de Circulação').agg(
-        Qtd_Apolices=('N° Apólice', 'nunique'),
-        Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
-        Total_Sinistro=('Soma Sinistro Por Apolice', 'sum')
-    ).reset_index()
-
-    # 3. Cruzamento com sinistros para Qtd_Sinistros
-    df_sin_regiao_contagem = df_sinistro_periodo_atualizado.merge(
-        df_regiao[['N° Apólice', 'Região de Circulação']],
+with df_apolices_segurado_1:
+    # st.markdown('<p class="section-label">Dados das Apólices</p>', unsafe_allow_html=True)
+    # st.dataframe(df_segurado_calculo, hide_index=True)
+    st.markdown('<p class="section-label">Dados das Apólices do Segurado</p>', unsafe_allow_html=True)
+    st.dataframe(df_segurado_exibicao, hide_index=True)
+with df_sinistro_segurado_2:
+    st.markdown('<p class="section-label">Dados de Sinistro do Segurado</p>', unsafe_allow_html=True)
+    df_sinistro_segurado = pd.merge(
+        df_sinistro_segurado,
+        dados_exibicao[['N° Apólice', 'Representante', 'Corretor']].drop_duplicates('N° Apólice'),
         on='N° Apólice', how='left'
     )
-    qtd_sin_regiao = df_sin_regiao_contagem.groupby('Região de Circulação')['nr_sinistro'].nunique().reset_index()
-    qtd_sin_regiao.rename(columns={'nr_sinistro': 'Qtd_Sinistros'}, inplace=True)
+    _cols_seg = ['nr_sinistro', 'nr_ramo', 'N° Apólice', 'nr_endosso', 'nm_cliente', 'Cobertura', 'dt_aviso', 'dt_ocorrencia', 'vl_sinistro_pago', 'vl_sinistro_pendente', 'vl_sinistro_total', 'vl_despesa_pago', 'vl_despesa_pendente', 'vl_despesa_total', 'vl_honorario_pago', 'vl_honorario_pendente', 'vl_honorario_total', 'vl_salvado_pago', 'vl_salvado_pendente', 'vl_salvado_total', 'status_processo', 'status_movimento', 'nm_causa', 'id_endosso', 't', 'Total Sinistro', 'Representante', 'Corretor', 'Franquia Apólice']
+    _cols_seg = [c for c in _cols_seg if c in df_sinistro_segurado.columns]
+    st.dataframe(df_sinistro_segurado[_cols_seg], hide_index=True)
 
-    # 4. Merge e cálculos
-    groupby_regiao = pd.merge(groupby_regiao, qtd_sin_regiao, on='Região de Circulação', how='left').fillna(0)
-    groupby_regiao['Qtd_Sinistros']      = groupby_regiao['Qtd_Sinistros'].astype(int)
-    groupby_regiao['Sinistralidade_Num'] = groupby_regiao.apply(
-        lambda row: row['Total_Sinistro'] / row['Total_Premio'] if row['Total_Premio'] != 0 else 0, axis=1
-    )
+# --- Desempenho por Tipo de Emissão — Segurado ---
+st.markdown('<p class="section-label">Desempenho por Tipo de Emissão do Segurado</p>', unsafe_allow_html=True)
 
-    # 5. DF de exibição formatado — ordenado por maior sinistralidade
-    df_regiao_view = groupby_regiao.sort_values('Sinistralidade_Num', ascending=False).copy()
-    df_regiao_view['% Sinistralidade'] = df_regiao_view['Sinistralidade_Num'].map(lambda x: f"{x:.2%}")
-    df_regiao_view['Total_Premio']     = df_regiao_view['Total_Premio'].map(formatar_valor_br)
-    df_regiao_view['Total_Sinistro']   = df_regiao_view['Total_Sinistro'].map(formatar_valor_br)
-    df_regiao_view = df_regiao_view[
-        ['Região de Circulação', 'Qtd_Apolices', 'Qtd_Sinistros', 'Total_Premio', 'Total_Sinistro', '% Sinistralidade']
-    ]
+# Usa df_segurado_calculo (ainda numérico — a formatação ocorreu em df_segurado_exibicao)
+# Precisamos de uma cópia numérica antes das formatações de display
+# Normalização case-insensitive para casar variações de caixa
+df_seg_tp_emissao = dados_calculados[_norm_nome(dados_calculados['Segurado']) == _seg_alvo_norm].copy()
 
-    # ── BLOCO 1: DF regiões (esq) + Gráfico Top 10 piores (dir) ──────────────
-    col_reg_df, col_reg_graf = st.columns(2)
+# Agrupamento por Tipo de Apólice
+df_tp_emissao_seg = df_seg_tp_emissao.groupby('Tipo de Apólice').agg(
+    Qtd_Apolices=('N° Apólice', 'nunique'),
+    Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
+    Total_Sinistro=('Soma Sinistro Por Apolice', 'sum')
+).reset_index()
 
-    with col_reg_df:
-        st.markdown('<p class="section-label">Prêmio e Sinistro por Região de Circulação</p>', unsafe_allow_html=True)
-        st.dataframe(df_regiao_view, hide_index=True, use_container_width=True)
+# Cruzamento com sinistros para obter Qtd_Sinistros
+df_sin_seg_tp = df_sinistros[_norm_nome(df_sinistros['nm_cliente']) == _seg_alvo_norm].copy()
+qtd_sin_tp_seg = df_seg_tp_emissao.merge(
+    df_sin_seg_tp[['N° Apólice', 'nr_sinistro']],
+    on='N° Apólice', how='left'
+).groupby('Tipo de Apólice')['nr_sinistro'].nunique().reset_index()
+qtd_sin_tp_seg.rename(columns={'nr_sinistro': 'Qtd_Sinistros'}, inplace=True)
 
-    with col_reg_graf:
-        st.markdown('<p class="section-label">Top 10 Piores Regiões — Sinistralidade (%)</p>', unsafe_allow_html=True)
-        # Top 10 piores regiões — barras horizontais escala Reds
-        df_top10 = groupby_regiao[groupby_regiao['Sinistralidade_Num'] > 0].copy()
-        df_top10 = df_top10.sort_values('Sinistralidade_Num', ascending=False).head(10)
-        df_top10['% Sin Label'] = df_top10['Sinistralidade_Num'].map(lambda x: f"{x:.2%}")
-        df_top10 = df_top10.sort_values('Sinistralidade_Num', ascending=True)
-
-        if not df_top10.empty:
-            fig_top10 = px.bar(
-                df_top10,
-                x='Sinistralidade_Num',
-                y='Região de Circulação',
-                orientation='h',
-                text='% Sin Label',
-                labels={'Sinistralidade_Num': 'Sinistralidade (%)'},
-                color='Sinistralidade_Num',
-                color_continuous_scale='Reds',
-            )
-            fig_top10.update_traces(
-                textposition='outside',
-                hovertemplate="Região: %{y}<br>Sinistralidade: %{text}"
-            )
-            fig_top10.update_layout(
-                # title="Top 10 Piores Regiões — Sinistralidade (%)",
-                xaxis_title="Sinistralidade (%)",
-                yaxis_title="",
-                coloraxis_showscale=False,
-                margin=dict(l=0, r=80, t=40, b=0),
-                height=420,
-            )
-            st.plotly_chart(fig_top10, use_container_width=True, config={'displayModeBar': False})
-        else:
-            st.info("Sem regiões com sinistro no período selecionado.")
-
-    # ── BLOCO 2: DF por UF (esq) + Mapa de calor (dir) ───────────────────────
-    groupby_regiao['UF'] = groupby_regiao['Região de Circulação'].str[:2].str.strip()
-    df_uf = groupby_regiao.groupby('UF').agg(
-        Total_Premio=('Total_Premio', 'sum'),
-        Total_Sinistro=('Total_Sinistro', 'sum'),
-        Qtd_Apolices=('Qtd_Apolices', 'sum'),
-        Qtd_Sinistros=('Qtd_Sinistros', 'sum')
-    ).reset_index()
-    df_uf['Sinistralidade_UF'] = df_uf.apply(
-        lambda row: row['Total_Sinistro'] / row['Total_Premio'] if row['Total_Premio'] != 0 else 0, axis=1
-    )
-
-    col_uf_df, col_uf_mapa = st.columns(2)
-
-    with col_uf_df:
-        st.markdown('<p class="section-label">Sinistralidade por UF</p>', unsafe_allow_html=True)
-        df_uf_view = df_uf.sort_values('Sinistralidade_UF', ascending=False).copy()
-        df_uf_view['% Sinistralidade'] = df_uf_view['Sinistralidade_UF'].map(lambda x: f"{x:.2%}")
-        df_uf_view['Total_Premio']     = df_uf_view['Total_Premio'].map(formatar_valor_br)
-        df_uf_view['Total_Sinistro']   = df_uf_view['Total_Sinistro'].map(formatar_valor_br)
-        df_uf_view = df_uf_view[
-            ['UF', 'Qtd_Apolices', 'Qtd_Sinistros', 'Total_Premio', 'Total_Sinistro', '% Sinistralidade']
-        ]
-        st.dataframe(df_uf_view, hide_index=True, use_container_width=True)
-
-    with col_uf_mapa:
-        st.markdown('<p class="section-label">Mapa de Calor</p>', unsafe_allow_html=True)
-        df_uf_mapa = df_uf.copy()
-        df_uf_mapa['Sin_Pct']      = df_uf_mapa['Sinistralidade_UF'].map(lambda x: f"{x:.2%}")
-        df_uf_mapa['Premio_fmt']   = df_uf_mapa['Total_Premio'].apply(formatar_valor_br)
-        df_uf_mapa['Sinistro_fmt'] = df_uf_mapa['Total_Sinistro'].apply(formatar_valor_br)
-
-        fig_mapa = px.choropleth(
-            df_uf_mapa,
-            geojson="https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson",
-            locations='UF',
-            featureidkey='properties.sigla',
-            color='Sinistralidade_UF',
-            color_continuous_scale='Reds',
-            hover_name='UF',
-            hover_data={
-                'Sinistralidade_UF': False,
-                'Sin_Pct': True,
-                'Premio_fmt': True,
-                'Sinistro_fmt': True,
-                'Qtd_Apolices': True,
-            },
-            labels={
-                'Sin_Pct': 'Sinistralidade',
-                'Premio_fmt': 'Prêmio',
-                'Sinistro_fmt': 'Sinistro',
-                'Qtd_Apolices': 'Qtd Apólices',
-            },
-        )
-        fig_mapa.update_geos(fitbounds="locations", visible=False)
-        fig_mapa.update_layout(
-            margin=dict(l=0, r=0, t=10, b=0),
-            height=420,
-            coloraxis_colorbar=dict(
-                title="Sinistralidade",
-                tickformat=".0%",
-                len=0.75
-            )
-        )
-        st.plotly_chart(fig_mapa, use_container_width=True, config={'displayModeBar': False})
-else:
-    st.info("Nenhum dado disponível para agrupar por Região de Circulação.")
-
-# --- SEÇÃO DE RANKING DE CRITICIDADE 🚩---
-st.write("---")
-st.subheader("⚠️ Análise de Criticidade (Top 10 Piores Resultados)")
-st.text("""
-Critério do Score (0-100): O ranking considera o impacto financeiro - total de sinistro (Peso 30%), a taxa de sinistralidade (Peso 40%) e a frequência de sinistros por apólice (Peso 30%). 
-Filtro aplicado: Mínimo de 2 apólices e sinistralidade acima de 50%.
-""")
-# st.info("""
-# **Critério do Score (0-100):** O ranking considera o impacto financeiro - total de sinistro (Peso 30%), a taxa de sinistralidade (Peso 40%) e a frequência de sinistros por apólice (Peso 30%). 
-# *Filtro aplicado: Mínimo de 2 apólices e sinistralidade acima de 50%.*
-# """)
-
-# Geramos os rankings usando o DataFrame já filtrado pelo Slider de Ano (df_geral_periodo)
-piores_seg = gerar_ranking_piores_avancado(df_geral_periodo, 'Segurado')
-piores_cor = gerar_ranking_piores_avancado(df_geral_periodo, 'Corretor')
-piores_rep = gerar_ranking_piores_avancado(df_geral_periodo, 'Representante')
-
-# Interface em Abas para não ocupar muito espaço vertical
-tab_seg, tab_cor, tab_rep = st.tabs(["Segurados Críticos", "Corretores Críticos", "Representantes Críticos"])
-
-with tab_seg:
-    if not piores_seg.empty:
-        st.dataframe(piores_seg, hide_index=True, use_container_width=True)
-    else:
-        st.success("Nenhum segurado crítico identificado nos parâmetros atuais.")
-
-with tab_cor:
-    if not piores_cor.empty:
-        st.dataframe(piores_cor, hide_index=True, use_container_width=True)
-    else:
-        st.success("Nenhum corretor crítico identificado nos parâmetros atuais.")
-
-with tab_rep:
-    if not piores_rep.empty:
-        st.dataframe(piores_rep, hide_index=True, use_container_width=True)
-    else:
-        st.success("Nenhum representante crítico identificado nos parâmetros atuais.")
-
-
-# =========== ranking dos 10 maiores por Volume de Prêmio e Quantidade de Emissões.============
-
-def gerar_ranking_producao(df_base, coluna_agrupadora):
-    """
-    Gera o ranking dos 10 maiores por Volume de Prêmio, 
-    incluindo dados de sinistro e % de sinistralidade.
-    """
-    if df_base.empty:
-        return pd.DataFrame()
-
-    df_temp = df_base.copy()
-    # Normaliza o nome da entidade antes de agrupar (une variações de
-    # maiúsculas/minúsculas e espaços num único registro).
-    df_temp[coluna_agrupadora] = _norm_nome(df_temp[coluna_agrupadora])
-
-    # Conversão de valores para numérico (limpeza de strings se necessário)
-    def para_float(x):
-        if isinstance(x, str):
-            return float(x.replace('R$', '').replace('.', '').replace(',', '.').strip())
-        return float(x)
-
-    df_temp['Premio_Num'] = df_temp['Soma Prêmio Pago por Apolice'].apply(para_float)
-    df_temp['Sinistro_Num'] = df_temp['Soma Sinistro Por Apolice'].apply(para_float)
-
-    # Agrupamento consolidado
-    ranking = df_temp.groupby(coluna_agrupadora).agg(
-        Qtd_Emissoes=('N° Apólice', 'nunique'),
-        Total_Premio=('Premio_Num', 'sum'),
-        Total_Sinistro=('Sinistro_Num', 'sum')
-    ).reset_index()
-
-    # Cálculo da Sinistralidade
-    ranking['% Sinistralidade'] = ranking.apply(
-        lambda x: x['Total_Sinistro'] / x['Total_Premio'] if x['Total_Premio'] > 0 else 0, axis=1
-    )
-
-    # Ordenação pelos maiores Prêmios
-    ranking = ranking.sort_values(by='Total_Premio', ascending=False).head(10)
-
-    # Formatação para o Streamlit
-    ranking['Total_Premio'] = ranking['Total_Premio'].apply(formatar_valor_br)
-    ranking['Total_Sinistro'] = ranking['Total_Sinistro'].apply(formatar_valor_br)
-    ranking['% Sinistralidade'] = ranking['% Sinistralidade'].map(lambda x: f"{x:.2%}")
-    
-    return ranking
-
-st.subheader("🏆 Top 10 Produção (Emissões e Prêmios)")
-st.markdown('<p class="section-label">Este ranking destaca os parceiros com maior volume financeiro e quantidade de apólices emitidas.</p>', unsafe_allow_html=True)
-# st.info("Este ranking destaca os parceiros com maior volume financeiro e quantidade de apólices emitidas.")
-
-# Gerar os rankings de produção com a nova função
-prod_seg = gerar_ranking_producao(df_geral_periodo, 'Segurado')
-prod_cor = gerar_ranking_producao(df_geral_periodo, 'Corretor')
-prod_rep = gerar_ranking_producao(df_geral_periodo, 'Representante')
-
-# Interface em Abas
-tab_p_seg, tab_p_cor, tab_p_rep = st.columns(3)
-
-with tab_p_seg:
-    st.markdown('<p class="section-label">Top Segurados</p>', unsafe_allow_html=True)
-    if not prod_seg.empty:
-        st.dataframe(
-            prod_seg,
-            hide_index=True,
-            use_container_width=True,
-            column_config={
-                "Segurado":        st.column_config.Column(width=180),
-                "Qtd_Emissoes":    st.column_config.Column(width=50),
-                "Total_Premio":    st.column_config.Column(width=100),
-                "Total_Sinistro":  st.column_config.Column(width=100),
-                "% Sinistralidade": st.column_config.Column(width=50),
-            })
-    else:
-        st.warning("Sem dados de produção.")
-
-with tab_p_cor:
-    st.markdown('<p class="section-label">Top Corretores</p>', unsafe_allow_html=True)
-    if not prod_cor.empty:
-        st.dataframe(
-            prod_cor,
-            hide_index=True,
-            use_container_width=True,
-            column_config={
-                "Corretor":        st.column_config.Column(width=180),
-                "Qtd_Emissoes":    st.column_config.Column(width=50),
-                "Total_Premio":    st.column_config.Column(width=100),
-                "Total_Sinistro":  st.column_config.Column(width=100),
-                "% Sinistralidade": st.column_config.Column(width=50),
-            })
-    else:
-        st.warning("Sem dados de produção.")
-
-with tab_p_rep:
-    st.markdown('<p class="section-label">Top Representantes</p>', unsafe_allow_html=True)
-    if not prod_rep.empty:
-        st.dataframe(
-            prod_rep,
-            hide_index=True,
-            use_container_width=True,
-            column_config={
-                "Representante":        st.column_config.Column(width=180),
-                "Qtd_Emissoes":    st.column_config.Column(width=50),
-                "Total_Premio":    st.column_config.Column(width=100),
-                "Total_Sinistro":  st.column_config.Column(width=100),
-                "% Sinistralidade": st.column_config.Column(width=50),
-            })
-    else:
-        st.warning("Sem dados de produção.")
-
-
-
-
-# ── BLOCO: Frequência × Severidade por Ano ───────────────────────────────────
-st.write("---")
-st.subheader("🔬 Decomposição: Frequência × Severidade por Ano")
-st.caption("Entenda SE a sinistralidade piora por mais sinistros (frequência) ou por sinistros maiores (severidade).")
-
-if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
-    df_fs = df_sinistro_periodo_atualizado.copy()
-    # usa df_para_soma (filtrado + slider, mesma base do Desempenho Consolidado)
-    df_apo_fs = df_para_soma.copy()
-    qtd_apo_ano = df_apo_fs.groupby('Ano Vigência').agg(
-        Qtd_Apolices=('N° Apólice','nunique')
-    ).reset_index().rename(columns={'Ano Vigência':'Ano'})
-
-    df_fs_ano = df_fs.groupby('Ano Vigência').agg(
-        Qtd_Sinistros=('nr_sinistro','nunique'),
-        Total_Sinistro=('Total Sinistro','sum')
-    ).reset_index().rename(columns={'Ano Vigência':'Ano'}) if 'Ano Vigência' in df_fs.columns else pd.DataFrame()
-
-    if df_fs_ano.empty:
-        if 'dt_aviso_dt' not in df_fs.columns:
-            df_fs['dt_aviso_dt'] = pd.to_datetime(df_fs['dt_aviso'], dayfirst=True, errors='coerce')
-        df_fs_merged = pd.merge(df_fs, df_apo_fs[['N° Apólice','Ano Vigência']].drop_duplicates(), on='N° Apólice', how='left')
-        df_fs_ano = df_fs_merged.groupby('Ano Vigência').agg(
-            Qtd_Sinistros=('nr_sinistro','nunique'),
-            Total_Sinistro=('Total Sinistro','sum')
-        ).reset_index().rename(columns={'Ano Vigência':'Ano'})
-
-    df_fs_ano = pd.merge(df_fs_ano, qtd_apo_ano, on='Ano', how='inner')
-    df_fs_ano = df_fs_ano[df_fs_ano['Qtd_Apolices'] > 0].copy()
-    df_fs_ano['Frequencia']  = df_fs_ano['Qtd_Sinistros'] / df_fs_ano['Qtd_Apolices']
-    df_fs_ano['Severidade']  = df_fs_ano.apply(
-        lambda r: r['Total_Sinistro'] / r['Qtd_Sinistros'] if r['Qtd_Sinistros'] > 0 else 0, axis=1
-    )
-    df_fs_ano = df_fs_ano.sort_values('Ano')
-
-    if not df_fs_ano.empty:
-        col_fs1, col_fs2 = st.columns(2)
-
-        with col_fs1:
-            st.markdown("**Frequência de Sinistros por Apólice (sinistros/apólice/ano)**")
-            import numpy as np
-            fig_freq_ano = go.Figure()
-            fig_freq_ano.add_trace(go.Scatter(
-                x=df_fs_ano['Ano'], y=df_fs_ano['Frequencia'],
-                mode='lines+markers+text',
-                text=df_fs_ano['Frequencia'].map(lambda x: f"{x:.2f}"),
-                textposition='top center', textfont=dict(size=10),
-                marker=dict(size=8, color='#1A56A0'), line=dict(width=2.5, color='#1A56A0'),
-                name='Frequência'
-            ))
-            # Linha de tendência
-            if len(df_fs_ano) >= 3:
-                coef_f = np.polyfit(df_fs_ano['Ano'].values, df_fs_ano['Frequencia'].values, 1)
-                tend_f = np.polyval(coef_f, df_fs_ano['Ano'].values)
-                fig_freq_ano.add_trace(go.Scatter(
-                    x=df_fs_ano['Ano'], y=tend_f,
-                    mode='lines', name='Tendência',
-                    line=dict(color='red', width=2, dash='dash')
-                ))
-            fig_freq_ano.update_layout(
-                xaxis=dict(title='Ano', tickmode='linear', dtick=1),
-                yaxis=dict(title='Sinistros por Apólice'),
-                legend=dict(orientation='h', y=1.15),
-                margin=dict(t=20, b=20, l=0, r=0), height=340,
-                hovermode='x unified'
-            )
-            st.plotly_chart(fig_freq_ano, use_container_width=True, config={'displayModeBar': False})
-
-            if len(df_fs_ano) >= 2:
-                var_freq = (df_fs_ano['Frequencia'].iloc[-1] - df_fs_ano['Frequencia'].iloc[-2]) / df_fs_ano['Frequencia'].iloc[-2] * 100
-                if var_freq > 10:
-                    st.error(f"📈 Frequência subindo {var_freq:+.1f}% — mais sinistros por apólice. Risco de seleção adversa.")
-                elif var_freq < -10:
-                    st.success(f"📉 Frequência caindo {var_freq:+.1f}% — menos sinistros por apólice.")
-                else:
-                    st.info(f"➡ Frequência estável ({var_freq:+.1f}% vs ano anterior).")
-
-        with col_fs2:
-            st.markdown("**Severidade Média por Sinistro (R$ médio por evento)**")
-            fig_sev_ano = go.Figure()
-            fig_sev_ano.add_trace(go.Scatter(
-                x=df_fs_ano['Ano'], y=df_fs_ano['Severidade'],
-                mode='lines+markers+text',
-                text=df_fs_ano['Severidade'].map(lambda x: f"R${x/1000:.1f}k"),
-                textposition='top center', textfont=dict(size=10),
-                marker=dict(size=8, color='#F59E0B'), line=dict(width=2.5, color='#F59E0B'),
-                name='Severidade'
-            ))
-            if len(df_fs_ano) >= 3:
-                coef_s = np.polyfit(df_fs_ano['Ano'].values, df_fs_ano['Severidade'].values, 1)
-                tend_s = np.polyval(coef_s, df_fs_ano['Ano'].values)
-                fig_sev_ano.add_trace(go.Scatter(
-                    x=df_fs_ano['Ano'], y=tend_s,
-                    mode='lines', name='Tendência',
-                    line=dict(color='red', width=2, dash='dash')
-                ))
-            fig_sev_ano.update_layout(
-                xaxis=dict(title='Ano', tickmode='linear', dtick=1),
-                yaxis=dict(title='R$ por Sinistro'),
-                legend=dict(orientation='h', y=1.15),
-                margin=dict(t=20, b=20, l=0, r=0), height=340,
-                hovermode='x unified'
-            )
-            st.plotly_chart(fig_sev_ano, use_container_width=True, config={'displayModeBar': False})
-
-            if len(df_fs_ano) >= 2:
-                var_sev = (df_fs_ano['Severidade'].iloc[-1] - df_fs_ano['Severidade'].iloc[-2]) / df_fs_ano['Severidade'].iloc[-2] * 100
-                if var_sev > 10:
-                    st.error(f"📈 Severidade subindo {var_sev:+.1f}% — sinistros mais caros. Avaliar aumento de franquia.")
-                elif var_sev < -10:
-                    st.success(f"📉 Severidade caindo {var_sev:+.1f}% — sinistros menores.")
-                else:
-                    st.info(f"➡ Severidade estável ({var_sev:+.1f}% vs ano anterior).")
-
-        # Diagnóstico combinado
-        st.markdown("**📋 Diagnóstico Combinado**")
-        if len(df_fs_ano) >= 2:
-            subiu_freq = df_fs_ano['Frequencia'].iloc[-1] > df_fs_ano['Frequencia'].iloc[-2]
-            subiu_sev  = df_fs_ano['Severidade'].iloc[-1]  > df_fs_ano['Severidade'].iloc[-2]
-            if subiu_freq and subiu_sev:
-                st.error("🔴 **Frequência E Severidade subindo** — deterioração ampla. Revisar critérios de aceitação e franquias.")
-            elif subiu_freq and not subiu_sev:
-                st.warning("🟡 **Mais sinistros, mas valores menores** — problema de seleção. Avaliar restrições de aceitação ou franquia por evento.")
-            elif not subiu_freq and subiu_sev:
-                st.warning("🟡 **Menos sinistros, mas mais caros** — eventos mais graves. Avaliar aumento de franquia mínima.")
-            else:
-                st.success("🟢 **Frequência e Severidade caindo** — melhora consistente da carteira.")
-else:
-    st.info("Nenhum dado disponível para análise de frequência e severidade.")
-
-with st.expander("🧮 Como interpretar esta análise"):
-    st.markdown("""
-<b>O que é:</b> A sinistralidade total pode subir por dois motivos completamente diferentes — porque ocorreram <i>mais sinistros</i> (frequência) ou porque cada sinistro ficou <i>mais caro</i> (severidade). Esta seção separa os dois efeitos para que a decisão de subscrição seja mais precisa.<br><br>
-
-<b>Frequência</b> = Quantidade de sinistros ÷ Quantidade de apólices. Indica quantos sinistros ocorrem em média por apólice a cada ano. Se sobe, significa que mais segurados estão acionando o seguro — pode indicar seleção adversa (carteira com perfil de risco ruim) ou problema no critério de aceitação.<br><br>
-
-<b>Severidade</b> = Total pago em sinistros ÷ Quantidade de sinistros. Indica o valor médio de cada sinistro. Se sobe, significa que os eventos estão ficando mais caros — pode refletir inflação de custos médicos/jurídicos, sinistros mais graves ou ausência de franquia adequada.<br><br>
-
-<b>Como analisar:</b><br>
-🔴 Frequência E Severidade subindo → problema amplo, revisar critérios de aceitação E franquias simultaneamente.<br>
-🟡 Só Frequência subindo → mais sinistros, mas valores controlados. Restringir aceitação ou aplicar franquia por evento.<br>
-🟡 Só Severidade subindo → menos sinistros, mas mais caros. Aumentar franquia mínima ou limite de cobertura.<br>
-🟢 Ambas caindo → carteira saudável.<br><br>
-
-<b>Como foi desenvolvido:</b> Agrupa os dados por Ano de Vigência da Apólice. A frequência usa quantidade de sinistros únicos (nr_sinistro) dividida pela quantidade de apólices únicas. A severidade usa o Total Sinistro (sinistro + despesa + honorário - salvado) dividido pela quantidade de sinistros. A linha tracejada vermelha é uma regressão linear simples sobre os anos disponíveis. Os alertas automáticos comparam o último ano completo com o penúltimo.
-""", unsafe_allow_html=True)
-
-
-# ── BLOCO: Desenvolvimento por Safra ─────────────────────────────────────────
-st.write("---")
-st.subheader("📊 Desenvolvimento da Sinistralidade por Safra")
-st.caption(
-    "Mostra como a sinistralidade de cada ano de vigência evolui à medida que novos sinistros são avisados. "
-    "Anos recentes com sinistralidade baixa podem estar incompletos — observe o padrão de maturação."
+df_tp_emissao_seg = pd.merge(df_tp_emissao_seg, qtd_sin_tp_seg, on='Tipo de Apólice', how='left').fillna(0)
+df_tp_emissao_seg['Qtd_Sinistros'] = df_tp_emissao_seg['Qtd_Sinistros'].astype(int)
+df_tp_emissao_seg['% Sinistralidade'] = df_tp_emissao_seg.apply(
+    lambda row: '{:.2%}'.format(row['Total_Sinistro'] / row['Total_Premio'])
+    if row['Total_Premio'] != 0 else '0.00%', axis=1
 )
+df_tp_emissao_seg['Total_Premio']   = df_tp_emissao_seg['Total_Premio'].map(formatar_valor_br)
+df_tp_emissao_seg['Total_Sinistro'] = df_tp_emissao_seg['Total_Sinistro'].map(formatar_valor_br)
+df_tp_emissao_seg = df_tp_emissao_seg[['Tipo de Apólice', 'Qtd_Apolices', 'Qtd_Sinistros', 'Total_Premio', 'Total_Sinistro', '% Sinistralidade']]
 
-if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
-    df_saf = df_sinistro_periodo_atualizado.copy()
-    # Usa colunas de data pré-calculadas — evita pd.to_datetime repetido
-    if 'dt_aviso_dt' not in df_saf.columns:
-        df_saf['dt_aviso_dt'] = pd.to_datetime(df_saf['dt_aviso'], dayfirst=True, errors='coerce')
-    if 'Ano_Aviso' not in df_saf.columns:
-        df_saf['Ano_Aviso'] = df_saf['dt_aviso_dt'].dt.year
+st.dataframe(df_tp_emissao_seg, hide_index=True, use_container_width=True)
 
-    # Junta Ano Vigência da apólice — usa df_para_soma (filtrado + slider, mesma base do Desempenho Consolidado)
-    df_apo_saf = df_para_soma[['N° Apólice','Ano Vigência','Soma Prêmio Pago por Apolice']].drop_duplicates('N° Apólice').copy()
-    df_apo_saf['Premio_Num'] = pd.to_numeric(df_apo_saf['Soma Prêmio Pago por Apolice'], errors='coerce').fillna(0)
-    df_premio_saf = df_apo_saf.groupby('Ano Vigência')['Premio_Num'].sum().reset_index()
-    df_premio_saf.columns = ['Ano_Vigencia', 'Premio']
-
-    df_saf = pd.merge(df_saf, df_apo_saf[['N° Apólice','Ano Vigência']], on='N° Apólice', how='left')
-    df_saf.rename(columns={'Ano Vigência': 'Ano_Vigencia'}, inplace=True)
-
-    df_saf_grp = df_saf.groupby(['Ano_Vigencia','Ano_Aviso'])['Total Sinistro'].sum().reset_index()
-    df_saf_grp = pd.merge(df_saf_grp, df_premio_saf, on='Ano_Vigencia', how='left')
-    df_saf_grp = df_saf_grp[df_saf_grp['Premio'] > 0].copy()
-    df_saf_grp['Sin_Acum'] = df_saf_grp.groupby('Ano_Vigencia')['Total Sinistro'].cumsum()
-    df_saf_grp['Sin_Rate_Acum'] = df_saf_grp['Sin_Acum'] / df_saf_grp['Premio']
-    df_saf_grp['Lag'] = df_saf_grp['Ano_Aviso'] - df_saf_grp['Ano_Vigencia']
-
-    # Tabela pivot: safra vs lag
-    anos_vigencia = sorted(df_saf_grp['Ano_Vigencia'].dropna().unique())
-    anos_vigencia = [a for a in anos_vigencia if a >= max(anos_vigencia) - 8]
-    max_lag = int(df_saf_grp['Lag'].max()) if not df_saf_grp.empty else 5
-
-    pivot_data = []
-    for av in anos_vigencia:
-        row = {'Safra': int(av)}
-        df_v = df_saf_grp[df_saf_grp['Ano_Vigencia'] == av].copy()
-        for lag in range(0, min(max_lag+1, 8)):
-            df_lag = df_v[df_v['Lag'] == lag]
-            row[f'Ano+{lag}'] = f"{df_lag['Sin_Rate_Acum'].values[0]:.1%}" if not df_lag.empty else "—"
-        pivot_data.append(row)
-
-    df_pivot = pd.DataFrame(pivot_data)
-
-    col_saf1, col_saf2 = st.columns([1, 1])
-
-    with col_saf1:
-        st.markdown("**Tabela de Desenvolvimento — Sinistralidade Acumulada por Safra**")
-        st.dataframe(df_pivot, hide_index=True, use_container_width=True)
-        st.caption("Ano+0 = sinistros avisados no próprio ano da vigência. Ano+1 = avisados 1 ano depois. '—' = ainda sem dados.")
-
-    with col_saf2:
-        st.markdown("**Curvas de Maturação por Safra**")
-        fig_saf = go.Figure()
-        cores = ['#1A56A0','#36A2EB','#F59E0B','#16A34A','#DC2626','#9333EA','#0891B2','#EA580C','#BE185D']
-        for i, av in enumerate(anos_vigencia):
-            df_v = df_saf_grp[df_saf_grp['Ano_Vigencia'] == av].sort_values('Lag')
-            if df_v.empty: continue
-            fig_saf.add_trace(go.Scatter(
-                x=df_v['Lag'],
-                y=df_v['Sin_Rate_Acum'],
-                mode='lines+markers',
-                name=str(int(av)),
-                line=dict(width=2, color=cores[i % len(cores)]),
-                marker=dict(size=6),
-                hovertemplate=f"Safra {int(av)}<br>Lag: %{{x}} anos<br>Sin. Acum: %{{y:.1%}}<extra></extra>"
-            ))
-        fig_saf.update_layout(
-            xaxis=dict(title='Anos após vigência (Lag)', tickmode='linear', dtick=1),
-            yaxis=dict(title='Sinistralidade Acumulada (%)', tickformat='.0%'),
-            legend=dict(title='Safra', orientation='v', x=1.01),
-            margin=dict(t=20, b=20, l=0, r=60), height=380,
-            hovermode='x unified'
-        )
-        st.plotly_chart(fig_saf, use_container_width=True, config={'displayModeBar': False})
-        st.caption(
-            "Curvas que ainda sobem indicam safras em desenvolvimento — sinistros ainda estão sendo avisados. "
-            "Safras recentes (direita com poucos pontos) tendem a ter sinistralidade subestimada."
-        )
-
-
-    # ── Chain-Ladder: Projeção da sinistralidade final por safra ─────────
-    st.write("---")
-    st.subheader("🔮 Projeção Chain-Ladder — Sinistralidade Final Estimada")
-    st.caption(
-        "Usa o padrão histórico de desenvolvimento das safras completas para projetar "
-        "a sinistralidade final das safras recentes ainda em desenvolvimento."
-    )
-
-    import numpy as np
-
-    # Monta matriz de sinistralidade acumulada: linhas=safra, colunas=lag
-    lags_disponiveis = sorted(df_saf_grp['Lag'].unique())
-    safras_disponiveis = sorted(df_saf_grp['Ano_Vigencia'].dropna().unique())
-
-    # Matriz numérica de sinistralidade acumulada
-    matriz = {}
-    for av in safras_disponiveis:
-        df_v = df_saf_grp[df_saf_grp['Ano_Vigencia'] == av].sort_values('Lag')
-        for _, row in df_v.iterrows():
-            matriz[(av, int(row['Lag']))] = row['Sin_Rate_Acum']
-
-    max_lag = int(max(lags_disponiveis))
-
-    # Calcula fatores de desenvolvimento (link ratios) por lag
-    # Fator lag→lag+1 = média ponderada de (Acum_lag+1 / Acum_lag) nas safras que têm ambos
-    fatores = {}
-    for lag in range(0, max_lag):
-        numerador   = 0.0
-        denominador = 0.0
-        for av in safras_disponiveis:
-            v0 = matriz.get((av, lag),   None)
-            v1 = matriz.get((av, lag+1), None)
-            if v0 is not None and v1 is not None and v0 > 0:
-                # Pondera pelo prêmio da safra para dar mais peso às safras maiores
-                premio_saf = df_premio_saf[df_premio_saf['Ano_Vigencia'] == av]['Premio'].values
-                peso = float(premio_saf[0]) if len(premio_saf) > 0 else 1.0
-                numerador   += v1 * peso
-                denominador += v0 * peso
-        if denominador > 0:
-            fatores[lag] = numerador / denominador
-
-    # Projeta cada safra incompleta até o lag máximo observado
-    ano_atual = int(df_saf_grp['Ano_Vigencia'].max())
-    rows_proj = []
-
-    for av in safras_disponiveis:
-        av = int(av)
-        # Encontra último lag disponível para esta safra
-        lags_saf = [lag for lag in lags_disponiveis if (av, int(lag)) in matriz]
-        if not lags_saf:
-            continue
-        ultimo_lag = int(max(lags_saf))
-        sin_atual  = matriz.get((av, ultimo_lag), None)
-        if sin_atual is None:
-            continue
-
-        # Projeta do último lag até o máximo
-        sin_proj = sin_atual
-        for lag in range(ultimo_lag, max_lag):
-            f = fatores.get(lag, None)
-            if f is not None:
-                sin_proj *= f
-
-        ja_completa = ultimo_lag >= max_lag
-        fator_total  = sin_proj / sin_atual if sin_atual > 0 else 1.0
-
-        rows_proj.append({
-            'Safra':               av,
-            'Sin. Atual':          sin_atual,
-            'Sin. Projetada':      sin_proj,
-            'Fator Desenvolvimento': fator_total,
-            'Último Lag':          ultimo_lag,
-            'Status':              'Completa' if ja_completa else f'Em dev. (lag {ultimo_lag}/{max_lag})'
-        })
-
-    df_proj = pd.DataFrame(rows_proj).sort_values('Safra', ascending=False)
-
-    if not df_proj.empty:
-        col_cl1, col_cl2 = st.columns(2)
-
-        with col_cl1:
-            st.markdown("**Tabela de Projeção por Safra**")
-            df_proj_view = df_proj.copy()
-            df_proj_view['Sin. Atual']     = df_proj_view['Sin. Atual'].map(lambda x: f"{x:.1%}")
-            df_proj_view['Sin. Projetada'] = df_proj_view['Sin. Projetada'].map(lambda x: f"{x:.1%}")
-            df_proj_view['Fator Desenvolvimento'] = df_proj_view['Fator Desenvolvimento'].map(lambda x: f"{x:.3f}×")
-            st.dataframe(df_proj_view, hide_index=True, use_container_width=True)
-            st.caption(
-                "Fator Desenvolvimento = quanto ainda deve crescer a sinistralidade. "
-                "1.000× = safra completa. 1.400× = ainda deve crescer 40%."
-            )
-
-        with col_cl2:
-            st.markdown("**Comparativo: Sinistralidade Atual × Projetada**")
-            df_inc = df_proj[df_proj['Status'] != 'Completa'].copy()
-            df_comp = df_proj.copy()
-
-            fig_cl = go.Figure()
-            fig_cl.add_trace(go.Bar(
-                x=df_comp['Safra'].astype(str),
-                y=df_comp['Sin. Atual'],
-                name='Sinistralidade Atual',
-                marker_color='#36A2EB',
-                text=df_comp['Sin. Atual'].map(lambda x: f"{x:.1%}"),
-                textposition='outside'
-            ))
-            fig_cl.add_trace(go.Bar(
-                x=df_comp['Safra'].astype(str),
-                y=df_comp['Sin. Projetada'] - df_comp['Sin. Atual'],
-                name='Incremento Projetado',
-                marker_color='#FCA5A5',
-                text=(df_comp['Sin. Projetada'] - df_comp['Sin. Atual']).map(
-                    lambda x: f"+{x:.1%}" if x > 0.001 else ""
-                ),
-                textposition='outside',
-                base=df_comp['Sin. Atual']
-            ))
-            fig_cl.update_layout(
-                barmode='stack',
-                xaxis=dict(title='Safra'),
-                yaxis=dict(title='Sinistralidade (%)', tickformat='.0%'),
-                legend=dict(orientation='h', y=1.15),
-                margin=dict(t=20, b=20, l=0, r=0), height=380,
-                hovermode='x unified'
-            )
-            st.plotly_chart(fig_cl, use_container_width=True, config={'displayModeBar': False})
-
-        # Alerta da safra mais recente
-        ultima_safra = df_proj[df_proj['Status'] != 'Completa'].sort_values('Safra', ascending=False)
-        if not ultima_safra.empty:
-            row_ult = ultima_safra.iloc[0]
-            sin_at  = row_ult['Sin. Atual'] if isinstance(row_ult['Sin. Atual'], float) else float(str(row_ult['Sin. Atual']).replace('%',''))/100
-            sin_pj  = row_ult['Sin. Projetada'] if isinstance(row_ult['Sin. Projetada'], float) else float(str(row_ult['Sin. Projetada']).replace('%',''))/100
-            # Recupera numérico do df original
-            sin_at_n  = df_proj[df_proj['Safra'] == row_ult['Safra']]['Sin. Atual'].values[0]
-            sin_pj_n  = df_proj[df_proj['Safra'] == row_ult['Safra']]['Sin. Projetada'].values[0]
-            incremento = sin_pj_n - sin_at_n
-
-            if sin_pj_n > 0.80:
-                st.error(
-                    f"🔴 **Safra {int(row_ult['Safra'])}: sinistralidade atual de {sin_at_n:.1%} "
-                    f"deve atingir {sin_pj_n:.1%} quando completa** (+{incremento:.1%} ainda a ser avisado). "
-                    f"Risco elevado — avaliar reajuste preventivo nas renovações."
-                )
-            elif sin_pj_n > 0.60:
-                st.warning(
-                    f"🟡 **Safra {int(row_ult['Safra'])}: sinistralidade atual de {sin_at_n:.1%} "
-                    f"deve atingir {sin_pj_n:.1%} quando completa** (+{incremento:.1%} ainda a ser avisado). "
-                    f"Monitorar — possível necessidade de reajuste."
-                )
-            else:
-                st.success(
-                    f"🟢 **Safra {int(row_ult['Safra'])}: sinistralidade atual de {sin_at_n:.1%} "
-                    f"deve atingir {sin_pj_n:.1%} quando completa** (+{incremento:.1%} ainda a ser avisado). "
-                    f"Dentro de parâmetros aceitáveis."
-                )
-
-    # Fatores de desenvolvimento históricos
-    with st.expander("📊 Ver fatores de desenvolvimento históricos (Chain-Ladder)"):
-        fat_data = [{'Lag → Lag+1': f"Ano+{lag} → Ano+{lag+1}", 'Fator Médio': f"{v:.4f}×", 'Significado': f"A sinistralidade cresce em média {(v-1)*100:.1f}% entre esses dois períodos"} for lag, v in sorted(fatores.items())]
-        if fat_data:
-            st.dataframe(pd.DataFrame(fat_data), hide_index=True, use_container_width=True)
-            st.caption("Fatores ponderados pelo prêmio de cada safra. Quanto mais próximo de 1.000×, mais estável o desenvolvimento naquele lag.")
-
-
-else:
-    st.info("Nenhum dado disponível para análise de desenvolvimento por safra.")
-
-with st.expander("🧮 Como interpretar esta análise"):
-    st.markdown("""
-<b>O que é:</b> Uma apólice de 2022 pode gerar sinistros que só serão avisados em 2023, 2024 ou até 2025. Isso significa que olhar apenas a sinistralidade do ano corrente de uma safra recente pode ser enganoso — parte dos sinistros ainda não apareceu. Esta análise mostra como a sinistralidade de cada <i>safra</i> (ano de vigência) evolui ao longo do tempo à medida que novos sinistros são avisados.<br><br>
-
-<b>Como ler a tabela:</b><br>
-• <b>Safra</b> = Ano de vigência da apólice (ex: 2022)<br>
-• <b>Ano+0</b> = Sinistralidade acumulada considerando apenas sinistros avisados no próprio ano da vigência<br>
-• <b>Ano+1</b> = Sinistralidade acumulada incluindo sinistros avisados até 1 ano depois<br>
-• <b>Ano+2</b> = Inclui sinistros avisados até 2 anos depois, e assim por diante<br>
-• <b>—</b> = Dados ainda não disponíveis (safra recente, ainda em desenvolvimento)<br><br>
-
-<b>Como analisar:</b><br>
-Uma safra que mostra 30% em Ano+0 e chega a 66% em Ano+2 significa que dois terços dos sinistros foram avisados com atraso. Isso é normal em RCO — processos judiciais e regulações demoram. O padrão histórico das safras mais antigas (que já estão completas) indica quanto as safras recentes ainda devem crescer.<br><br>
-
-<b>Atenção aos anos recentes:</b> Safras dos últimos 1-2 anos sempre parecem ter sinistralidade baixa, mas é porque ainda estão em desenvolvimento. Compare com o padrão das safras anteriores para estimar o valor final.<br><br>
-
-<b>Como foi desenvolvido:</b> Para cada sinistro, identifica o Ano de Vigência da apólice correspondente e o Ano de Aviso do sinistro. Calcula o lag (diferença em anos). Acumula o Total Sinistro por safra à medida que o lag aumenta e divide pelo prêmio total daquela safra. O gráfico de curvas mostra uma linha por safra — curvas que ainda sobem indicam safras incompletas.
-""", unsafe_allow_html=True)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# PAINEL DE DIAGNÓSTICO DE VARIAÇÃO DA SINISTRALIDADE — posicionado no final
-# ══════════════════════════════════════════════════════════════════════════════
-st.write("---")
-st.subheader("🔎 Diagnóstico de Variação da Sinistralidade")
-st.caption(
-    "Identifica quais Ramos e Utilizações contribuíram para a variação recente da sinistralidade. "
-    "Mostra as janelas de 60, 90 e 180 dias lado a lado, comparando cada período com o anterior equivalente, "
-    "usando a data de aviso dos sinistros."
-)
-
-# ── Fragmento Streamlit: reexecuta APENAS a seção ao mudar o seletor, sem
-#    recarregar a página inteira (ganho de performance — Streamlit >= 1.33).
-_st_fragment = getattr(st, 'fragment', None) or getattr(st, 'experimental_fragment', None)
-if _st_fragment is None:
-    _st_fragment = lambda _f: _f  # versões antigas: comportamento original (rerun completo)
-
-if not df_sinistro_periodo_atualizado.empty and not df_geral_periodo.empty:
-
-    # ── Preparação compartilhada (executada uma única vez por recarga) ───────
-    # Prepara base com datas
-    _df_sin = df_sinistro_periodo_atualizado.copy()
-    if 'dt_aviso_dt' not in _df_sin.columns:
-        _df_sin['dt_aviso_dt'] = pd.to_datetime(_df_sin['dt_aviso'], dayfirst=True, errors='coerce')
-
-    _data_max = _df_sin['dt_aviso_dt'].max()
-    _mapa_apo = df_geral_periodo[['N° Apólice', 'Ramo', 'Utilização']].drop_duplicates('N° Apólice')
-    _df_sin   = pd.merge(_df_sin, _mapa_apo, on='N° Apólice', how='left')
-
-    _premio_total_geral = df_para_soma['Soma Prêmio Pago por Apolice'].sum()
-
-    # ── Prepara base completa com trimestre e mês ─────────────────────────────
-    _df_full = df_sinistro_periodo_atualizado.copy()
-    if 'dt_aviso_dt' not in _df_full.columns:
-        _df_full['dt_aviso_dt'] = pd.to_datetime(_df_full['dt_aviso'], dayfirst=True, errors='coerce')
-
-    # Remove sinistros sem data de aviso válida (NaT) — evita 'nan Tnan' e
-    # anos como float ('2024.0'), que quebram a ordenação dos trimestres
-    _df_full = _df_full.dropna(subset=['dt_aviso_dt'])
-
-    _df_full['Ano']       = _df_full['dt_aviso_dt'].dt.year.astype(int)
-    _df_full['Trimestre'] = _df_full['dt_aviso_dt'].dt.quarter.astype(int)
-    _df_full['AnoTri']    = _df_full['Ano'].astype(str) + ' T' + _df_full['Trimestre'].astype(str)
-    _df_full['AnoMes']    = _df_full['dt_aviso_dt'].dt.to_period('M').astype(str)
-
-    # Junta Ramo e Utilização
-    _df_full = pd.merge(_df_full, _mapa_apo, on='N° Apólice', how='left')
-
-    # Prêmio trimestral e mensal — proporcional ao número de trimestres/meses
-    _anos_base    = df_para_soma['Ano Vigência'].nunique() or 1
-    _premio_total_full = df_para_soma['Soma Prêmio Pago por Apolice'].sum()
-    _premio_por_tri = _premio_total_full / (_anos_base * 4)  # 4 trimestres por ano
-    _premio_por_mes = _premio_total_full / (_anos_base * 12) # 12 meses por ano
-
-    # ══ SEÇÃO 1 — Diagnóstico de Variação (fragmento isolado) ═══════════════
-    @_st_fragment
-    def _render_diag_variacao():
-        # Item 3: seletor por botão de seleção (igual à Evolução Trimestral/Mensal)
-        _agrupar = st.radio(
-            'Agrupar por:',
-            ['Ramo', 'Utilização'],
-            horizontal=True,
-            key='diag_agrupar_radio'
-        )
-        _cols_grp = [_agrupar]
-
-        # Prêmio por grupo (proporcional à janela)
-        _premio_grp = df_para_soma.groupby(_cols_grp, as_index=False).agg(
-            Premio_Total=('Soma Prêmio Pago por Apolice', 'sum')
-        )
-
-        def _calcular_janela(janela):
-            _ini_rec = _data_max - pd.Timedelta(days=janela)
-            _ini_ant = _ini_rec - pd.Timedelta(days=janela)
-            _rec = _df_sin[_df_sin['dt_aviso_dt'] > _ini_rec]
-            _ant = _df_sin[(_df_sin['dt_aviso_dt'] > _ini_ant) & (_df_sin['dt_aviso_dt'] <= _ini_rec)]
-
-            def _agg(df):
-                if df.empty:
-                    return pd.DataFrame(columns=_cols_grp + ['Total_Sinistro'])
-                return df.groupby(_cols_grp, as_index=False).agg(Total_Sinistro=('Total Sinistro', 'sum'))
-
-            _pj = _premio_grp.copy()
-            _pj['Premio_J'] = _pj['Premio_Total'] * (janela / 365)
-            _r = pd.merge(_pj, _agg(_rec), on=_cols_grp, how='left').fillna(0)
-            _a = pd.merge(_pj, _agg(_ant), on=_cols_grp, how='left').fillna(0)
-            _r[f'Sin_Rec'] = (_r['Total_Sinistro'] / _r['Premio_J'].replace(0, float('nan'))).fillna(0)
-            _a[f'Sin_Ant'] = (_a['Total_Sinistro'] / _a['Premio_J'].replace(0, float('nan'))).fillna(0)
-            _c = pd.merge(_r[_cols_grp + ['Sin_Rec']], _a[_cols_grp + ['Sin_Ant']], on=_cols_grp, how='outer').fillna(0)
-            _c['Var_pp'] = (_c['Sin_Rec'] - _c['Sin_Ant']) * 100
-            _sin_rec_g = _rec['Total Sinistro'].sum() / (_premio_total_geral * janela / 365) if _premio_total_geral > 0 else 0
-            _sin_ant_g = _ant['Total Sinistro'].sum() / (_premio_total_geral * janela / 365) if _premio_total_geral > 0 else 0
-            return _c, _sin_rec_g, _sin_ant_g, _ini_rec, _ini_ant
-
-        _janelas = [60, 90, 180]
-        _res = {j: _calcular_janela(j) for j in _janelas}
-
-        # ── KPIs — um por janela ─────────────────────────────────────────────────
-        st.markdown("**Sinistralidade por janela — período recente vs anterior**")
-        _kcols = st.columns(3)
-        for i, j in enumerate(_janelas):
-            _, _srg, _sag, _ini_rec, _ini_ant = _res[j]
-            _var = (_srg - _sag) * 100
-            with _kcols[i]:
-                st.markdown(
-                    f'<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:14px 18px;">'
-                    f'<div style="font-size:11px;color:#64748B;text-transform:uppercase;letter-spacing:.05em;">Últimos {j} dias</div>'
-                    f'<div style="display:flex;align-items:baseline;gap:16px;margin:6px 0;">'
-                    f'  <div>'
-                    f'    <div style="font-size:11px;color:#64748B;">Recente</div>'
-                    f'    <div style="font-size:26px;font-weight:700;color:#1E293B;">{_srg:.1%}</div>'
-                    f'  </div>'
-                    f'  <div style="color:#CBD5E1;font-size:20px;">→</div>'
-                    f'  <div>'
-                    f'    <div style="font-size:11px;color:#64748B;">Anterior</div>'
-                    f'    <div style="font-size:26px;font-weight:700;color:#94A3B8;">{_sag:.1%}</div>'
-                    f'  </div>'
-                    f'</div>'
-                    f'<div style="font-size:12px;font-weight:600;color:{"#DC2626" if _var > 0 else "#16A34A"};">'
-                    f'  {"▲" if _var > 0 else "▼"} {abs(_var):.1f}pp {"piora" if _var > 0 else "melhora"}'
-                    f'</div>'
-                    f'<div style="font-size:10px;color:#94A3B8;margin-top:6px;">'
-                    f'  Rec: {_ini_rec.strftime("%d/%m/%y")} a {_data_max.strftime("%d/%m/%y")}<br>'
-                    f'  Ant: {_ini_ant.strftime("%d/%m/%y")} a {_ini_rec.strftime("%d/%m/%y")}'
-                    f'</div>'
-                    f'</div>',
-                    unsafe_allow_html=True
-                )
-
-        st.write("")
-        st.markdown(f"**Variação da sinistralidade por {_agrupar} — 60 / 90 / 180 dias**")
-
-        # ── 3 gráficos lado a lado ───────────────────────────────────────────────
-        _gcols = st.columns(3)
-        for i, j in enumerate(_janelas):
-            _comp, _, _, _, _ = _res[j]
-            _plot = _comp[_comp['Sin_Rec'] + _comp['Sin_Ant'] > 0].copy()
-
-            # Garante rótulo como string categórica — evita escala numérica no eixo Y
-            _plot['_label'] = _plot[_cols_grp[0]].astype(str)
-            _plot = _plot.sort_values('Var_pp')
-
-            _cores = ['#DC2626' if v > 0 else '#16A34A' for v in _plot['Var_pp']]
-            _max_abs = max(abs(_plot['Var_pp']).max() if not _plot.empty else 1, 1) * 1.4
-
-            _fig = go.Figure(go.Bar(
-                x=_plot['Var_pp'],
-                y=_plot['_label'],
-                orientation='h',
-                marker_color=_cores,
-                text=_plot['Var_pp'].map(lambda x: f"{x:+.1f}pp"),
-                textposition='outside',
-            ))
-            _fig.add_vline(x=0, line_width=1.5, line_color='#374151')
-            _fig.update_layout(
-                title=dict(text=f"Últimos {j} dias", font=dict(size=13)),
-                xaxis=dict(title='Variação (pp)', ticksuffix='pp', range=[-_max_abs, _max_abs]),
-                yaxis=dict(
-                    title='',
-                    tickfont=dict(size=11),
-                    type='category',          # força eixo categórico — nunca interpola os rótulos
-                    categoryorder='array',
-                    categoryarray=_plot['_label'].tolist()
-                ),
-                margin=dict(t=40, b=20, l=10, r=50),
-                height=max(220, len(_plot) * 50 + 80),
-                plot_bgcolor='white'
-            )
-            with _gcols[i]:
-                st.plotly_chart(_fig, use_container_width=True, config={'displayModeBar': False})
-
-        # ── Tabela consolidada ───────────────────────────────────────────────────
-        with st.expander("📋 Ver tabela detalhada de comparação"):
-            _tbl_base = _res[60][0][_cols_grp].copy()
-            for j in _janelas:
-                _c = _res[j][0][_cols_grp + ['Sin_Rec','Sin_Ant','Var_pp']].copy()
-                _c.columns = _cols_grp + [f'Sin_Rec_{j}', f'Sin_Ant_{j}', f'Var_{j}']
-                _tbl_base = pd.merge(_tbl_base, _c, on=_cols_grp, how='outer').fillna(0)
-            for j in _janelas:
-                _tbl_base[f'Sin_Rec_{j}'] = _tbl_base[f'Sin_Rec_{j}'].map(lambda x: f"{x:.1%}")
-                _tbl_base[f'Sin_Ant_{j}'] = _tbl_base[f'Sin_Ant_{j}'].map(lambda x: f"{x:.1%}")
-                _tbl_base[f'Var_{j}']     = _tbl_base[f'Var_{j}'].map(lambda x: f"{x:+.1f}pp")
-            _tbl_base.rename(columns={
-                _cols_grp[0]: _agrupar,
-                'Sin_Rec_60':'Rec.60d','Sin_Ant_60':'Ant.60d','Var_60':'Var.60d',
-                'Sin_Rec_90':'Rec.90d','Sin_Ant_90':'Ant.90d','Var_90':'Var.90d',
-                'Sin_Rec_180':'Rec.180d','Sin_Ant_180':'Ant.180d','Var_180':'Var.180d',
-            }, inplace=True)
-            st.dataframe(_tbl_base, hide_index=True, use_container_width=True)
-
-        st.markdown("")
-        with st.expander("🧮 Como interpretar esta análise"):
-            st.markdown("""
-<b>O que é:</b> Esta seção responde à pergunta: <i>quais Ramos ou Utilizações puxaram a sinistralidade para cima (ou para baixo) recentemente?</i> Ela compara três janelas de tempo — 60, 90 e 180 dias — cada uma contra o período imediatamente anterior de mesma duração, usando a <b>data de aviso</b> dos sinistros.<br><br>
-
-<b>Cartões de sinistralidade por janela:</b> Mostram a sinistralidade geral da carteira no período recente vs. o período anterior equivalente. A seta indica se houve piora (▲ vermelho) ou melhora (▼ verde), em pontos percentuais (pp). As datas de cada janela aparecem abaixo do indicador.<br><br>
-
-<b>Gráficos de variação por Ramo/Utilização:</b> Cada barra mostra quanto a sinistralidade daquele grupo variou entre o período anterior e o recente, em pontos percentuais. Barras vermelhas à direita = grupos que pioraram; barras verdes à esquerda = grupos que melhoraram. Compare as três janelas: se um grupo aparece vermelho nas três, a piora é consistente e não pontual.<br><br>
-
-<b>Tabela detalhada:</b> O expansor mostra, para cada grupo, a sinistralidade do período recente (Rec.), do anterior (Ant.) e a variação (Var.) em cada janela — útil para validar os gráficos com números exatos.<br><br>
-
-<b>Como foi desenvolvido:</b> O prêmio de cada grupo é proporcionalizado ao tamanho da janela (ex.: prêmio anual × 60/365 para a janela de 60 dias). O sinistro é somado pela data de aviso dentro de cada janela. Sinistralidade = sinistro da janela ÷ prêmio proporcional. A variação em pp é a diferença entre a sinistralidade recente e a anterior. Janelas curtas (60d) reagem rápido mas oscilam mais; a janela de 180d é mais estável.<br><br>
-
-<b>Atenção:</b> Como a análise usa a data de aviso, sinistros ocorridos recentemente mas ainda não avisados não aparecem — a janela mais recente pode estar subestimada.
-        """, unsafe_allow_html=True)
-
-    # ══ SEÇÃO 2 — Evolução Trimestral e Mensal (fragmento isolado) ══════════
-    @_st_fragment
-    def _render_evolucao_tri_mensal():
-        # ── Seletor de dimensão ───────────────────────────────────────────────────
-        _dim = st.radio(
-            "Analisar por:",
-            ["Ramo", "Utilização"],
-            horizontal=True,
-            key="diag_dim_tend"
-        )
-
-        # ── Tab: Trimestral vs Mensal ─────────────────────────────────────────────
-        _tab_tri, _tab_mes = st.tabs(["📅 Trimestral (período completo)", "📆 Mensal (últimos 12 meses)"])
-
-        # ════ TRIMESTRAL ══════════════════════════════════════════════════════════
-        with _tab_tri:
-            _grp_tri = _df_full.groupby(['AnoTri', _dim], as_index=False).agg(
-                Total_Sinistro=('Total Sinistro', 'sum'),
-                Qtd_Sinistros=('nr_sinistro', 'nunique')
-            )
-            # Prêmio proporcional por trimestre por grupo
-            _premio_dim = df_para_soma.groupby(_dim, as_index=False).agg(
-                Premio_Dim=('Soma Prêmio Pago por Apolice', 'sum')
-            )
-            _n_tri_total = _df_full['AnoTri'].nunique() or 1
-            _premio_dim['Premio_Tri'] = _premio_dim['Premio_Dim'] / (_anos_base * 4)
-
-            _grp_tri = pd.merge(_grp_tri, _premio_dim[[_dim, 'Premio_Tri']], on=_dim, how='left')
-            _grp_tri['Sinistralidade'] = (
-                _grp_tri['Total_Sinistro'] / _grp_tri['Premio_Tri'].replace(0, float('nan'))
-            ).fillna(0)
-            _grp_tri['_label'] = _grp_tri[_dim].astype(str)
-
-            # Ordena períodos corretamente (ignora rótulos malformados, ex.: 'nan Tnan')
-            def _chave_tri(x):
-                try:
-                    _a, _t = str(x).split(' T')
-                    return (int(float(_a)), int(float(_t)))
-                except (ValueError, IndexError):
-                    return (0, 0)  # rótulos inválidos vão para o início
-            _periodos_tri = sorted(_grp_tri['AnoTri'].unique(), key=_chave_tri)
-
-            _fig_tri = go.Figure()
-            for _grp_val in sorted(_grp_tri['_label'].unique()):
-                _d = _grp_tri[_grp_tri['_label'] == _grp_val].copy()
-                _d = _d.set_index('AnoTri').reindex(_periodos_tri).reset_index()
-                _d['Sinistralidade'] = _d['Sinistralidade'].fillna(0)
-
-                # Detecta tendência do último ano (últimos 4 trimestres)
-                _ultimos = _d.tail(4)['Sinistralidade']
-                _tend = (_ultimos.iloc[-1] - _ultimos.iloc[0]) if len(_ultimos) >= 2 else 0
-                _cor_nome = "🔴" if _tend > 0.05 else ("🟡" if _tend > 0 else "🟢")
-
-                _fig_tri.add_trace(go.Scatter(
-                    x=_d['AnoTri'],
-                    y=_d['Sinistralidade'],
-                    mode='lines+markers',
-                    name=f"{_cor_nome} {_grp_val}",
-                    line=dict(width=2),
-                    marker=dict(size=6),
-                    hovertemplate=f"{_dim} {_grp_val}<br>%{{x}}: %{{y:.1%}}<extra></extra>"
-                ))
-
-            _fig_tri.update_layout(
-                xaxis=dict(title='Trimestre', tickangle=-45, tickfont=dict(size=9)),
-                yaxis=dict(title='Sinistralidade (%)', tickformat='.0%'),
-                legend=dict(orientation='h', y=1.15),
-                margin=dict(t=30, b=60, l=0, r=0),
-                height=400,
-                hovermode='x unified',
-                plot_bgcolor='white'
-            )
-            st.plotly_chart(_fig_tri, use_container_width=True, config={'displayModeBar': False})
-
-            # Alerta automático — quem mais subiu no último ano
-            _tend_resumo = []
-            for _grp_val in _grp_tri['_label'].unique():
-                _d = _grp_tri[_grp_tri['_label'] == _grp_val].sort_values('AnoTri').tail(4)
-                if len(_d) >= 2:
-                    _delta = _d['Sinistralidade'].iloc[-1] - _d['Sinistralidade'].iloc[0]
-                    _tend_resumo.append((_grp_val, _delta, _d['Sinistralidade'].iloc[-1]))
-
-            if _tend_resumo:
-                _tend_resumo.sort(key=lambda x: x[1], reverse=True)
-                _pior = _tend_resumo[0]
-                _melhor = _tend_resumo[-1]
-                _col_al1, _col_al2 = st.columns(2)
-                with _col_al1:
-                    if _pior[1] > 0:
-                        st.error(
-                            f"🔴 **{_dim} {_pior[0]}** teve a maior alta: "
-                            f"**+{_pior[1]:.1%}** nos últimos 4 trimestres "
-                            f"(sinistralidade atual: {_pior[2]:.1%})"
-                        )
-                    else:
-                        st.success(f"🟢 Todos os {_dim.lower()}s melhoraram ou estabilizaram.")
-                with _col_al2:
-                    if _melhor[1] < 0:
-                        st.success(
-                            f"🟢 **{_dim} {_melhor[0]}** teve a maior queda: "
-                            f"**{_melhor[1]:.1%}** nos últimos 4 trimestres "
-                            f"(sinistralidade atual: {_melhor[2]:.1%})"
-                        )
-
-        # ════ MENSAL (últimos 12 meses) ═══════════════════════════════════════════
-        with _tab_mes:
-            _data_12m = _data_max - pd.Timedelta(days=365)
-            _df_12m = _df_full[_df_full['dt_aviso_dt'] >= _data_12m].copy()
-
-            _grp_mes = _df_12m.groupby(['AnoMes', _dim], as_index=False).agg(
-                Total_Sinistro=('Total Sinistro', 'sum'),
-                Qtd_Sinistros=('nr_sinistro', 'nunique')
-            )
-            _premio_dim['Premio_Mes'] = _premio_dim['Premio_Dim'] / (_anos_base * 12)
-            _grp_mes = pd.merge(_grp_mes, _premio_dim[[_dim, 'Premio_Mes']], on=_dim, how='left')
-            _grp_mes['Sinistralidade'] = (
-                _grp_mes['Total_Sinistro'] / _grp_mes['Premio_Mes'].replace(0, float('nan'))
-            ).fillna(0)
-            _grp_mes['_label'] = _grp_mes[_dim].astype(str)
-
-            _periodos_mes = sorted(_grp_mes['AnoMes'].unique())
-
-            _fig_mes = go.Figure()
-            for _grp_val in sorted(_grp_mes['_label'].unique()):
-                _d = _grp_mes[_grp_mes['_label'] == _grp_val].copy()
-                _d = _d.set_index('AnoMes').reindex(_periodos_mes).reset_index()
-                _d['Sinistralidade'] = _d['Sinistralidade'].fillna(0)
-
-                # Média móvel 3 meses
-                _d['MM3'] = _d['Sinistralidade'].rolling(3, min_periods=1).mean()
-
-                _fig_mes.add_trace(go.Scatter(
-                    x=_d['AnoMes'], y=_d['Sinistralidade'],
-                    mode='markers', name=f"{_grp_val} (mensal)",
-                    marker=dict(size=5), opacity=0.4,
-                    showlegend=False,
-                    hovertemplate=f"{_dim} {_grp_val}<br>%{{x}}: %{{y:.1%}}<extra></extra>"
-                ))
-                _fig_mes.add_trace(go.Scatter(
-                    x=_d['AnoMes'], y=_d['MM3'],
-                    mode='lines', name=f"{_grp_val} (MM3)",
-                    line=dict(width=2.5),
-                    hovertemplate=f"{_dim} {_grp_val} MM3<br>%{{x}}: %{{y:.1%}}<extra></extra>"
-                ))
-
-            _fig_mes.update_layout(
-                xaxis=dict(title='Mês', tickangle=-45, tickfont=dict(size=9)),
-                yaxis=dict(title='Sinistralidade (%)', tickformat='.0%'),
-                legend=dict(orientation='h', y=1.15),
-                margin=dict(t=30, b=60, l=0, r=0),
-                height=400,
-                hovermode='x unified',
-                plot_bgcolor='white'
-            )
-            st.caption("Pontos = sinistralidade mensal bruta. Linhas = média móvel 3 meses (MM3) — suaviza variações pontuais.")
-            st.plotly_chart(_fig_mes, use_container_width=True, config={'displayModeBar': False})
-
-        st.markdown("")
-        with st.expander("🧮 Como interpretar esta análise"):
-            st.markdown("""
-<b>O que é:</b> Esta seção mostra a <i>trajetória</i> da sinistralidade de cada Ramo ou Utilização ao longo do tempo, em duas escalas: trimestral (período completo filtrado — direção de médio prazo) e mensal (últimos 12 meses — movimento recente).<br><br>
-
-<b>Aba Trimestral:</b> Uma linha por grupo, com a sinistralidade de cada trimestre. O emoji ao lado do nome resume a tendência dos últimos 4 trimestres: 🔴 alta relevante (subiu mais de 5pp), 🟡 alta leve, 🟢 estável ou em queda. Os alertas automáticos abaixo do gráfico destacam o grupo com maior alta e o de maior queda no último ano.<br><br>
-
-<b>Aba Mensal:</b> Os pontos são a sinistralidade mensal bruta (volátil por natureza); as linhas são a média móvel de 3 meses (MM3), que suaviza oscilações pontuais e revela a direção real. Acompanhe as linhas, não os pontos: linha subindo = deterioração em curso.<br><br>
-
-<b>Como foi desenvolvido:</b> O sinistro é agrupado por trimestre/mês de <b>aviso</b> e por Ramo ou Utilização. O prêmio de cada grupo é distribuído uniformemente entre os períodos (prêmio total do grupo ÷ nº de anos da base × 4 trimestres ou × 12 meses). Sinistralidade do período = sinistro do período ÷ prêmio proporcional do grupo.<br><br>
-
-<b>Atenção:</b> Por usar prêmio médio uniforme, grupos com forte crescimento ou queda de produção podem ter a sinistralidade distorcida em períodos específicos. Meses muito recentes tendem a aparecer melhores do que são, pela demora no aviso dos sinistros.
-        """, unsafe_allow_html=True)
-
-    # ── Renderização ─────────────────────────────────────────────────────────
-    _render_diag_variacao()
-
-    st.write("---")
-    st.markdown("### 📉 Evolução Trimestral e Mensal da Sinistralidade")
-    st.caption(
-        "Visão de tendência do período completo filtrado. "
-        "Trimestral mostra a direção de médio prazo; mensal (últimos 12 meses) mostra o movimento recente. "
-        "Identifique em qual Ramo ou Utilização a sinistralidade está subindo."
-    )
-    _render_evolucao_tri_mensal()
-
-else:
-    st.info("Nenhum dado disponível para análise de variação.")
-
-# ══════════════════════════════════════════════════════════════════════════════
-# BLOCO: PRÊMIO DE RISCO E ADEQUAÇÃO TARIFÁRIA
-# Prêmio de risco (custo técnico puro) por Utilização e por Região de Circulação,
-# comparado ao prêmio pago médio, revelando a folga/aperto tarifário de cada
-# segmento — o que a sinistralidade média sozinha não mostra.
 #
-# Conceito (aula MBA — Prêmio de Risco):
-#   Prêmio de Risco (PR) = frequência × severidade
-#                        = total de sinistros ÷ nº de apólices expostas
-#   É o custo puro de sinistro por apólice, independente do prêmio cobrado.
 #
-# Depende de variáveis já existentes no ponto de inserção:
-#   df_para_soma                    (apólices, numérico, filtrado + slider)
-#   df_sinistro_periodo_atualizado  (sinistros do período filtrado)
-#   formatar_valor_br, pd, px, np, st
-# ══════════════════════════════════════════════════════════════════════════════
-
-st.write("---")
-st.subheader("💰 Prêmio de Risco e Adequação Tarifária")
-st.caption(
-    "Prêmio de risco = custo técnico puro de sinistro por apólice (frequência × severidade). "
-    "Comparado ao prêmio pago médio, revela onde a tarifa está apertada ou com folga — "
-    "leitura que a sinistralidade média sozinha não entrega. "
-    "Sinistros sem movimentação financeira (valor zerado) são desconsiderados."
-)
-
-# ── Base de sinistros com valor consolidado por sinistro (período filtrado) ──
-if not df_sinistro_periodo_atualizado.empty:
-    _df_sin_pr_pr = df_sinistro_periodo_atualizado.copy()
-    _df_sin_pr_pr['Total Sinistro'] = pd.to_numeric(_df_sin_pr_pr['Total Sinistro'], errors='coerce').fillna(0.0)
-
-    _sin_valor_pr = _df_sin_pr_pr.groupby('nr_sinistro').agg(
-        Valor_Sinistro=('Total Sinistro', 'sum'),
-        Apolice=('N° Apólice', 'first')
-    ).reset_index()
-    _sin_valor_pr = _sin_valor_pr[_sin_valor_pr['Valor_Sinistro'] > 0].copy()
-else:
-    _sin_valor_pr = pd.DataFrame(columns=['nr_sinistro', 'Valor_Sinistro', 'Apolice'])
-
-# ── Margem de segurança configurável (aula: prêmio puro = PR × (1 + MS)) ─────
-col_ms_1, col_ms_2 = st.columns([1, 3])
-with col_ms_1:
-    _OPCOES_MARGEM = [f'{p}%' for p in range(0, 101, 5)]  # 0%, 5%, ..., 100%
-    _margem_label = st.selectbox(
-        'Margem de segurança (%)',
-        options=_OPCOES_MARGEM,
-        index=_OPCOES_MARGEM.index('20%'),  # padrão 20% (material didático)
-        help='Coeficiente de segurança aplicado sobre o prêmio de risco para '
-             'obter o prêmio puro (proteção contra flutuações de riscos futuros). '
-             'O material didático usa 20%.',
-        key='margem_seg_premio_risco'
-    )
-    _margem_seg = int(_margem_label.replace('%', '')) / 100.0
-
-
-def _monta_premio_risco(_dim, _df_apo, _sin_valor):
-    """Calcula prêmio de risco e adequação tarifária agrupando por _dim."""
-    if _df_apo.empty:
-        return pd.DataFrame()
-
-    # Exposição e prêmio pago por segmento (período/filtros da tela)
-    _exp = _df_apo.groupby(_dim).agg(
-        Qtd_Apolices=('N° Apólice', 'nunique'),
-        Total_Premio=('Soma Prêmio Pago por Apolice', 'sum')
-    ).reset_index()
-
-    # Mapa apólice -> segmento, para alocar cada sinistro ao seu segmento
-    _map = _df_apo[['N° Apólice', _dim]].drop_duplicates(subset=['N° Apólice'])
-    _sv = _sin_valor.merge(_map, left_on='Apolice', right_on='N° Apólice', how='left')
-    _sv[_dim] = _sv[_dim].fillna('Não identificada')
-
-    _agg = _sv.groupby(_dim).agg(
-        Qtd_Sinistros=('nr_sinistro', 'nunique'),
-        Total_Sinistro=('Valor_Sinistro', 'sum'),
-        Sinistro_Medio=('Valor_Sinistro', 'mean')
-    ).reset_index()
-
-    _r = _exp.merge(_agg, on=_dim, how='left')
-    for _c in ['Qtd_Sinistros', 'Total_Sinistro', 'Sinistro_Medio']:
-        _r[_c] = _r[_c].fillna(0)
-
-    # Frequência = sinistros ÷ apólices
-    _r['Frequência'] = _r['Qtd_Sinistros'] / _r['Qtd_Apolices'].replace(0, np.nan)
-    _r['Frequência'] = _r['Frequência'].fillna(0)
-
-    # Prêmio de risco = total sinistro ÷ apólices  (= frequência × severidade)
-    _r['Premio_Risco'] = _r['Total_Sinistro'] / _r['Qtd_Apolices'].replace(0, np.nan)
-    _r['Premio_Risco'] = _r['Premio_Risco'].fillna(0)
-
-    # Prêmio puro = PR × (1 + margem de segurança)
-    _r['Premio_Puro'] = _r['Premio_Risco'] * (1 + _margem_seg)
-
-    # Prêmio pago médio por apólice
-    _r['Premio_Pago_Medio'] = _r['Total_Premio'] / _r['Qtd_Apolices'].replace(0, np.nan)
-    _r['Premio_Pago_Medio'] = _r['Premio_Pago_Medio'].fillna(0)
-
-    # Índice de adequação (piso) = prêmio pago médio ÷ prêmio de RISCO
-    # (quantas vezes o prêmio pago cobre o custo puro; < 1 = insustentável)
-    _r['Indice_Adequacao'] = _r.apply(
-        lambda x: x['Premio_Pago_Medio'] / x['Premio_Risco'] if x['Premio_Risco'] > 0 else np.nan, axis=1)
-
-    # Índice de adequação (com margem) = prêmio pago médio ÷ prêmio PURO
-    # (cobre o custo já com a margem de segurança; < 1 = sem margem suficiente)
-    _r['Indice_Adequacao_Puro'] = _r.apply(
-        lambda x: x['Premio_Pago_Medio'] / x['Premio_Puro'] if x['Premio_Puro'] > 0 else np.nan, axis=1)
-
-    # Sinistralidade do segmento (para comparação)
-    _r['Sinistralidade'] = _r.apply(
-        lambda x: x['Total_Sinistro'] / x['Total_Premio'] if x['Total_Premio'] > 0 else 0, axis=1)
-
-    return _r.sort_values('Total_Premio', ascending=False)
-
-
-def _classifica_adequacao(row):
-    """Rótulo de adequação tarifária.
-
-    Combina os dois índices:
-    - índice sobre o prêmio de RISCO  = piso de sobrevivência técnica
-    - índice sobre o prêmio PURO      = adequação já com a margem de segurança
-    """
-    if row['Qtd_Sinistros'] == 0:
-        return 'Sem sinistros — PR não estimável'
-    idx_risco = row['Indice_Adequacao']
-    idx_puro  = row['Indice_Adequacao_Puro']
-    if pd.isna(idx_risco) or idx_risco == 0:
-        return 'Indeterminado'
-    if idx_risco < 1.0:
-        base = 'Não cobre nem o custo puro (insustentável)'
-    elif pd.isna(idx_puro) or idx_puro < 1.0:
-        base = 'Cobre o custo, mas sem a margem de segurança'
-    elif idx_puro < 1.3:
-        base = 'Cobre com a margem, folga apertada'
-    else:
-        base = 'Adequado com boa folga'
-    # Aviso de baixa confiabilidade estatística
-    if row['Qtd_Sinistros'] < 5:
-        base += ' (amostra pequena)'
-    return base
-
-
-def _exibe_tabela_pr(_r, _dim, _label_dim):
-    """Formata e exibe a tabela de prêmio de risco (padrão BR do app)."""
-    if _r.empty:
-        st.info(f"Sem dados para calcular prêmio de risco por {_label_dim}.")
-        return
-
-    _r = _r.copy()
-    _r['Adequação'] = _r.apply(_classifica_adequacao, axis=1)
-
-    _e = _r.copy()
-    _e['Frequência']       = _e['Frequência'].map(lambda x: f"{x:.2%}".replace('.', ','))
-    _e['Sinistralidade']   = _e['Sinistralidade'].map(lambda x: f"{x:.2%}".replace('.', ','))
-    _e['Indice_Adequacao'] = _e['Indice_Adequacao'].map(
-        lambda x: '—' if pd.isna(x) else f"{x:.2f}x".replace('.', ','))
-    _e['Indice_Adequacao_Puro'] = _e['Indice_Adequacao_Puro'].map(
-        lambda x: '—' if pd.isna(x) else f"{x:.2f}x".replace('.', ','))
-    for _c in ['Premio_Risco', 'Premio_Puro', 'Premio_Pago_Medio', 'Sinistro_Medio', 'Total_Sinistro', 'Total_Premio']:
-        _e[_c] = _e[_c].map(formatar_valor_br)
-    _e['Qtd_Sinistros'] = _e['Qtd_Sinistros'].astype(int)
-
-    _cols = [_dim, 'Qtd_Apolices', 'Qtd_Sinistros', 'Frequência',
-             'Sinistro_Medio', 'Premio_Risco', 'Premio_Puro',
-             'Premio_Pago_Medio', 'Indice_Adequacao', 'Indice_Adequacao_Puro',
-             'Sinistralidade', 'Adequação']
-    st.dataframe(
-        _e[_cols].rename(columns={
-            _dim:                'Segmento' if _dim != 'Utilização' else 'Utilização',
-            'Sinistro_Medio':    'Severidade Média (R$)',
-            'Premio_Risco':      'Prêmio de Risco (R$)',
-            'Premio_Puro':       f'Prêmio Puro +{int(_margem_seg*100)}% (R$)',
-            'Premio_Pago_Medio':      'Prêmio Pago Médio (R$)',
-            'Indice_Adequacao':       'Índice vs Risco',
-            'Indice_Adequacao_Puro':  'Índice vs Puro',
-        }),
-        hide_index=True,
-        use_container_width=True,
-        column_config={
-            _dim if _dim == 'Utilização' else 'Segmento': st.column_config.Column(width=180),
-            "Adequação": st.column_config.Column(width=240),
-        })
-
-
-if not df_para_soma.empty and not _sin_valor_pr.empty:
-
-    # ══════════════════════════════════════════════════════════════════════
-    # Por UTILIZAÇÃO
-    # ══════════════════════════════════════════════════════════════════════
-    st.markdown('<p class="section-label">Prêmio de Risco por Utilização</p>', unsafe_allow_html=True)
-    _pr_util = _monta_premio_risco('Utilização', df_para_soma, _sin_valor_pr)
-    _exibe_tabela_pr(_pr_util, 'Utilização', 'Utilização')
-
-    # Gráfico: prêmio de risco vs prêmio pago médio por utilização
-    _plot_u = _pr_util[(_pr_util['Qtd_Sinistros'] > 0) &
-                       (_pr_util['Utilização'].astype(str) != '0')].copy()
-    if not _plot_u.empty:
-        _plot_u = _plot_u.sort_values('Premio_Risco', ascending=True)
-        fig_pr_u = px.bar(
-            _plot_u, y='Utilização',
-            x=['Premio_Risco', 'Premio_Pago_Medio'],
-            orientation='h', barmode='group',
-            labels={'value': 'R$ por apólice', 'variable': ''},
-            height=420,
-            color_discrete_map={'Premio_Risco': '#dc2626', 'Premio_Pago_Medio': '#1a56db'}
-        )
-        _nomes = {'Premio_Risco': 'Prêmio de Risco (custo puro)', 'Premio_Pago_Medio': 'Prêmio Pago Médio'}
-        fig_pr_u.for_each_trace(lambda t: t.update(name=_nomes.get(t.name, t.name)))
-        fig_pr_u.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                               legend=dict(orientation='h', yanchor='bottom', y=1.02),
-                               yaxis_title=None)
-        st.plotly_chart(fig_pr_u, use_container_width=True)
-        st.caption(
-            "Barra vermelha (prêmio de risco) próxima ou acima da azul (prêmio pago médio) "
-            "sinaliza segmento subprecificado; azul bem acima da vermelha indica folga tarifária."
-        )
-
-    # ══════════════════════════════════════════════════════════════════════
-    # Por REGIÃO DE CIRCULAÇÃO
-    # ══════════════════════════════════════════════════════════════════════
-    st.write("")
-    st.markdown('<p class="section-label">Prêmio de Risco por Região de Circulação</p>', unsafe_allow_html=True)
-    if 'Região de Circulação' in df_para_soma.columns:
-        _pr_reg = _monta_premio_risco('Região de Circulação', df_para_soma, _sin_valor_pr)
-        _exibe_tabela_pr(_pr_reg, 'Região de Circulação', 'Região de Circulação')
-    else:
-        st.info("Coluna 'Região de Circulação' não disponível na base do período.")
-
-    # ══════════════════════════════════════════════════════════════════════
-    # CRUZAMENTO Utilização × Região (heatmap de prêmio de risco)
-    # ══════════════════════════════════════════════════════════════════════
-    if 'Região de Circulação' in df_para_soma.columns:
-        st.write("")
-        st.markdown('<p class="section-label">Prêmio de Risco: Utilização × Região de Circulação</p>', unsafe_allow_html=True)
-
-        # Exposição por par (Utilização, Região)
-        _exp_cru = df_para_soma.groupby(['Utilização', 'Região de Circulação']).agg(
-            Qtd_Apolices=('N° Apólice', 'nunique')
-        ).reset_index()
-
-        # Sinistros alocados ao par via apólice
-        _map_cru = df_para_soma[['N° Apólice', 'Utilização', 'Região de Circulação']]\
-            .drop_duplicates(subset=['N° Apólice'])
-        _sv_cru = _sin_valor_pr.merge(_map_cru, left_on='Apolice', right_on='N° Apólice', how='inner')
-        _agg_cru = _sv_cru.groupby(['Utilização', 'Região de Circulação']).agg(
-            Total_Sinistro=('Valor_Sinistro', 'sum'),
-            Qtd_Sinistros=('nr_sinistro', 'nunique')
-        ).reset_index()
-
-        _cru = _exp_cru.merge(_agg_cru, on=['Utilização', 'Região de Circulação'], how='left').fillna(0)
-        _cru['Premio_Risco'] = _cru['Total_Sinistro'] / _cru['Qtd_Apolices'].replace(0, np.nan)
-
-        # Só mostra pares com exposição relevante para não poluir com ruído
-        _min_apo = st.slider(
-            'Mínimo de apólices por célula (filtra combinações com pouca exposição)',
-            min_value=1, max_value=200, value=30, step=10,
-            key='min_apo_heatmap_pr'
-        )
-        _cru_f = _cru[_cru['Qtd_Apolices'] >= _min_apo].copy()
-
-        if not _cru_f.empty and _cru_f['Premio_Risco'].notna().any():
-            _pivot = _cru_f.pivot_table(index='Utilização', columns='Região de Circulação',
-                                        values='Premio_Risco', aggfunc='first')
-            fig_heat = px.imshow(
-                _pivot,
-                labels=dict(x='Região de Circulação', y='Utilização', color='Prêmio de Risco (R$/apólice)'),
-                color_continuous_scale='Reds', aspect='auto', height=460,
-                text_auto='.0f'
-            )
-            fig_heat.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
-            fig_heat.update_xaxes(tickangle=45)
-            st.plotly_chart(fig_heat, use_container_width=True)
-            st.caption(
-                "Células mais escuras = maior custo puro de sinistro por apólice naquela combinação de "
-                "utilização e região. Ajuste o mínimo de apólices acima para equilibrar granularidade e "
-                "confiabilidade — células com poucas apólices são estatisticamente instáveis."
-            )
-        else:
-            st.info(f"Nenhuma combinação Utilização × Região com ao menos {_min_apo} apólices no período.")
-else:
-    st.info("Sem dados suficientes para calcular prêmio de risco no período filtrado.")
-
-# ── Nota metodológica ────────────────────────────────────────────────────────
-with st.expander("🧮 Como interpretar os cálculos — prêmio de risco e adequação"):
-    st.markdown("""
-<b>Prêmio de risco</b> = total de sinistros do segmento ÷ nº de apólices expostas (equivale a frequência × severidade). É o custo técnico puro por apólice, <b>independente do prêmio cobrado</b>. Base: sinistros com valor consolidado &gt; 0 (pagos + reservas) no período filtrado.
-
-
-<b>Prêmio puro</b> = prêmio de risco × (1 + margem de segurança). A margem protege contra flutuações de riscos futuros; ajuste-a no campo acima.
-
-
-<b>Índice vs Risco</b> = prêmio pago médio ÷ prêmio de risco. É o <b>piso de sobrevivência técnica</b>: abaixo de 1,00 o prêmio pago não cobre nem o custo puro de sinistro (antes de qualquer despesa administrativa, comercial ou lucro).
-
-<b>Índice vs Puro</b> = prêmio pago médio ÷ prêmio puro. É a <b>adequação com margem</b>: abaixo de 1,00 o prêmio cobre o custo médio de sinistro, mas não a margem de segurança contra os anos ruins — régua mais exigente e realista para subscrição.
-
-<b>Como ler o rótulo de Adequação:</b> "insustentável" = nem o custo puro é coberto (Índice vs Risco < 1); "sem a margem de segurança" = cobre o custo mas não a margem (Índice vs Puro < 1); "folga apertada" / "boa folga" = cobre com margem, com pouca ou boa sobra.
-
-
-<b>Cuidados do RCO:</b> (1) ramo de <b>cauda longa</b> — o prêmio de risco de segmentos pequenos é dominado pela ocorrência ou não de um sinistro catastrófico; leia junto com o perfil de cauda da seção anterior. (2) Sinistros judiciais de RC levam anos para liquidar, então o custo de anos recentes tende a ser <b>subestimado</b> (efeito IBNR) — use como referência de subscrição, não como taxa final. (3) Segmentos com menos de 5 sinistros são sinalizados como amostra pequena.
-""", unsafe_allow_html=True)
-
-# ══════════════════════════════════════════════════════════════════════════════
-# BLOCO: PERFIL DE RISCO POR UTILIZAÇÃO — VISÃO RESSEGURADOR
-# Frequência × severidade × potencial catastrófico por Utilização.
-# - Sinistros com valor consolidado zerado são desconsiderados de toda a seção.
-# - Frequência: classificada contra REFERÊNCIA FIXA (mediana da base completa,
-#   sem filtros/slider) — o rótulo não muda conforme os filtros aplicados.
-# - Severidade: classificada pela razão média/mediana da PRÓPRIA utilização
-#   (índice de cauda) — média muito acima da mediana indica cauda pesada.
-# ══════════════════════════════════════════════════════════════════════════════
-import numpy as np
-
-st.write("---")
-st.subheader("🛡️ Perfil de Risco por Utilização — Visão Ressegurador")
-st.caption(
-    "Frequência, severidade e potencial catastrófico por segmento de utilização. "
-    "Sinistros sem movimentação financeira (valor zerado) são desconsiderados. "
-    "As métricas respeitam os filtros aplicados. Frequência é classificada contra "
-    "referência fixa da base completa; severidade, pela razão média/mediana da própria utilização."
-)
-
-# ── Base de sinistros com valor consolidado por sinistro (período filtrado) ──
-if not df_sinistro_periodo_atualizado.empty:
-    _df_sin_pr = df_sinistro_periodo_atualizado.copy()
-    _df_sin_pr['Total Sinistro'] = pd.to_numeric(_df_sin_pr['Total Sinistro'], errors='coerce').fillna(0.0)
-
-    _sin_valor = _df_sin_pr.groupby('nr_sinistro').agg(
-        Valor_Sinistro=('Total Sinistro', 'sum'),
-        Apolice=('N° Apólice', 'first')
-    ).reset_index()
-
-    # Desconsidera sinistros com valor consolidado zerado
-    _sin_valor = _sin_valor[_sin_valor['Valor_Sinistro'] > 0].copy()
-
-    _map_util = df_para_soma[['N° Apólice', 'Utilização']].drop_duplicates(subset=['N° Apólice'])
-    _sin_valor = _sin_valor.merge(_map_util, left_on='Apolice', right_on='N° Apólice', how='left')
-    _sin_valor['Utilização'] = _sin_valor['Utilização'].fillna('Não identificada')
-else:
-    _sin_valor = pd.DataFrame(columns=['nr_sinistro', 'Valor_Sinistro', 'Apolice', 'Utilização'])
-
-if not df_para_soma.empty and not _sin_valor.empty:
-    # ── Corte de sinistro grave: lista fixa de valores ───────────────────────
-    _OPCOES_CORTE = {
-        '100.000,00':            (100_000.0,   '>='),
-        '200.000,00':            (200_000.0,   '>='),
-        '300.000,00':            (300_000.0,   '>='),
-        '400.000,00':            (400_000.0,   '>='),
-        '500.000,00':            (500_000.0,   '>='),
-        '1.000.000,00':          (1_000_000.0, '>='),
-        '2.000.000,00':          (2_000_000.0, '>='),
-        '3.000.000,00':          (3_000_000.0, '>='),
-        '4.000.000,00':          (4_000_000.0, '>='),
-        '5.000.000,00':          (5_000_000.0, '>='),
-        'Acima de 7.000.000,00': (7_000_000.0, '>'),
-    }
-    col_corte_1, col_corte_2 = st.columns([1, 3])
-    with col_corte_1:
-        _corte_label = st.selectbox(
-            'Corte de sinistro grave (R$)',
-            options=list(_OPCOES_CORTE.keys()),
-            index=4,  # padrão: 500.000,00
-            help='Sinistros com valor consolidado a partir deste corte são '
-                 'classificados como de alta severidade / potencial catastrófico.',
-            key='corte_catastrofico_ressegurador'
-        )
-    _corte_valor, _corte_op = _OPCOES_CORTE[_corte_label]
-    if _corte_op == '>':
-        _mask_graves = _sin_valor['Valor_Sinistro'] > _corte_valor
-    else:
-        _mask_graves = _sin_valor['Valor_Sinistro'] >= _corte_valor
-
-    # ══════════════════════════════════════════════════════════════════════
-    # REFERÊNCIA FIXA PARA CLASSIFICAÇÃO DA FREQUÊNCIA
-    # Mediana de frequência calculada sobre a BASE COMPLETA (dados_calculados
-    # + df_sinistros — sem filtros de sidebar nem slider). Assim, o rótulo de
-    # frequência de cada utilização é estável e não muda conforme os filtros.
-    # A mediana de severidade da base completa é mantida apenas como linha de
-    # referência visual no mapa de risco.
-    # ══════════════════════════════════════════════════════════════════════
-    _apo_ref = dados_calculados.groupby('Utilização').agg(
-        Qtd_Apolices=('N° Apólice', 'nunique')
-    ).reset_index()
-
-    _sin_ref = df_sinistros.copy()
-    _sin_ref['Total Sinistro'] = pd.to_numeric(_sin_ref['Total Sinistro'], errors='coerce').fillna(0.0)
-    _sin_ref = _sin_ref.groupby('nr_sinistro').agg(
-        Valor_Sinistro=('Total Sinistro', 'sum'),
-        Apolice=('N° Apólice', 'first')
-    ).reset_index()
-    _sin_ref = _sin_ref[_sin_ref['Valor_Sinistro'] > 0]
-
-    _map_util_ref = dados_calculados[['N° Apólice', 'Utilização']].drop_duplicates(subset=['N° Apólice'])
-    _sin_ref = _sin_ref.merge(_map_util_ref, left_on='Apolice', right_on='N° Apólice', how='left')
-    _sin_ref['Utilização'] = _sin_ref['Utilização'].fillna('Não identificada')
-
-    _agg_ref = _sin_ref.groupby('Utilização').agg(
-        Qtd_Sinistros=('nr_sinistro', 'nunique'),
-        Sinistro_Medio=('Valor_Sinistro', 'mean')
-    ).reset_index()
-
-    _ref = _apo_ref.merge(_agg_ref, on='Utilização', how='left').fillna(0)
-    _ref['Frequência'] = _ref['Qtd_Sinistros'] / _ref['Qtd_Apolices'].replace(0, np.nan)
-    _ref = _ref[_ref['Qtd_Sinistros'] > 0]
-
-    _med_freq = _ref['Frequência'].median()     if not _ref.empty else 0
-    _med_sev  = _ref['Sinistro_Medio'].median() if not _ref.empty else 0
-
-    # Bandas de frequência: Alta ≥ 150% da mediana | Baixa ≤ 67% da mediana
-    _LIM_ALTA, _LIM_BAIXA = 1.50, 0.67
-
-    def _nivel(valor, mediana):
-        if mediana <= 0 or valor == 0:
-            return 'Baixa'
-        if valor >= mediana * _LIM_ALTA:
-            return 'Alta'
-        if valor <= mediana * _LIM_BAIXA:
-            return 'Baixa'
-        return 'Média'
-
-    # Bandas de severidade: razão média/mediana da PRÓPRIA utilização
-    # (índice de cauda: média muito acima da mediana = poucos sinistros
-    # grandes puxando o valor — cauda pesada)
-    # Limiar de Baixa calibrado pelo julgamento de subscrição (2,5); combinado
-    # com a "trava de cauda" aplicada após a classificação (ver abaixo).
-    _LIM_SEV_ALTA, _LIM_SEV_BAIXA = 3.0, 2.5
-
-    def _nivel_severidade(media, mediana):
-        if media <= 0 or mediana <= 0:
-            return 'Baixa'
-        razao = media / mediana
-        if razao >= _LIM_SEV_ALTA:
-            return 'Alta'
-        if razao <= _LIM_SEV_BAIXA:
-            return 'Baixa'
-        return 'Média'
-
-    # ── Transparência: exibe a régua de classificação usada ─────────────────
-    _fmt_pct = lambda v: f"{v:.2%}".replace('.', ',')
-    st.markdown(f"""
-<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px 16px;font-size:0.8rem;color:#374151;margin-bottom:10px;">
-<b>Critério do perfil:</b>
-<b>Frequência</b> (referência fixa — base completa, independe dos filtros) —
-mediana da carteira: {_fmt_pct(_med_freq)} ·
-Alta ≥ {_fmt_pct(_med_freq * _LIM_ALTA)} ·
-Baixa ≤ {_fmt_pct(_med_freq * _LIM_BAIXA)} &nbsp;|&nbsp;
-<b>Severidade</b> (razão média ÷ mediana da própria utilização — índice de cauda) —
-Alta ≥ {_LIM_SEV_ALTA:.2f} ·
-Baixa ≤ {_LIM_SEV_BAIXA:.2f} ·
-trava de cauda: utilização com sinistro ≥ corte não é classificada como Baixa
-</div>
-""", unsafe_allow_html=True)
-
-    # ── Exposição por Utilização (período/filtros da tela) ───────────────────
-    _perfil_util = df_para_soma.groupby('Utilização').agg(
-        Qtd_Apolices=('N° Apólice', 'nunique'),
-        Total_Premio=('Soma Prêmio Pago por Apolice', 'sum')
-    ).reset_index()
-
-    # ── Sinistros por Utilização (frequência, severidade, cauda) ─────────────
-    _sin_util = _sin_valor.groupby('Utilização').agg(
-        Qtd_Sinistros=('nr_sinistro', 'nunique'),
-        Total_Sinistro=('Valor_Sinistro', 'sum'),
-        Sinistro_Medio=('Valor_Sinistro', 'mean'),
-        Sinistro_Mediano=('Valor_Sinistro', 'median'),
-        Sinistro_Maximo=('Valor_Sinistro', 'max')
-    ).reset_index()
-
-    _graves = _sin_valor[_mask_graves]\
-        .groupby('Utilização')['nr_sinistro'].nunique().reset_index()\
-        .rename(columns={'nr_sinistro': 'Qtd_Graves'})
-
-    _perfil_util = _perfil_util.merge(_sin_util, on='Utilização', how='left')\
-                               .merge(_graves,   on='Utilização', how='left')
-    for _c in ['Qtd_Sinistros', 'Total_Sinistro', 'Sinistro_Medio', 'Sinistro_Mediano', 'Sinistro_Maximo', 'Qtd_Graves']:
-        _perfil_util[_c] = _perfil_util[_c].fillna(0)
-
-    _perfil_util['Frequência']  = _perfil_util['Qtd_Sinistros'] / _perfil_util['Qtd_Apolices'].replace(0, np.nan)
-    _perfil_util['Frequência']  = _perfil_util['Frequência'].fillna(0)
-    _perfil_util['% Graves']    = _perfil_util.apply(
-        lambda r: r['Qtd_Graves'] / r['Qtd_Sinistros'] if r['Qtd_Sinistros'] > 0 else 0, axis=1)
-    _perfil_util['Sinistralidade'] = _perfil_util.apply(
-        lambda r: r['Total_Sinistro'] / r['Total_Premio'] if r['Total_Premio'] > 0 else 0, axis=1)
-
-    # ── Classificação ─────────────────────────────────────────────────────────
-    # Frequência: contra a referência fixa da base completa
-    # Severidade: razão média/mediana da própria utilização (índice de cauda)
-    _perfil_util['Nível Frequência'] = _perfil_util['Frequência'].map(lambda v: _nivel(v, _med_freq))
-    _perfil_util['Media_Mediana'] = _perfil_util.apply(
-        lambda r: r['Sinistro_Medio'] / r['Sinistro_Mediano'] if r['Sinistro_Mediano'] > 0 else 0, axis=1)
-    _perfil_util['Nível Severidade'] = _perfil_util.apply(
-        lambda r: _nivel_severidade(r['Sinistro_Medio'], r['Sinistro_Mediano']), axis=1)
-
-    # Trava de cauda: utilização com ao menos 1 sinistro acima do corte
-    # selecionado não pode ser rotulada como severidade Baixa — sobe para
-    # Média. Evita rotular como "baixa severidade" um segmento que já
-    # produziu sinistro de grande porte.
-    _perfil_util['Nível Severidade'] = _perfil_util.apply(
-        lambda r: 'Média' if (r['Nível Severidade'] == 'Baixa' and r['Qtd_Graves'] > 0)
-        else r['Nível Severidade'], axis=1)
-
-    def _descricao_perfil(row):
-        f, s = row['Nível Frequência'], row['Nível Severidade']
-        if row['Qtd_Sinistros'] == 0:
-            return 'Sem sinistros com valor no período'
-        if row['Qtd_Graves'] > 0 and s == 'Alta':
-            return f'{f} frequência, {s.lower()} severidade — potencial catastrófico'
-        return f'{f} frequência, {s.lower()} severidade'
-
-    _perfil_util['Perfil'] = _perfil_util.apply(_descricao_perfil, axis=1)
-
-    # ── Tabela de exibição (formatação BR, padrão do app) ────────────────────
-    _exib = _perfil_util.sort_values('Total_Premio', ascending=False).copy()
-    _exib['Frequência']       = _exib['Frequência'].map(_fmt_pct)
-    _exib['% Graves']         = _exib['% Graves'].map(lambda x: f"{x:.2%}".replace('.', ','))
-    _exib['Sinistralidade']   = _exib['Sinistralidade'].map(lambda x: f"{x:.2%}".replace('.', ','))
-    for _c in ['Total_Premio', 'Total_Sinistro', 'Sinistro_Medio', 'Sinistro_Mediano', 'Sinistro_Maximo']:
-        _exib[_c] = _exib[_c].map(formatar_valor_br)
-    _exib['Qtd_Sinistros'] = _exib['Qtd_Sinistros'].astype(int)
-    _exib['Qtd_Graves']    = _exib['Qtd_Graves'].astype(int)
-    _exib['Media_Mediana'] = _exib['Media_Mediana'].map(lambda x: f"{x:.2f}".replace('.', ','))
-
-    _cols_exib = ['Utilização', 'Qtd_Apolices', 'Qtd_Sinistros', 'Frequência',
-                  'Sinistro_Medio', 'Sinistro_Mediano', 'Media_Mediana', 'Sinistro_Maximo',
-                  'Qtd_Graves', '% Graves', 'Sinistralidade', 'Perfil']
-    st.markdown('<p class="section-label">Perfil de Risco por Utilização (frequência × severidade)</p>', unsafe_allow_html=True)
-    st.dataframe(
-        _exib[_cols_exib].rename(columns={
-            'Sinistro_Medio':   'Severidade Média (R$)',
-            'Sinistro_Mediano': 'Severidade Mediana (R$)',
-            'Media_Mediana':    'Média/Mediana (cauda)',
-            'Sinistro_Maximo':  'Maior Sinistro (R$)',
-            'Qtd_Graves':       'Sin. ≥ corte',
-            '% Graves':         '% ≥ corte',
-        }),
-        hide_index=True,
-        use_container_width=True,
-        column_config={
-            "Utilização": st.column_config.Column(width=200),
-            "Perfil":     st.column_config.Column(width=280),
-        })
-
-    # ── Mapa de risco: Frequência × Severidade (bolha = prêmio) ──────────────
-    _plot = _perfil_util[(_perfil_util['Qtd_Sinistros'] > 0) &
-                         (_perfil_util['Utilização'].astype(str) != '0')].copy()
-    if not _plot.empty:
-        st.markdown('<p class="section-label">Mapa de Risco: Frequência × Severidade por Utilização</p>', unsafe_allow_html=True)
-        fig_mapa = px.scatter(
-            _plot,
-            x='Frequência', y='Sinistro_Medio',
-            size='Total_Premio', color='Utilização',
-            labels={'Sinistro_Medio': 'Severidade média (R$)',
-                    'Frequência': 'Frequência (sinistros por apólice)'},
-            height=480
-        )
-        # Linhas da referência FIXA — mesmas medianas usadas na classificação
-        fig_mapa.add_hline(y=_med_sev,  line_dash='dash', line_color='#9ca3af',
-                           annotation_text='mediana severidade (base completa)', annotation_font_size=10)
-        fig_mapa.add_vline(x=_med_freq, line_dash='dash', line_color='#9ca3af',
-                           annotation_text='mediana frequência (base completa)', annotation_font_size=10)
-        fig_mapa.update_traces(
-            hovertemplate='<b>%{fullData.name}</b><br>'
-                          'Frequência: %{x:.2%}<br>'
-                          'Severidade média: R$ %{y:,.2f}'
-                          '<extra></extra>'
-        )
-        fig_mapa.update_layout(
-            showlegend=True,
-            legend=dict(orientation='v', yanchor='top', y=1.0,
-                        xanchor='left', x=1.02, font=dict(size=10),
-                        itemwidth=30),
-            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-            xaxis_tickformat='.0%',
-            margin=dict(r=10)
-        )
-        st.plotly_chart(fig_mapa, use_container_width=True)
-        st.caption(
-            "Quadrante superior direito = alta frequência e alta severidade (pior perfil). "
-            "Superior esquerdo = baixa frequência com severidade alta (perfil de cauda/catastrófico). "
-            "Cada cor é uma utilização (identificada na legenda ao lado; passe o mouse sobre a bolha para "
-            "ver os valores). Quadrante superior direito = alta frequência e alta severidade. "
-            "Tamanho da bolha = prêmio (exposição). As linhas tracejadas são as medianas da base completa — "
-            "a vertical é a régua da frequência na coluna Perfil; a horizontal é apenas referência visual "
-            "(a severidade do Perfil é classificada pela razão média/mediana de cada utilização)."
-        )
-
-    # ── Memória de cálculo: passo a passo do perfil de uma utilização ────────
-    with st.expander("🧮 Memória de cálculo do perfil — passo a passo por utilização"):
-        _util_escolhida = st.selectbox(
-            'Escolha a utilização',
-            options=_perfil_util.sort_values('Total_Premio', ascending=False)['Utilização'].astype(str).tolist(),
-            key='util_memoria_calculo'
-        )
-        _r = _perfil_util[_perfil_util['Utilização'] == _util_escolhida].iloc[0]
-
-        # Valores formatados (padrão BR)
-        _f_freq       = _fmt_pct(_r['Frequência'])
-        _f_med_freq   = _fmt_pct(_med_freq)
-        _f_lim_alta   = _fmt_pct(_med_freq * _LIM_ALTA)
-        _f_lim_baixa  = _fmt_pct(_med_freq * _LIM_BAIXA)
-        _razao_freq   = (_r['Frequência'] / _med_freq) if _med_freq > 0 else 0
-        _f_razao_freq = f"{_razao_freq:.0%}".replace('.', ',')
-        _f_media      = formatar_valor_br(_r['Sinistro_Medio'])
-        _f_mediana    = formatar_valor_br(_r['Sinistro_Mediano'])
-        _f_cauda      = f"{_r['Media_Mediana']:.2f}".replace('.', ',')
-        _f_sev_alta   = f"{_LIM_SEV_ALTA:.2f}".replace('.', ',')
-        _f_sev_baixa  = f"{_LIM_SEV_BAIXA:.2f}".replace('.', ',')
-        if int(_r['Qtd_Graves']) > 0:
-            _txt_trava = (f"- Trava de cauda: a utilização tem **{int(_r['Qtd_Graves'])} sinistro(s) "
-                          f"acima do corte selecionado** — se a razão indicar Baixa, o nível sobe para Média")
-        else:
-            _txt_trava = "- Trava de cauda: não se aplica (nenhum sinistro acima do corte selecionado)"
-
-        st.markdown(f"""
-**1️⃣ Frequência da utilização** *(dados do período/filtros selecionados)*
-- Sinistros com valor no período: **{int(_r['Qtd_Sinistros'])}**
-- Apólices no período: **{int(_r['Qtd_Apolices'])}**
-- Frequência = {int(_r['Qtd_Sinistros'])} ÷ {int(_r['Qtd_Apolices'])} = **{_f_freq}**
-
-**2️⃣ Comparação com a régua fixa de frequência** *(mediana da base completa, independe dos filtros)*
-- Mediana de frequência da carteira: **{_f_med_freq}**
-- Limiar de Alta = 150% da mediana = **{_f_lim_alta}** · Limiar de Baixa = 67% da mediana = **{_f_lim_baixa}**
-- A frequência de {_f_freq} equivale a **{_f_razao_freq}** da mediana → nível **{_r['Nível Frequência']}**
-
-**3️⃣ Severidade da utilização** *(razão média ÷ mediana da própria utilização — índice de cauda)*
-- Severidade média: **R$ {_f_media}** · Severidade mediana: **R$ {_f_mediana}**
-- Razão = {_f_media} ÷ {_f_mediana} = **{_f_cauda}**
-- Interpretação: quanto maior a razão, mais a média é puxada por poucos sinistros grandes (cauda pesada)
-
-**4️⃣ Comparação com as bandas de severidade**
-- Alta: razão ≥ **{_f_sev_alta}** · Baixa: razão ≤ **{_f_sev_baixa}** · Média: entre as duas
-{_txt_trava}
-- Resultado: nível **{_r['Nível Severidade']}**
-
-**✅ Perfil final: {_r['Perfil']}**
-""")
-else:
-    st.info("Sem dados suficientes para montar o perfil de risco por Utilização.")
-
-# ── Nota metodológica (padrão das seções analíticas do app) ──────────────────
-with st.expander("🧮 Como interpretar os cálculos — visão ressegurador"):
-    st.markdown("""
-<b>Base:</b> sinistros com valor consolidado (pagos + reservas) maior que zero no período filtrado. Sinistros avisados sem movimentação financeira são desconsiderados de toda a seção (frequência e severidade).
-
-
-<b>Frequência</b> = sinistros únicos com valor ÷ apólices únicas do segmento, no período filtrado (slider). Não é frequência anualizada por veículo-exposto — informe isso ao ressegurador se solicitado.
-
-
-<b>Severidade</b> = valor consolidado por sinistro, incluindo todas as coberturas acionadas.
-
-
-<b>Classificação de frequência (Baixa/Média/Alta):</b> comparação contra a mediana da <b>base completa</b> (todas as apólices e sinistros carregados, sem filtros nem slider), com bandas Alta ≥ 150% da mediana e Baixa ≤ 67% da mediana. Por usar referência fixa, o rótulo é estável e não muda conforme os filtros.
-
-
-<b>Classificação de severidade (Baixa/Média/Alta):</b> razão <b>média ÷ mediana</b> dos sinistros da própria utilização (índice de cauda). Razão elevada indica que poucos sinistros de grande valor puxam a média para cima — distribuição de cauda pesada, com maior potencial de perdas severas. Bandas: Alta ≥ 3,00 · Baixa ≤ 2,50 · Média entre as duas (limiar de Baixa calibrado pelo julgamento de subscrição). <b>Trava de cauda:</b> utilização com ao menos um sinistro acima do corte selecionado não é classificada como severidade Baixa — sobe para Média (por depender do corte escolhido, o nível de severidade pode mudar conforme essa seleção). Como usa os dados da própria utilização, o rótulo independe do mix da carteira.
-
-
-<b>Corte de sinistro grave:</b> valores fixos de R$ 100 mil a R$ 5 milhões (critério: valor ≥ corte) e "Acima de 7.000.000,00" (critério: valor > R$ 7 milhões). Sugerido alinhar o corte com a prioridade/retenção do contrato de resseguro.
-""", unsafe_allow_html=True)
-
-# ══════════════════════════════════════════════════════════════════════════════
-# BLOCO: DIAGNÓSTICO DE CAUSA-RAIZ DA SINISTRALIDADE
-# Cinco visões, do geral ao específico, para identificar O QUÊ está subindo e ONDE.
-#   1. Atribuição do delta (frequência × severidade × mix)
-#   2. Decomposição do valor (indenização × despesa × honorário × salvado)
-#   3. Causa do sinistro (nm_causa) — evolução e concentração
-#   4. Matriz de deterioração Utilização × UF (frequência e severidade lado a lado)
-#   5. Foco no último ano — ranking do que mais piorou
 #
-# Base: sinistros alocados por ANO DO ACIDENTE (AY = ano de dt_ocorrencia);
-# apólices e prêmio por ano de início de vigência. Frequência e severidade são
-# priorizadas por serem robustas ao casamento imperfeito de prêmio; a
-# sinistralidade AY é exibida ao lado, como aproximação.
-# ══════════════════════════════════════════════════════════════════════════════
+#
+# FIM DADOS DE SINISTRO
+#
+#
+#
+#
 
-st.write("---")
-st.subheader("🔬 Diagnóstico de Causa-Raiz da Sinistralidade")
-st.caption(
-    "Investigação do aumento de sinistralidade, do geral ao específico: o que subiu "
-    "(frequência ou severidade), de que tipo de custo, por qual causa, e onde está "
-    "concentrado. Sinistros alocados pelo ano do acidente (data de ocorrência)."
-)
 
-# ── Preparação: base de sinistros com dimensões e ano do acidente ────────────
-_cr_ok = False
-if not df_sinistros.empty and not dados_calculados.empty:
-    _cr = df_sinistros.copy()
+# st.divider()
 
-    # Valor total do sinistro (mesma fórmula do app: sin + desp + honor - salvado)
-    for _c in ['vl_sinistro_total', 'vl_despesa_total', 'vl_honorario_total', 'vl_salvado_total']:
-        if _c in _cr.columns:
-            _cr[_c] = pd.to_numeric(_cr[_c], errors='coerce').fillna(0.0)
-        else:
-            _cr[_c] = 0.0
-    _cr['Valor_Total'] = (_cr['vl_sinistro_total'] + _cr['vl_despesa_total']
-                          + _cr['vl_honorario_total'] - _cr['vl_salvado_total'])
-
-    # Ano do acidente (AY) a partir da data de ocorrência
-    _cr['AY'] = pd.to_datetime(_cr['dt_ocorrencia'], dayfirst=True, errors='coerce').dt.year
-
-    # nm_causa — normaliza e trata ausências
-    if 'nm_causa' in _cr.columns:
-        _cr['Causa'] = _cr['nm_causa'].fillna('Não informada').replace('', 'Não informada').astype(str).str.strip().str.title()
-    else:
-        _cr['Causa'] = 'Não informada'
-
-    # Traz Utilização e Região (UF) da apólice
-    _map_dim = dados_calculados[['N° Apólice', 'Utilização', 'Região de Circulação']].drop_duplicates('N° Apólice')
-    _cr = _cr.merge(_map_dim, on='N° Apólice', how='left')
-    _cr['Utilização'] = _cr['Utilização'].fillna('Não identificada')
-    _cr['UF'] = _cr['Região de Circulação'].astype(str).str[:2].str.strip().replace({'na': 'ND', 'No': 'ND', '': 'ND'}).fillna('ND')
-
-    _cr = _cr[_cr['AY'].notna()].copy()
-    _cr['AY'] = _cr['AY'].astype(int)
-
-    # Exposição (apólices) por ano de vigência — denominador da frequência/sinistralidade
-    _expo_ano = dados_calculados.groupby('Ano Vigência').agg(
-        Apolices=('N° Apólice', 'nunique'),
-        Premio=('Soma Prêmio Pago por Apolice', 'sum')
-    ).reset_index().rename(columns={'Ano Vigência': 'Ano'})
-
-    _anos_ay = sorted(_cr['AY'].unique())
-    if len(_anos_ay) >= 2:
-        _cr_ok = True
-
-if not _cr_ok:
-    st.info("Base de sinistros insuficiente para o diagnóstico de causa-raiz "
-            "(é necessário pelo menos dois anos de acidente com data de ocorrência válida).")
-else:
-    _ano_atual = _anos_ay[-1]
-    _ano_ant = _anos_ay[-2]
-
-    # Agregado de sinistro por AY
-    def _agg_ay(df):
-        return df.groupby('AY').agg(
-            Qtd=('nr_sinistro', 'nunique'),
-            Valor=('Valor_Total', 'sum')
-        ).reset_index()
-
-    _sin_ay = _agg_ay(_cr)
-    _sin_ay = _sin_ay.merge(_expo_ano, left_on='AY', right_on='Ano', how='left')
-    _sin_ay['Frequência'] = _sin_ay['Qtd'] / _sin_ay['Apolices'].replace(0, np.nan)
-    _sin_ay['Severidade'] = _sin_ay['Valor'] / _sin_ay['Qtd'].replace(0, np.nan)
-    _sin_ay['Sinistralidade'] = _sin_ay['Valor'] / _sin_ay['Premio'].replace(0, np.nan)
-
-    _lin_atual = _sin_ay[_sin_ay['AY'] == _ano_atual]
-    _lin_ant = _sin_ay[_sin_ay['AY'] == _ano_ant]
-
-    # ══════════════════════════════════════════════════════════════════════
-    # VISÃO 1 — ATRIBUIÇÃO DO DELTA (frequência × severidade × mix)
-    # ══════════════════════════════════════════════════════════════════════
-    st.markdown(f'<p class="section-label">1 · Atribuição do aumento: {_ano_ant} → {_ano_atual}</p>', unsafe_allow_html=True)
-
-    if not _lin_atual.empty and not _lin_ant.empty:
-        _f0, _f1 = _lin_ant['Frequência'].iloc[0], _lin_atual['Frequência'].iloc[0]
-        _s0, _s1 = _lin_ant['Severidade'].iloc[0], _lin_atual['Severidade'].iloc[0]
-        _sin0, _sin1 = _lin_ant['Sinistralidade'].iloc[0], _lin_atual['Sinistralidade'].iloc[0]
-
-        # Prêmio-médio por apólice (para decompor sinistralidade = freq × sev / prêmio_medio)
-        _pm0 = _lin_ant['Premio'].iloc[0] / _lin_ant['Apolices'].iloc[0] if _lin_ant['Apolices'].iloc[0] else np.nan
-        _pm1 = _lin_atual['Premio'].iloc[0] / _lin_atual['Apolices'].iloc[0] if _lin_atual['Apolices'].iloc[0] else np.nan
-
-        cA, cB, cC, cD = st.columns(4)
-        cA.metric("Frequência",
-                  f"{_f1:.3f}".replace('.', ','),
-                  delta=f"{(_f1/_f0-1)*100:+.1f}%".replace('.', ',') if _f0 else None)
-        cB.metric("Severidade média",
-                  f"R$ {formatar_valor_br(_s1)}",
-                  delta=f"{(_s1/_s0-1)*100:+.1f}%".replace('.', ',') if _s0 else None)
-        cC.metric("Sinistralidade (AY aprox.)",
-                  f"{_sin1:.1%}".replace('.', ','),
-                  delta=f"{(_sin1-_sin0)*100:+.1f} p.p.".replace('.', ','))
-        cD.metric("Sinistros no ano",
-                  f"{int(_lin_atual['Qtd'].iloc[0]):,}".replace(',', '.'),
-                  delta=f"{int(_lin_atual['Qtd'].iloc[0]-_lin_ant['Qtd'].iloc[0]):+,}".replace(',', '.'))
-
-        # Atribuição aproximada: quanto da variação de sinistralidade veio de
-        # frequência, de severidade e do prêmio (mix/preço). Decomposição
-        # logarítmica-linear simples sobre Sinistralidade ≈ (Freq × Sev) / PrêmioMédio.
-        if all(v and v > 0 for v in [_f0, _f1, _s0, _s1, _pm0, _pm1, _sin0]):
-            _d_total = _sin1 - _sin0
-            _contrib_freq = _sin0 * (_f1/_f0 - 1)
-            _contrib_sev = _sin0 * (_s1/_s0 - 1)
-            _contrib_premio = _sin0 * (_pm0/_pm1 - 1)
-            # normaliza para fechar com o delta observado
-            _soma = _contrib_freq + _contrib_sev + _contrib_premio
-            _ajuste = (_d_total / _soma) if _soma else 1
-            _cf, _cs, _cp = _contrib_freq*_ajuste, _contrib_sev*_ajuste, _contrib_premio*_ajuste
-
-            _attr = pd.DataFrame({
-                'Fator': ['Frequência (mais sinistros/apólice)',
-                          'Severidade (sinistro médio maior)',
-                          'Prêmio médio (preço/mix)'],
-                'Contribuição (p.p.)': [_cf*100, _cs*100, _cp*100]
-            })
-            fig_attr = px.bar(_attr, x='Contribuição (p.p.)', y='Fator', orientation='h',
-                              text=_attr['Contribuição (p.p.)'].map(lambda x: f"{x:+.1f}".replace('.', ',')),
-                              height=240)
-            fig_attr.update_traces(marker_color=['#dc2626', '#f59e0b', '#1a56db'], textposition='outside')
-            fig_attr.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                                   yaxis_title=None, margin=dict(l=10, r=40, t=10, b=10))
-            st.plotly_chart(fig_attr, use_container_width=True)
-            st.caption(
-                f"Dos {_d_total*100:+.1f} p.p. de variação da sinistralidade entre {_ano_ant} e {_ano_atual}, "
-                f"o gráfico atribui quanto veio de cada fator. Barra vermelha/laranja positiva = piora por "
-                f"risco (frequência/severidade); azul = efeito de preço/mix. Decomposição aproximada.".replace('.', ',')
-            )
-
-    with st.expander("🧮 Como interpretar esta análise"):
-        st.markdown(
-            "**Frequência** = sinistros únicos do ano do acidente ÷ apólices expostas. "
-            "**Severidade** = valor total ÷ nº de sinistros. **Sinistralidade AY** = valor de "
-            "sinistro do ano do acidente ÷ prêmio do ano de vigência — é uma **aproximação** "
-            "(o casamento exato exigiria prêmio ganho por ano-calendário). Por isso, priorize "
-            "frequência e severidade para diagnóstico: elas não dependem do prêmio. A atribuição "
-            "decompõe a variação da sinistralidade nos três fatores; é indicativa, não contábil."
-        )
-
-    # ══════════════════════════════════════════════════════════════════════
-    # VISÃO 2 — DECOMPOSIÇÃO DO VALOR (indenização × despesa × honorário × salvado)
-    # ══════════════════════════════════════════════════════════════════════
-    st.write("")
-    st.markdown('<p class="section-label">2 · Do que é feito o custo: indenização × despesa × honorário × salvado</p>', unsafe_allow_html=True)
-
-    _comp = _cr.groupby('AY').agg(
-        Indenizacao=('vl_sinistro_total', 'sum'),
-        Despesa=('vl_despesa_total', 'sum'),
-        Honorario=('vl_honorario_total', 'sum'),
-        Salvado=('vl_salvado_total', 'sum')
-    ).reset_index()
-    _comp['Salvado'] = -_comp['Salvado']  # salvado reduz o custo
-
-    fig_comp = go.Figure()
-    for _col, _cor in [('Indenizacao', '#dc2626'), ('Despesa', '#f59e0b'),
-                       ('Honorario', '#8b5cf6'), ('Salvado', '#10b981')]:
-        fig_comp.add_bar(x=_comp['AY'].astype(str), y=_comp[_col], name=_col.replace('Indenizacao', 'Indenização').replace('Honorario', 'Honorário'),
-                         marker_color=_cor)
-    fig_comp.update_layout(barmode='relative', height=360, plot_bgcolor='rgba(0,0,0,0)',
-                           paper_bgcolor='rgba(0,0,0,0)', legend=dict(orientation='h', y=1.1),
-                           xaxis_title='Ano do Acidente')
-    st.plotly_chart(fig_comp, use_container_width=True)
-
-    # Variação de cada componente no último ano
-    if len(_comp) >= 2:
-        _c_at = _comp[_comp['AY'] == _ano_atual].iloc[0]
-        _c_an = _comp[_comp['AY'] == _ano_ant].iloc[0]
-        v1, v2, v3 = st.columns(3)
-        for _col, _colobj, _nome in [('Indenizacao', v1, 'Indenização'), ('Despesa', v2, 'Despesas'), ('Honorario', v3, 'Honorários')]:
-            _var = (_c_at[_col]/_c_an[_col]-1)*100 if _c_an[_col] else 0
-            _colobj.metric(f"{_nome} ({_ano_atual})", f"R$ {formatar_valor_br(_c_at[_col])}",
-                           delta=f"{_var:+.1f}%".replace('.', ','))
-        st.caption(
-            "Se o aumento vier de **indenização**, é risco puro (foco em subscrição). Se vier de "
-            "**despesa/honorário**, aponta para judicialização e custo de regulação (foco jurídico/operacional). "
-            "Salvado em verde reduz o custo — queda dele piora o líquido."
-        )
-
-    # ══════════════════════════════════════════════════════════════════════
-    # VISÃO 3 — CAUSA DO SINISTRO (nm_causa)
-    # ══════════════════════════════════════════════════════════════════════
-    st.write("")
-    st.markdown('<p class="section-label">3 · O que está acontecendo: causas que mais cresceram</p>', unsafe_allow_html=True)
-
-    _cau_at = _cr[_cr['AY'] == _ano_atual].groupby('Causa').agg(
-        Qtd_Atual=('nr_sinistro', 'nunique'), Valor_Atual=('Valor_Total', 'sum')).reset_index()
-    _cau_an = _cr[_cr['AY'] == _ano_ant].groupby('Causa').agg(
-        Qtd_Ant=('nr_sinistro', 'nunique'), Valor_Ant=('Valor_Total', 'sum')).reset_index()
-    _cau = _cau_at.merge(_cau_an, on='Causa', how='outer').fillna(0)
-    _cau['Δ Qtd'] = _cau['Qtd_Atual'] - _cau['Qtd_Ant']
-    _cau['Δ Valor'] = _cau['Valor_Atual'] - _cau['Valor_Ant']
-    _cau = _cau.sort_values('Δ Valor', ascending=False)
-
-    cca, ccb = st.columns([3, 2])
-    with cca:
-        _top_cau = _cau.head(10).sort_values('Δ Valor', ascending=True)
-        fig_cau = px.bar(_top_cau, x='Δ Valor', y='Causa', orientation='h',
-                         text=_top_cau['Δ Valor'].map(lambda x: ('+' if x >= 0 else '') + formatar_valor_br(x)),
-                         height=400)
-        fig_cau.update_traces(marker_color=_top_cau['Δ Valor'].map(lambda x: '#dc2626' if x >= 0 else '#10b981'),
-                              textposition='outside', textfont_size=9)
-        fig_cau.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                              yaxis_title=None, xaxis_title=f'Variação de valor {_ano_ant}→{_ano_atual} (R$)',
-                              margin=dict(l=10, r=60, t=10, b=10))
-        st.plotly_chart(fig_cau, use_container_width=True)
-    with ccb:
-        _tab_cau = _cau.head(10).copy()
-        _tab_cau['Valor_Atual'] = _tab_cau['Valor_Atual'].map(formatar_valor_br)
-        _tab_cau['Δ Valor'] = _tab_cau['Δ Valor'].map(lambda x: ('+' if x >= 0 else '') + formatar_valor_br(x))
-        _tab_cau['Qtd_Atual'] = _tab_cau['Qtd_Atual'].astype(int)
-        _tab_cau['Δ Qtd'] = _tab_cau['Δ Qtd'].astype(int).map(lambda x: f"{x:+d}")
-        st.dataframe(_tab_cau[['Causa', 'Qtd_Atual', 'Δ Qtd', 'Valor_Atual', 'Δ Valor']].rename(columns={
-            'Qtd_Atual': f'Qtd {_ano_atual}', 'Valor_Atual': f'Valor {_ano_atual}'}),
-            hide_index=True, use_container_width=True, height=400)
-    st.caption(f"Causas ordenadas pela variação de valor entre {_ano_ant} e {_ano_atual}. "
-               "Vermelho = causa que cresceu; verde = recuou. É o 'o quê' do aumento.")
-
-    # ══════════════════════════════════════════════════════════════════════
-    # VISÃO 4 — MATRIZ DE DETERIORAÇÃO Utilização × UF
-    # ══════════════════════════════════════════════════════════════════════
-    st.write("")
-    st.markdown('<p class="section-label">4 · Onde piorou: matriz Utilização × UF</p>', unsafe_allow_html=True)
-
-    _metrica_mat = st.radio("Métrica da matriz", ['Frequência', 'Severidade média'],
-                            horizontal=True, key='cr_metrica_matriz')
-
-    # Agrega sinistro por (Utilização, UF, AY)
-    def _matriz(ano):
-        d = _cr[_cr['AY'] == ano]
-        g = d.groupby(['Utilização', 'UF']).agg(
-            Qtd=('nr_sinistro', 'nunique'), Valor=('Valor_Total', 'sum')).reset_index()
-        return g
-
-    _mat_at = _matriz(_ano_atual)
-    _mat_an = _matriz(_ano_ant)
-
-    # Exposição por (Utilização, UF) — para frequência
-    _expo_dim = dados_calculados.copy()
-    _expo_dim['UF'] = _expo_dim['Região de Circulação'].astype(str).str[:2].str.strip()
-    _expo_dim = _expo_dim.groupby(['Utilização', 'UF']).agg(Apolices=('N° Apólice', 'nunique')).reset_index()
-
-    _mat = _mat_at.merge(_mat_an, on=['Utilização', 'UF'], how='outer', suffixes=('_at', '_an')).fillna(0)
-    _mat = _mat.merge(_expo_dim, on=['Utilização', 'UF'], how='left').fillna(0)
-
-    if _metrica_mat == 'Frequência':
-        _mat['Val_at'] = _mat['Qtd_at'] / _mat['Apolices'].replace(0, np.nan)
-        _mat['Val_an'] = _mat['Qtd_an'] / _mat['Apolices'].replace(0, np.nan)
-    else:
-        _mat['Val_at'] = _mat['Valor_at'] / _mat['Qtd_at'].replace(0, np.nan)
-        _mat['Val_an'] = _mat['Valor_an'] / _mat['Qtd_an'].replace(0, np.nan)
-
-    _mat['Δ'] = _mat['Val_at'].fillna(0) - _mat['Val_an'].fillna(0)
-
-    # Filtra combinações com exposição mínima para reduzir ruído
-    _min_apo_mat = st.slider("Mínimo de apólices por célula", 1, 200, 20, 10, key='cr_min_apo_mat')
-    _mat_f = _mat[_mat['Apolices'] >= _min_apo_mat].copy()
-
-    if not _mat_f.empty:
-        _piv = _mat_f.pivot_table(index='Utilização', columns='UF', values='Δ', aggfunc='first')
-        fig_mat = px.imshow(_piv, color_continuous_scale='RdYlGn_r', aspect='auto',
-                            color_continuous_midpoint=0, height=440, text_auto='.2f',
-                            labels=dict(color=f'Δ {_metrica_mat}'))
-        fig_mat.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
-        fig_mat.update_xaxes(tickangle=0)
-        st.plotly_chart(fig_mat, use_container_width=True)
-        st.caption(
-            f"Variação da {_metrica_mat.lower()} de {_ano_ant} para {_ano_atual}, por combinação de "
-            "utilização e UF. **Vermelho = piorou** (subiu), verde = melhorou. As células vermelhas mais "
-            "intensas são o foco do problema. Ajuste o mínimo de apólices para equilibrar detalhe e ruído."
-        )
-    else:
-        st.info(f"Nenhuma combinação Utilização × UF com ao menos {_min_apo_mat} apólices.")
-
-    # ══════════════════════════════════════════════════════════════════════
-    # VISÃO 5 — FOCO NO ÚLTIMO ANO: ranking do que mais contribuiu para o aumento
-    # ══════════════════════════════════════════════════════════════════════
-    st.write("")
-    st.markdown(f'<p class="section-label">5 · Prioridade de ação: o que mais puxou o aumento em {_ano_atual}</p>', unsafe_allow_html=True)
-
-    # Combinação Utilização + UF + Causa, pela variação de valor
-    def _combo(ano):
-        return _cr[_cr['AY'] == ano].groupby(['Utilização', 'UF', 'Causa']).agg(
-            Qtd=('nr_sinistro', 'nunique'), Valor=('Valor_Total', 'sum')).reset_index()
-
-    _cb_at = _combo(_ano_atual)
-    _cb_an = _combo(_ano_ant)
-    _cb = _cb_at.merge(_cb_an, on=['Utilização', 'UF', 'Causa'], how='outer', suffixes=('_at', '_an')).fillna(0)
-    _cb['Δ Valor'] = _cb['Valor_at'] - _cb['Valor_an']
-    _cb['Δ Qtd'] = (_cb['Qtd_at'] - _cb['Qtd_an']).astype(int)
-    _cb = _cb.sort_values('Δ Valor', ascending=False).head(15)
-
-    _cb_ex = _cb.copy()
-    _cb_ex['Valor_at'] = _cb_ex['Valor_at'].map(formatar_valor_br)
-    _cb_ex['Δ Valor'] = _cb_ex['Δ Valor'].map(lambda x: ('+' if x >= 0 else '') + formatar_valor_br(x))
-    _cb_ex['Qtd_at'] = _cb_ex['Qtd_at'].astype(int)
-    _cb_ex['Δ Qtd'] = _cb_ex['Δ Qtd'].map(lambda x: f"{x:+d}")
-    st.dataframe(
-        _cb_ex[['Utilização', 'UF', 'Causa', 'Qtd_at', 'Δ Qtd', 'Valor_at', 'Δ Valor']].rename(columns={
-            'Qtd_at': f'Qtd {_ano_atual}', 'Valor_at': f'Valor {_ano_atual}'}),
-        hide_index=True, use_container_width=True, height=430)
-    st.caption(
-        f"As 15 combinações (utilização + UF + causa) que mais aumentaram em valor de {_ano_ant} para "
-        f"{_ano_atual}. É a lista de prioridade: onde a subscrição e a precificação devem agir primeiro."
-    )
-
-    # Nota metodológica geral
-    with st.expander("🧮 Como interpretar esta análise — diagnóstico de causa-raiz"):
-        st.markdown(
-            "**Ano do acidente (AY):** todos os cortes usam a data de ocorrência do sinistro, não a de "
-            "aviso ou pagamento — é a visão correta para diagnosticar o comportamento do risco.\n\n"
-            "**Frequência × severidade primeiro:** o aumento de sinistralidade pode enganar por causa do "
-            "denominador (prêmio). Frequência (sinistros ÷ apólices) e severidade (valor ÷ sinistro) são "
-            "robustas e apontam a causa real.\n\n"
-            "**Cuidado com o último ano (IBNR):** o ano mais recente tende a ter sinistros ainda não "
-            "avisados/reservados, então seu valor e severidade podem estar **subestimados** — a piora real "
-            "pode ser maior. Leia junto com o desenvolvimento por safra.\n\n"
-            "**UF** é derivada dos dois primeiros caracteres da Região de Circulação.\n\n"
-            "**Sequência de leitura:** visão 1 diz *se* e *por que* subiu (freq/sev); visão 2 diz se é risco "
-            "ou custo jurídico; visão 3 diz a *causa*; visão 4 mostra *onde*; visão 5 dá a lista de ação."
-        )
+# '''
+# para cima trabalho filtro apólice
+#
+#
+#
+#
+#
+#
+# '''
 
 
 st.write("---")
 st.caption("Desenvolvido por Alex Sousa.")
-
-# Instruções para executar o Streamlit:
-# python -m streamlit run nome_do_arquivo.py
-# ---
-# **Para executar este aplicativo Streamlit:**
-# 1. Abra o terminal ou prompt de comando.
-# 2. Navegue até o diretório onde você salvou o arquivo.
-# 5. Execute o comando: `python -m streamlit nome_do_arquivo.py`
-# Se o Streamlit não estiver instalado, execute: `pip install streamlit pandas openpyxl`
