@@ -1111,6 +1111,169 @@ if not df_geral_periodo.empty:
 else:
     st.info("Nenhum dado disponível para agrupar por Tipo de Emissão.")
 
+# ============= ANÁLISE POR RAMO E COBERTURA =============
+# 1. Agrupamento principal por Ramo (Prêmio, Sinistro e Qtd Apólices)
+groupby_geral_ramo = df_para_soma.groupby('Ramo').agg(
+    Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
+    Total_Sinistro=('Soma Sinistro Por Apolice', 'sum'),
+    Qtd_Apolices=('N° Apólice', 'nunique')
+).reset_index()
+
+# 2. Busca a quantidade de sinistros por ramo para o período selecionado
+# Usamos o df_sinistro_periodo_atualizado que você já definiu anteriormente
+qtd_sin_geral_por_ramo = df_sinistro_periodo_atualizado.groupby('nr_ramo')['nr_sinistro'].nunique().reset_index()
+qtd_sin_geral_por_ramo.rename(columns={'nr_ramo': 'Ramo', 'nr_sinistro': 'Qtd_Sinistros'}, inplace=True)
+
+# 3. Une as informações de prêmio/apólice com a contagem de sinistros
+groupby_geral_ramo = pd.merge(groupby_geral_ramo, qtd_sin_geral_por_ramo, on='Ramo', how='left').fillna(0)
+
+# 4. Cálculo da Sinistralidade
+groupby_geral_ramo['Sinistralidade'] = groupby_geral_ramo.apply(
+    lambda row: row['Total_Sinistro'] / row['Total_Premio'] if row['Total_Premio'] != 0 else 0, axis=1
+)
+
+# 5. Criar DataFrame de exibição com formatações
+df_geral_ramo_exibicao = groupby_geral_ramo.copy()
+df_geral_ramo_exibicao['Total_Premio'] = df_geral_ramo_exibicao['Total_Premio'].map(formatar_valor_br)
+df_geral_ramo_exibicao['Total_Sinistro'] = df_geral_ramo_exibicao['Total_Sinistro'].map(formatar_valor_br)
+df_geral_ramo_exibicao['Sinistralidade'] = df_geral_ramo_exibicao['Sinistralidade'].map(lambda x: f"{x:.2%}")
+df_geral_ramo_exibicao['Qtd_Sinistros'] = df_geral_ramo_exibicao['Qtd_Sinistros'].astype(int)
+
+# Reordenar colunas para a tabela ficar organizada
+colunas_geral_view = ['Ramo', 'Total_Premio', 'Total_Sinistro', 'Sinistralidade', 'Qtd_Apolices', 'Qtd_Sinistros', ]
+df_geral_ramo_exibicao = df_geral_ramo_exibicao[colunas_geral_view]
+
+# 6. Agrupamento por Cobertura (Geral - Mantendo sua lógica original)
+df_sinistro_geral_cobertura = df_sinistro_periodo_atualizado.groupby('Cobertura', as_index=False).agg(**{
+    'Total Sinistro': ('Total Sinistro', 'sum'),
+    'Qtd Sinistros': ('nr_sinistro', 'nunique')
+})
+
+# 3. Preparação do Gráfico de Pizza Geral
+df_pizza_geral = df_sinistro_geral_cobertura[df_sinistro_geral_cobertura['Total Sinistro'] > 0].copy()
+fig_pizza_geral = px.pie(
+    df_pizza_geral,
+    values='Total Sinistro',
+    names='Cobertura',
+    hole=0.4,
+    height=400
+)
+fig_pizza_geral.update_traces(textposition='outside', textinfo='percent+value')
+
+
+# Defina a largura das barras e a posição (offset) para que fiquem coladas
+bar_width = 0.45
+offset_premio = -bar_width / 2
+offset_sinistro = bar_width / 2
+
+# Gráfico de colunas para prêmio e sinistro dos ramos
+fig_ramo_geral = go.Figure(data=[
+    go.Bar(
+        name='Total Prêmio',
+        x=groupby_geral_ramo['Ramo'],
+        y=groupby_geral_ramo['Total_Premio'],
+        marker_color='rgba(54, 162, 235, 0.8)',
+        width=bar_width,
+        offset=offset_premio,  # Desloca a barra para a esquerda
+        
+        # === Adicione estas linhas para o rótulo da barra de Prêmio ===
+        text=groupby_geral_ramo['Total_Premio'].map(formatar_valor_br),
+        textposition='outside',
+        textfont=dict(
+            color='black',
+            size=12
+        )
+    ),
+    go.Bar(
+        name='Total Sinistro',
+        x=groupby_geral_ramo['Ramo'],
+        y=groupby_geral_ramo['Total_Sinistro'],
+        marker_color='red',
+        width=bar_width,
+        offset=offset_sinistro, # Desloca a barra para a direita
+        # === Adicione estas linhas para o rótulo da barra de Sinistro ===
+        text=groupby_geral_ramo['Total_Sinistro'].map(formatar_valor_br),
+        textposition='outside',
+        textfont=dict(
+            color='black',
+            size=12
+        )
+    )
+])
+
+fig_ramo_geral.update_layout(
+    xaxis=dict(
+        title='Ramo',
+        type='category', # <--- Adicione esta linha!
+        tickmode='array', # <--- Adicione esta linha!
+        tickvals=groupby_geral_ramo['Ramo'] # <--- Adicione esta linha!
+    ),
+    yaxis_title='Valores (R$)',
+    barmode='overlay', # Usa o modo overlay para sobrepor as barras
+    bargap=0.1,  # Controla o espaço entre os grupos
+    # === Configuração da legenda ===
+    legend=dict(
+        orientation="h",  # Torna a legenda horizontal
+        yanchor="top", # Ancoragem vertical: fundo da legenda
+        y=-0.2,           # Posição vertical: ligeiramente acima do gráfico (você pode ajustar este valor)
+        xanchor="center",  # Ancoragem horizontal: direita da legenda
+        x=0.5               # Posição horizontal: no canto superior direito
+    ),
+    # === ADICIONE ESTA LINHA PARA REMOVER O ESPAÇO SUPERIOR ===
+    margin=dict(t=0, b=0, l=0, r=0)
+)
+fig_ramo_geral.update_layout(barmode='group', margin=dict(t=20, b=0, l=0, r=0), height=400)
+
+
+# Exibição — Prêmio e Sinistro por Ramo (DF + gráfico)
+st.markdown('<p class="section-label">Prêmio e Sinistro por Ramo</p>', unsafe_allow_html=True)
+st.dataframe(df_geral_ramo_exibicao, hide_index=True, use_container_width=True)
+st.plotly_chart(fig_ramo_geral, use_container_width=True, config={'displayModeBar': False})
+
+# ── Evolução da Sinistralidade (%) por Ramo ──────────────────────────────────
+st.markdown('<p class="section-label">Evolução da Sinistralidade (%) por Ramo</p>', unsafe_allow_html=True)
+
+df_ramo_ano = df_para_soma.groupby(['Ano Vigência', 'Ramo']).agg(
+    Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
+    Total_Sinistro=('Soma Sinistro Por Apolice', 'sum')
+).reset_index()
+df_ramo_ano['Sinistralidade'] = df_ramo_ano.apply(
+    lambda row: row['Total_Sinistro'] / row['Total_Premio'] if row['Total_Premio'] != 0 else 0, axis=1
+)
+df_ramo_ano['Ramo'] = df_ramo_ano['Ramo'].astype(str)
+
+ramos_com_sin = df_ramo_ano[df_ramo_ano['Sinistralidade'] > 0]['Ramo'].unique()
+df_ramo_ano = df_ramo_ano[df_ramo_ano['Ramo'].isin(ramos_com_sin)]
+
+if not df_ramo_ano.empty:
+    fig_sin_ramo_ano = go.Figure()
+    for ramo in sorted(df_ramo_ano['Ramo'].unique()):
+        df_r = df_ramo_ano[df_ramo_ano['Ramo'] == ramo].sort_values('Ano Vigência')
+        fig_sin_ramo_ano.add_trace(go.Scatter(
+            x=df_r['Ano Vigência'],
+            y=df_r['Sinistralidade'],
+            mode='lines+markers+text',
+            name=f'Ramo {ramo}',
+            text=df_r['Sinistralidade'].map(lambda x: f"{x:.1%}"),
+            textposition='top center',
+            textfont=dict(size=11),
+            marker=dict(size=8),
+            line=dict(width=2),
+        ))
+    fig_sin_ramo_ano.update_layout(
+        xaxis=dict(title='Ano', tickmode='linear', dtick=1),
+        yaxis=dict(title='Sinistralidade (%)', tickformat='.0%'),
+        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+        margin=dict(t=40, b=20, l=0, r=0),
+        height=400,
+        hovermode='x unified'
+    )
+    fig_sin_ramo_ano.update_traces(hovertemplate='%{y:.2%}')
+    st.plotly_chart(fig_sin_ramo_ano, use_container_width=True, config={'displayModeBar': False})
+else:
+    st.info("Sem dados suficientes para o gráfico de sinistralidade por ramo.")
+
+
 # --- Dados de Prêmio e Sinistro por Utilização ---
 col_pr_sin_util_1, col_pr_sin_util_2 = st.columns(2)
 
@@ -1279,182 +1442,12 @@ if not df_para_soma.empty:
     else:
         st.info("Sem dados suficientes para o gráfico de sinistralidade por utilização.")
 
-# ============= ANÁLISE POR RAMO E COBERTURA =============
-# 1. Agrupamento principal por Ramo (Prêmio, Sinistro e Qtd Apólices)
-groupby_geral_ramo = df_para_soma.groupby('Ramo').agg(
-    Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
-    Total_Sinistro=('Soma Sinistro Por Apolice', 'sum'),
-    Qtd_Apolices=('N° Apólice', 'nunique')
-).reset_index()
-
-# 2. Busca a quantidade de sinistros por ramo para o período selecionado
-# Usamos o df_sinistro_periodo_atualizado que você já definiu anteriormente
-qtd_sin_geral_por_ramo = df_sinistro_periodo_atualizado.groupby('nr_ramo')['nr_sinistro'].nunique().reset_index()
-qtd_sin_geral_por_ramo.rename(columns={'nr_ramo': 'Ramo', 'nr_sinistro': 'Qtd_Sinistros'}, inplace=True)
-
-# 3. Une as informações de prêmio/apólice com a contagem de sinistros
-groupby_geral_ramo = pd.merge(groupby_geral_ramo, qtd_sin_geral_por_ramo, on='Ramo', how='left').fillna(0)
-
-# 4. Cálculo da Sinistralidade
-groupby_geral_ramo['Sinistralidade'] = groupby_geral_ramo.apply(
-    lambda row: row['Total_Sinistro'] / row['Total_Premio'] if row['Total_Premio'] != 0 else 0, axis=1
-)
-
-# 5. Criar DataFrame de exibição com formatações
-df_geral_ramo_exibicao = groupby_geral_ramo.copy()
-df_geral_ramo_exibicao['Total_Premio'] = df_geral_ramo_exibicao['Total_Premio'].map(formatar_valor_br)
-df_geral_ramo_exibicao['Total_Sinistro'] = df_geral_ramo_exibicao['Total_Sinistro'].map(formatar_valor_br)
-df_geral_ramo_exibicao['Sinistralidade'] = df_geral_ramo_exibicao['Sinistralidade'].map(lambda x: f"{x:.2%}")
-df_geral_ramo_exibicao['Qtd_Sinistros'] = df_geral_ramo_exibicao['Qtd_Sinistros'].astype(int)
-
-# Reordenar colunas para a tabela ficar organizada
-colunas_geral_view = ['Ramo', 'Total_Premio', 'Total_Sinistro', 'Sinistralidade', 'Qtd_Apolices', 'Qtd_Sinistros', ]
-df_geral_ramo_exibicao = df_geral_ramo_exibicao[colunas_geral_view]
-
-# 6. Agrupamento por Cobertura (Geral - Mantendo sua lógica original)
-df_sinistro_geral_cobertura = df_sinistro_periodo_atualizado.groupby('Cobertura', as_index=False).agg(**{
-    'Total Sinistro': ('Total Sinistro', 'sum'),
-    'Qtd Sinistros': ('nr_sinistro', 'nunique')
-})
-
-# 3. Preparação do Gráfico de Pizza Geral
-df_pizza_geral = df_sinistro_geral_cobertura[df_sinistro_geral_cobertura['Total Sinistro'] > 0].copy()
-fig_pizza_geral = px.pie(
-    df_pizza_geral,
-    values='Total Sinistro',
-    names='Cobertura',
-    hole=0.4,
-    height=400
-)
-fig_pizza_geral.update_traces(textposition='outside', textinfo='percent+value')
-
-
-# Defina a largura das barras e a posição (offset) para que fiquem coladas
-bar_width = 0.45
-offset_premio = -bar_width / 2
-offset_sinistro = bar_width / 2
-
-# Gráfico de colunas para prêmio e sinistro dos ramos
-fig_ramo_geral = go.Figure(data=[
-    go.Bar(
-        name='Total Prêmio',
-        x=groupby_geral_ramo['Ramo'],
-        y=groupby_geral_ramo['Total_Premio'],
-        marker_color='rgba(54, 162, 235, 0.8)',
-        width=bar_width,
-        offset=offset_premio,  # Desloca a barra para a esquerda
-        
-        # === Adicione estas linhas para o rótulo da barra de Prêmio ===
-        text=groupby_geral_ramo['Total_Premio'].map(formatar_valor_br),
-        textposition='outside',
-        textfont=dict(
-            color='black',
-            size=12
-        )
-    ),
-    go.Bar(
-        name='Total Sinistro',
-        x=groupby_geral_ramo['Ramo'],
-        y=groupby_geral_ramo['Total_Sinistro'],
-        marker_color='red',
-        width=bar_width,
-        offset=offset_sinistro, # Desloca a barra para a direita
-        # === Adicione estas linhas para o rótulo da barra de Sinistro ===
-        text=groupby_geral_ramo['Total_Sinistro'].map(formatar_valor_br),
-        textposition='outside',
-        textfont=dict(
-            color='black',
-            size=12
-        )
-    )
-])
-
-fig_ramo_geral.update_layout(
-    xaxis=dict(
-        title='Ramo',
-        type='category', # <--- Adicione esta linha!
-        tickmode='array', # <--- Adicione esta linha!
-        tickvals=groupby_geral_ramo['Ramo'] # <--- Adicione esta linha!
-    ),
-    yaxis_title='Valores (R$)',
-    barmode='overlay', # Usa o modo overlay para sobrepor as barras
-    bargap=0.1,  # Controla o espaço entre os grupos
-    # === Configuração da legenda ===
-    legend=dict(
-        orientation="h",  # Torna a legenda horizontal
-        yanchor="top", # Ancoragem vertical: fundo da legenda
-        y=-0.2,           # Posição vertical: ligeiramente acima do gráfico (você pode ajustar este valor)
-        xanchor="center",  # Ancoragem horizontal: direita da legenda
-        x=0.5               # Posição horizontal: no canto superior direito
-    ),
-    # === ADICIONE ESTA LINHA PARA REMOVER O ESPAÇO SUPERIOR ===
-    margin=dict(t=0, b=0, l=0, r=0)
-)
-fig_ramo_geral.update_layout(barmode='group', margin=dict(t=20, b=0, l=0, r=0), height=400)
-
-# Exibição em Colunas
-c1, c2 = st.columns(2)
-with c1:
-    st.markdown('<p class="section-label">Prêmio e Sinistro por Ramo</p>', unsafe_allow_html=True)
-    st.dataframe(df_geral_ramo_exibicao, hide_index=True, use_container_width=True)
-with c2:
-    st.markdown('<p class="section-label">Sinistros por Cobertura</p>', unsafe_allow_html=True)
-    # Formatação apenas para exibição
-    df_disp_cob = df_sinistro_geral_cobertura.copy()
-    df_disp_cob['Total Sinistro'] = df_disp_cob['Total Sinistro'].map(formatar_valor_br)
-    st.dataframe(df_disp_cob, hide_index=True, use_container_width=True)
-
-# exibir grafico de linhas ramos e pizza das coberturas
-c1, c2 = st.columns(2)
-with c1:
-    st.markdown('<p class="section-label">Prêmio e Sinistro por Ramo</p>', unsafe_allow_html=True)
-    st.plotly_chart(fig_ramo_geral, use_container_width=True, config={'displayModeBar': False})
-with c2:
-    st.markdown('<p class="section-label">Sinistros por Cobertura</p>', unsafe_allow_html=True)
-    st.plotly_chart(fig_pizza_geral, use_container_width=True, config={'displayModeBar': False})
-
-# ── Evolução da Sinistralidade (%) por Ramo ──────────────────────────────────
-st.markdown('<p class="section-label">Evolução da Sinistralidade (%) por Ramo</p>', unsafe_allow_html=True)
-
-df_ramo_ano = df_para_soma.groupby(['Ano Vigência', 'Ramo']).agg(
-    Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
-    Total_Sinistro=('Soma Sinistro Por Apolice', 'sum')
-).reset_index()
-df_ramo_ano['Sinistralidade'] = df_ramo_ano.apply(
-    lambda row: row['Total_Sinistro'] / row['Total_Premio'] if row['Total_Premio'] != 0 else 0, axis=1
-)
-df_ramo_ano['Ramo'] = df_ramo_ano['Ramo'].astype(str)
-
-ramos_com_sin = df_ramo_ano[df_ramo_ano['Sinistralidade'] > 0]['Ramo'].unique()
-df_ramo_ano = df_ramo_ano[df_ramo_ano['Ramo'].isin(ramos_com_sin)]
-
-if not df_ramo_ano.empty:
-    fig_sin_ramo_ano = go.Figure()
-    for ramo in sorted(df_ramo_ano['Ramo'].unique()):
-        df_r = df_ramo_ano[df_ramo_ano['Ramo'] == ramo].sort_values('Ano Vigência')
-        fig_sin_ramo_ano.add_trace(go.Scatter(
-            x=df_r['Ano Vigência'],
-            y=df_r['Sinistralidade'],
-            mode='lines+markers+text',
-            name=f'Ramo {ramo}',
-            text=df_r['Sinistralidade'].map(lambda x: f"{x:.1%}"),
-            textposition='top center',
-            textfont=dict(size=11),
-            marker=dict(size=8),
-            line=dict(width=2),
-        ))
-    fig_sin_ramo_ano.update_layout(
-        xaxis=dict(title='Ano', tickmode='linear', dtick=1),
-        yaxis=dict(title='Sinistralidade (%)', tickformat='.0%'),
-        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
-        margin=dict(t=40, b=20, l=0, r=0),
-        height=400,
-        hovermode='x unified'
-    )
-    fig_sin_ramo_ano.update_traces(hovertemplate='%{y:.2%}')
-    st.plotly_chart(fig_sin_ramo_ano, use_container_width=True, config={'displayModeBar': False})
-else:
-    st.info("Sem dados suficientes para o gráfico de sinistralidade por ramo.")
+# Exibição — Sinistros por Cobertura (DF + gráfico)
+st.markdown('<p class="section-label">Sinistros por Cobertura</p>', unsafe_allow_html=True)
+df_disp_cob = df_sinistro_geral_cobertura.copy()
+df_disp_cob['Total Sinistro'] = df_disp_cob['Total Sinistro'].map(formatar_valor_br)
+st.dataframe(df_disp_cob, hide_index=True, use_container_width=True)
+st.plotly_chart(fig_pizza_geral, use_container_width=True, config={'displayModeBar': False})
 
 # 5. Detalhamento por Ramos Específicos (23, 28, 82)
 ramos_alvo = [23, 28, 82]
