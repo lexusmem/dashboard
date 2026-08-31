@@ -400,6 +400,14 @@ def formatar_valor_br(valor):
     valor_us_format = f"{valor:,.2f}"
     return valor_us_format.replace(",", "X").replace(".", ",").replace("X", ".")
 
+# Navegação na sidebar — SEMPRE renderizada, inclusive quando não há dados
+# carregados (fica ANTES do st.stop para o usuário nunca ficar preso sem menu).
+st.sidebar.header('Navegação')
+st.sidebar.page_link("app.py", label="📋  Apólice / Segurado")
+st.sidebar.page_link("pages/2_Dados_Gerais.py", label="📊  Dados Gerais")
+st.sidebar.page_link("pages/3_Dados_Cotacoes.py", label="📝  Dados Cotações")
+st.sidebar.page_link("pages/4_Analise_Carteira_RCO.py", label="📈  Análise Carteira RCO")
+
 # Recupera os dados do session_state (carregados na página principal)
 if 'dados_calculados' not in st.session_state or st.session_state['dados_calculados'].empty:
     st.warning("⚠️ Os dados ainda não foram carregados. Volte à página principal e faça o upload dos arquivos.")
@@ -427,11 +435,6 @@ dados_exibicao = dados_exibicao[colunas].sort_values('N° Apólice')
 # ── PÁGINA 2: DADOS GERAIS ────────────────────────────────────────────────────
 
 # Navegação na sidebar (mesmo padrão da página de Dados Cotações)
-st.sidebar.header('Navegação')
-st.sidebar.page_link("app.py", label="📋  Apólice / Segurado")
-st.sidebar.page_link("pages/2_Dados_Gerais.py", label="📊  Dados Gerais")
-st.sidebar.page_link("pages/3_Dados_Cotacoes.py", label="📝  Dados Cotações")
-st.sidebar.page_link("pages/4_Analise_Carteira_RCO.py", label="📈  Análise Carteira RCO")
 
 # --- Lógica de Filtragem Hierárquica na Sidebar ---
 st.sidebar.header('Filtros Dados Gerais')
