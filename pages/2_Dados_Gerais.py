@@ -1225,10 +1225,78 @@ fig_ramo_geral.update_layout(
 fig_ramo_geral.update_layout(barmode='group', margin=dict(t=20, b=0, l=0, r=0), height=400)
 
 
-# Exibição — Prêmio e Sinistro por Ramo (DF + gráfico)
-st.markdown('<p class="section-label">Prêmio e Sinistro por Ramo</p>', unsafe_allow_html=True)
-st.dataframe(df_geral_ramo_exibicao, hide_index=True, use_container_width=True)
-st.plotly_chart(fig_ramo_geral, use_container_width=True, config={'displayModeBar': False})
+# Exibição — Prêmio e Sinistro por Ramo (DF + gráfico na mesma linha)
+_cr1, _cr2 = st.columns(2)
+with _cr1:
+    st.markdown('<p class="section-label">Prêmio e Sinistro por Ramo</p>', unsafe_allow_html=True)
+    st.dataframe(df_geral_ramo_exibicao, hide_index=True, use_container_width=True)
+with _cr2:
+    st.markdown('<p class="section-label">Prêmio e Sinistro por Ramo</p>', unsafe_allow_html=True)
+    st.plotly_chart(fig_ramo_geral, use_container_width=True, config={'displayModeBar': False})
+
+# ── Desempenho por Ano por Ramo (23/28/82) — 3 DFs lado a lado ───────────────
+# Cada tabela replica o "Desempenho Consolidado por Ano" restrito ao ramo, e
+# respeita a mesma visão UWY/AY selecionada no seletor do quadro consolidado
+# (_visao_ano). Apólices do ramo = apólices que têm ao menos um sinistro do ramo.
+def _desempenho_ano_por_ramo(_ramo, _visao):
+    # Apólices com sinistro do ramo (no período), para restringir prêmio/apólices
+    _sin_ramo = df_sinistro_periodo_atualizado[df_sinistro_periodo_atualizado['nr_ramo'] == _ramo].copy()
+    if _sin_ramo.empty:
+        return None
+    _apos_ramo = _sin_ramo['N° Apólice'].unique()
+    _apo_base = df_para_soma[df_para_soma['N° Apólice'].isin(_apos_ramo)].copy()
+
+    if _visao == "Ano de Subscrição (UWY)":
+        _apo_uw = _apo_base[['N° Apólice', 'Ano Vigência']].drop_duplicates('N° Apólice')
+        _sin_uw = pd.merge(_sin_ramo, _apo_uw, on='N° Apólice', how='left')
+        _qtd = _sin_uw.groupby('Ano Vigência')['nr_sinistro'].nunique().reset_index()
+        _qtd.rename(columns={'nr_sinistro': 'Qtd_Sinistros'}, inplace=True)
+        _ag = _apo_base.groupby('Ano Vigência').agg(
+            Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
+            Total_Sinistro=('Soma Sinistro Por Apolice', 'sum'),
+            Qtd_Apolices=('N° Apólice', 'nunique')
+        ).reset_index()
+        _df = pd.merge(_ag, _qtd, on='Ano Vigência', how='left').fillna(0)
+    else:
+        # Ano do Acidente (AY): sinistro do ramo alocado por ano de ocorrência
+        if 'dt_ocorrencia_dt' in _sin_ramo.columns:
+            _sin_ramo['Ano_Ocorrencia'] = _sin_ramo['dt_ocorrencia_dt'].dt.year
+        else:
+            _sin_ramo['Ano_Ocorrencia'] = pd.to_datetime(_sin_ramo['dt_ocorrencia'], dayfirst=True, errors='coerce').dt.year
+        _sin_ramo['Total Sinistro'] = (_sin_ramo['vl_sinistro_total'].fillna(0) + _sin_ramo['vl_despesa_total'].fillna(0)
+                                       + _sin_ramo['vl_honorario_total'].fillna(0) - _sin_ramo['vl_salvado_total'].fillna(0))
+        _sin_oc = _sin_ramo.groupby('Ano_Ocorrencia').agg(
+            Total_Sinistro=('Total Sinistro', 'sum'),
+            Qtd_Sinistros=('nr_sinistro', 'nunique')
+        ).reset_index().rename(columns={'Ano_Ocorrencia': 'Ano Vigência'})
+        _ag = _apo_base.groupby('Ano Vigência').agg(
+            Total_Premio=('Soma Prêmio Pago por Apolice', 'sum'),
+            Qtd_Apolices=('N° Apólice', 'nunique')
+        ).reset_index()
+        _df = pd.merge(_ag, _sin_oc, on='Ano Vigência', how='outer').fillna(0).sort_values('Ano Vigência')
+
+    _df['Qtd_Sinistros'] = _df['Qtd_Sinistros'].astype(int)
+    _df['Sinistralidade_Num'] = (_df['Total_Sinistro'] / _df['Total_Premio'].replace(0, float('nan'))).fillna(0)
+    _v = _df.copy()
+    _v['Total_Premio'] = _v['Total_Premio'].map(formatar_valor_br)
+    _v['Total_Sinistro'] = _v['Total_Sinistro'].map(formatar_valor_br)
+    _v['% Sinistralidade'] = _v['Sinistralidade_Num'].map(lambda x: f"{x:.2%}")
+    _v['Ano Vigência'] = _v['Ano Vigência'].astype(int)
+    return _v[['Ano Vigência', 'Total_Premio', 'Total_Sinistro', '% Sinistralidade', 'Qtd_Apolices', 'Qtd_Sinistros']]
+
+st.markdown('<p class="section-label">Desempenho por Ano por Ramo (23 · 28 · 82)</p>', unsafe_allow_html=True)
+_cap_visao = "Ano de Subscrição (UWY)" if _visao_ano == "Ano de Subscrição (UWY)" else "Ano do Acidente (AY)"
+st.caption(f"Mesma estrutura do Desempenho Consolidado por Ano, por ramo. Visão atual: **{_cap_visao}** "
+           "(alterável no seletor do quadro Desempenho Consolidado por Ano, acima).")
+_cols_ramo_ano = st.columns(3)
+for _i, _rr in enumerate([23, 28, 82]):
+    with _cols_ramo_ano[_i]:
+        st.markdown(f'<p class="section-label">Ramo {_rr}</p>', unsafe_allow_html=True)
+        _tab_rr = _desempenho_ano_por_ramo(_rr, _visao_ano)
+        if _tab_rr is not None and not _tab_rr.empty:
+            st.dataframe(_tab_rr, hide_index=True, use_container_width=True)
+        else:
+            st.info(f"Sem dados de sinistro para o ramo {_rr} no período.")
 
 # ── Evolução da Sinistralidade (%) por Ramo ──────────────────────────────────
 st.markdown('<p class="section-label">Evolução da Sinistralidade (%) por Ramo</p>', unsafe_allow_html=True)
@@ -1442,12 +1510,16 @@ if not df_para_soma.empty:
     else:
         st.info("Sem dados suficientes para o gráfico de sinistralidade por utilização.")
 
-# Exibição — Sinistros por Cobertura (DF + gráfico)
-st.markdown('<p class="section-label">Sinistros por Cobertura</p>', unsafe_allow_html=True)
-df_disp_cob = df_sinistro_geral_cobertura.copy()
-df_disp_cob['Total Sinistro'] = df_disp_cob['Total Sinistro'].map(formatar_valor_br)
-st.dataframe(df_disp_cob, hide_index=True, use_container_width=True)
-st.plotly_chart(fig_pizza_geral, use_container_width=True, config={'displayModeBar': False})
+# Exibição — Sinistros por Cobertura (DF + gráfico na mesma linha)
+_cc1, _cc2 = st.columns(2)
+with _cc1:
+    st.markdown('<p class="section-label">Sinistros por Cobertura</p>', unsafe_allow_html=True)
+    df_disp_cob = df_sinistro_geral_cobertura.copy()
+    df_disp_cob['Total Sinistro'] = df_disp_cob['Total Sinistro'].map(formatar_valor_br)
+    st.dataframe(df_disp_cob, hide_index=True, use_container_width=True)
+with _cc2:
+    st.markdown('<p class="section-label">Sinistros por Cobertura</p>', unsafe_allow_html=True)
+    st.plotly_chart(fig_pizza_geral, use_container_width=True, config={'displayModeBar': False})
 
 # 5. Detalhamento por Ramos Específicos (23, 28, 82)
 ramos_alvo = [23, 28, 82]
